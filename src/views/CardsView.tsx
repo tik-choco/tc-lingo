@@ -4,17 +4,23 @@ import { addCard, deleteCard, loadCards, subscribeCards } from "../lib/cards";
 import { loadSettings, subscribeSettings } from "../lib/settings";
 import { languageDisplayName, readingSpec } from "../lib/languages";
 import { LanguageSelect } from "../components/LanguageSelect";
+import { t } from "../i18n";
 import type { Card } from "../types";
 
-function formatDue(dueAt: string): string {
+/** Days until due relative to local midnight; null for an unparsable date. */
+function dueDiffDays(dueAt: string): number | null {
   const due = new Date(dueAt);
-  if (Number.isNaN(due.getTime())) return "";
+  if (Number.isNaN(due.getTime())) return null;
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  const diffDays = Math.round((due.getTime() - today.getTime()) / 86_400_000);
-  if (diffDays <= 0) return "復習可";
-  if (diffDays === 1) return "明日";
-  return `${diffDays}日後`;
+  return Math.round((due.getTime() - today.getTime()) / 86_400_000);
+}
+
+function formatDue(diffDays: number | null): string {
+  if (diffDays === null) return "";
+  if (diffDays <= 0) return t("cards-due-ready");
+  if (diffDays === 1) return t("cards-due-tomorrow");
+  return t("cards-due-days", { days: diffDays });
 }
 
 export function CardsView() {
@@ -69,20 +75,20 @@ export function CardsView() {
     <div class="view-container cards-view">
       <section class="card-panel">
         <div class="topic-header">
-          <h2>カード({visible.length})</h2>
+          <h2>{t("cards-heading", { count: visible.length })}</h2>
           <button type="button" onClick={() => setShowForm((v) => !v)}>
-            {showForm ? "閉じる" : "カードを追加"}
+            {showForm ? t("cards-close") : t("cards-add-button")}
           </button>
         </div>
 
         {showForm && (
           <form class="field-grid" onSubmit={submit}>
             <label>
-              単語・表現
+              {t("cards-label-front")}
               <input type="text" value={front} onInput={(e) => setFront((e.target as HTMLInputElement).value)} />
             </label>
             <label>
-              {readingField.label}(任意)
+              {t("cards-reading-optional", { label: readingField.label })}
               <input
                 type="text"
                 value={reading}
@@ -91,11 +97,11 @@ export function CardsView() {
               />
             </label>
             <label>
-              意味
+              {t("cards-label-meaning")}
               <input type="text" value={meaning} onInput={(e) => setMeaning((e.target as HTMLInputElement).value)} />
             </label>
             <label>
-              例文(任意)
+              {t("cards-label-example")}
               <input
                 type="text"
                 value={exampleSentence}
@@ -103,21 +109,21 @@ export function CardsView() {
               />
             </label>
             <label>
-              使う場面(任意)
+              {t("cards-label-context")}
               <input type="text" value={context} onInput={(e) => setContext((e.target as HTMLInputElement).value)} />
             </label>
             <label>
-              穴埋め文(任意, ___で空欄を表す)
+              {t("cards-label-cloze")}
               <input type="text" value={cloze} onInput={(e) => setCloze((e.target as HTMLInputElement).value)} />
             </label>
             {settings.targetLanguages.length > 1 && (
               <label>
-                言語
-                <LanguageSelect value={language} onChange={setLanguage} ariaLabel="カードの言語を選択" />
+                {t("cards-label-language")}
+                <LanguageSelect value={language} onChange={setLanguage} ariaLabel={t("cards-language-aria-label")} />
               </label>
             )}
             <button type="submit" class="primary-button">
-              追加
+              {t("cards-submit")}
             </button>
           </form>
         )}
@@ -125,7 +131,7 @@ export function CardsView() {
 
       <section class="card-panel">
         {sorted.length === 0 ? (
-          <p class="hint-text">カードはまだありません。練習タブの「間違いをカード化」か、上のフォームから追加できます。</p>
+          <p class="hint-text">{t("cards-empty")}</p>
         ) : (
           <ul class="card-list">
             {sorted.map((c) => (
@@ -136,14 +142,14 @@ export function CardsView() {
                   <span class="card-list-meaning"> — {c.meaning}</span>
                 </div>
                 <div class="card-list-meta">
-                  <span class={`due-badge${formatDue(c.dueAt) === "復習可" ? " due-badge-ready" : ""}`}>
-                    {formatDue(c.dueAt)}
+                  <span class={`due-badge${(dueDiffDays(c.dueAt) ?? 1) <= 0 ? " due-badge-ready" : ""}`}>
+                    {formatDue(dueDiffDays(c.dueAt))}
                   </span>
-                  {c.source === "mistake" && <span class="source-badge">自分の間違いから</span>}
+                  {c.source === "mistake" && <span class="source-badge">{t("cards-source-mistake")}</span>}
                   {settings.targetLanguages.length > 1 && c.language && (
                     <span class="language-badge">{languageDisplayName(c.language)}</span>
                   )}
-                  <button type="button" class="icon-button" onClick={() => deleteCard(c.id)} title="削除">
+                  <button type="button" class="icon-button" onClick={() => deleteCard(c.id)} title={t("cards-delete-title")}>
                     <Trash2 size={14} />
                   </button>
                 </div>

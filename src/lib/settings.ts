@@ -9,12 +9,49 @@ import { loadJson, saveJson, subscribeStorage } from "./storage";
 
 const STORAGE_NAME = "settings-v1";
 
-const DEFAULT_SETTINGS: LingoSettings = {
-  targetLanguages: ["English"],
-  activeLanguage: "English",
-  nativeLanguage: "Japanese",
-  presetId: "",
+// Browser-language → canonical language name (subset of lib/languages.ts
+// languageOptions; kept inline to avoid a settings → languages → i18n →
+// settings import cycle).
+const browserLanguageNames: Record<string, string> = {
+  ja: "Japanese",
+  en: "English",
+  ko: "Korean",
+  es: "Spanish",
+  fr: "French",
+  de: "German",
+  pt: "Portuguese",
+  it: "Italian",
+  ru: "Russian",
+  ar: "Arabic",
+  hi: "Hindi",
+  id: "Indonesian",
+  vi: "Vietnamese",
+  th: "Thai",
+  tr: "Turkish",
+  nl: "Dutch",
+  pl: "Polish",
+  sv: "Swedish",
 };
+
+function detectNativeLanguage(): string {
+  const tag = typeof navigator !== "undefined" ? navigator.language.toLowerCase() : "";
+  if (tag.startsWith("zh")) {
+    return tag.includes("tw") || tag.includes("hk") || tag.includes("hant")
+      ? "Chinese (Traditional)"
+      : "Chinese (Simplified)";
+  }
+  return browserLanguageNames[tag.split("-")[0]] ?? "English";
+}
+
+/** Fresh-install defaults: the native language follows the browser language
+ * (so the app — whose UI language tracks the native language, see
+ * i18n/index.ts — is usable worldwide on first launch), and the default study
+ * target is English, or Japanese for English natives. */
+function defaultSettings(): LingoSettings {
+  const nativeLanguage = detectNativeLanguage();
+  const target = nativeLanguage === "English" ? "Japanese" : "English";
+  return { targetLanguages: [target], activeLanguage: target, nativeLanguage, presetId: "" };
+}
 
 function isLingoSettings(value: unknown): value is LingoSettings {
   if (value === null || typeof value !== "object") return false;
@@ -40,7 +77,10 @@ function isLegacySettings(value: unknown): value is { targetLanguage: string; na
 export function loadSettings(): LingoSettings {
   const raw = loadJson<unknown>(STORAGE_NAME, null);
   if (isLingoSettings(raw)) {
-    if (raw.targetLanguages.length === 0) return { ...raw, targetLanguages: [DEFAULT_SETTINGS.targetLanguages[0]], activeLanguage: DEFAULT_SETTINGS.targetLanguages[0] };
+    if (raw.targetLanguages.length === 0) {
+      const fallback = defaultSettings().targetLanguages[0];
+      return { ...raw, targetLanguages: [fallback], activeLanguage: fallback };
+    }
     if (!raw.targetLanguages.includes(raw.activeLanguage)) return { ...raw, activeLanguage: raw.targetLanguages[0] };
     return raw;
   }
@@ -52,7 +92,7 @@ export function loadSettings(): LingoSettings {
       presetId: raw.presetId,
     };
   }
-  return DEFAULT_SETTINGS;
+  return defaultSettings();
 }
 
 export function saveSettings(settings: LingoSettings): void {

@@ -62,10 +62,3 @@ export function scheduleReview(fields: SrsFields, grade: ReviewGrade, now: Date 
 export function isDue(card: Card, now: Date = new Date()): boolean {
   return new Date(card.dueAt).getTime() <= now.getTime();
 }
-
-export const GRADE_LABELS: Record<ReviewGrade, string> = {
-  again: "もう一度",
-  hard: "難しい",
-  good: "できた",
-  easy: "簡単",
-};

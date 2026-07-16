@@ -7,6 +7,7 @@ import { languageDisplayName } from "../lib/languages";
 import { LanguageSelect } from "../components/LanguageSelect";
 import { requestOnboarding } from "../lib/onboarding";
 import { useLlmPreset } from "../hooks/useLlmPreset";
+import { t } from "../i18n";
 
 export function SettingsView() {
   const [settings, setSettings] = useState(loadSettings);
@@ -39,7 +40,7 @@ export function SettingsView() {
       setModelOptions(ids);
       if (!model && ids.length > 0) setModel(ids[0]);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "モデル一覧の取得に失敗しました。");
+      setError(e instanceof Error ? e.message : t("settings-fetch-models-error"));
     } finally {
       setFetchingModels(false);
     }
@@ -48,7 +49,7 @@ export function SettingsView() {
   function addConnection(event: Event) {
     event.preventDefault();
     if (!baseUrl.trim() || !model.trim()) {
-      setError("接続先URLとモデル名は必須です。");
+      setError(t("settings-validation-required"));
       return;
     }
     const current = loadLlmConfig() ?? {
@@ -74,21 +75,21 @@ export function SettingsView() {
   return (
     <div class="view-container settings-view">
       <section class="card-panel">
-        <h2>はじめに</h2>
-        <p class="hint-text">初回起動時のセットアップガイドをもう一度表示できます。</p>
+        <h2>{t("settings-getting-started-heading")}</h2>
+        <p class="hint-text">{t("settings-getting-started-hint")}</p>
         <div class="button-row">
           <button type="button" onClick={requestOnboarding}>
             <Sparkles size={15} />
-            セットアップガイドを表示
+            {t("settings-show-onboarding-button")}
           </button>
         </div>
       </section>
 
       <section class="card-panel">
-        <h2>学習言語</h2>
+        <h2>{t("settings-target-language-heading")}</h2>
         <div class="field-grid">
           <div class="field-grid">
-            <label>学習中の言語</label>
+            <label>{t("settings-target-language-label")}</label>
             <div class="language-chip-list">
               {settings.targetLanguages.map((lang) => (
                 <span class="language-chip" key={lang}>
@@ -96,8 +97,8 @@ export function SettingsView() {
                   <button
                     type="button"
                     disabled={settings.targetLanguages.length <= 1}
-                    title="削除"
-                    aria-label={`${languageDisplayName(lang)}を削除`}
+                    title={t("settings-remove-language-title")}
+                    aria-label={t("settings-remove-language", { language: languageDisplayName(lang) })}
                     onClick={() => {
                       removeTargetLanguage(lang);
                       setSettings(loadSettings());
@@ -115,26 +116,25 @@ export function SettingsView() {
                 setSettings(loadSettings());
               }}
               exclude={settings.targetLanguages}
-              placeholder="言語を追加"
-              ariaLabel="学習言語を追加"
+              placeholder={t("settings-add-language-placeholder")}
+              ariaLabel={t("settings-add-language-aria-label")}
             />
           </div>
           <label>
-            母語(説明に使う言語)
+            {t("settings-native-language-label")}
             <LanguageSelect
               value={settings.nativeLanguage}
               onChange={(lang) => updateLanguage({ nativeLanguage: lang })}
-              ariaLabel="母語を選択"
+              ariaLabel={t("settings-native-language-aria-label")}
             />
           </label>
+          <p class="hint-text">{t("settings-native-language-hint")}</p>
         </div>
       </section>
 
       <section class="card-panel">
-        <h2>LLM接続</h2>
-        <p class="hint-text">
-          tik-choco の他アプリと共有する接続設定です。一度設定すれば TC Lingo 以外のアプリでも同じ接続を使えます。
-        </p>
+        <h2>{t("settings-llm-heading")}</h2>
+        <p class="hint-text">{t("settings-llm-hint")}</p>
 
         {config && config.presets.length > 0 && (
           <div class="preset-list">
@@ -153,33 +153,40 @@ export function SettingsView() {
         )}
 
         {target ? (
-          <p class="hint-text status-ok">現在の接続先: {target.label}({target.model})</p>
+          <p class="hint-text status-ok">
+            {t("settings-llm-current-connection", { label: target.label, model: target.model })}
+          </p>
         ) : (
-          <p class="hint-text status-warn">まだLLM接続が設定されていません。下のフォームから追加してください。</p>
+          <p class="hint-text status-warn">{t("settings-llm-no-connection")}</p>
         )}
 
         <form class="field-grid" onSubmit={addConnection}>
           <label>
-            ラベル(任意)
-            <input type="text" value={label} onInput={(e) => setLabel((e.target as HTMLInputElement).value)} placeholder="例: OpenAI" />
+            {t("settings-label-field-label")}
+            <input
+              type="text"
+              value={label}
+              onInput={(e) => setLabel((e.target as HTMLInputElement).value)}
+              placeholder={t("settings-label-placeholder")}
+            />
           </label>
           <label>
-            接続先URL(baseUrl)
+            {t("settings-baseurl-field-label")}
             <input type="text" value={baseUrl} onInput={(e) => setBaseUrl((e.target as HTMLInputElement).value)} />
           </label>
           <label>
-            APIキー
+            {t("settings-apikey-field-label")}
             <input type="password" value={apiKey} onInput={(e) => setApiKey((e.target as HTMLInputElement).value)} />
           </label>
           <label>
-            モデル名
+            {t("settings-model-field-label")}
             <div class="model-row">
               <input
                 type="text"
                 list="tc-lingo-model-options"
                 value={model}
                 onInput={(e) => setModel((e.target as HTMLInputElement).value)}
-                placeholder="例: gpt-4.1-mini"
+                placeholder={t("settings-model-placeholder")}
               />
               <datalist id="tc-lingo-model-options">
                 {modelOptions.map((id) => (
@@ -187,13 +194,13 @@ export function SettingsView() {
                 ))}
               </datalist>
               <button type="button" onClick={loadModelOptions} disabled={fetchingModels}>
-                {fetchingModels ? "取得中…" : "モデル一覧を取得"}
+                {fetchingModels ? t("settings-fetch-models-loading") : t("settings-fetch-models-button")}
               </button>
             </div>
           </label>
           {error && <p class="error-text">{error}</p>}
           <button type="submit" class="primary-button">
-            この接続を追加して使う
+            {t("settings-add-connection-button")}
           </button>
         </form>
       </section>

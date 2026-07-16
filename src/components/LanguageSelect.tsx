@@ -7,7 +7,8 @@
 // UI has no locale switching (labels are always Japanese, see lib/languages).
 import { ChevronDown, Search } from "lucide-preact";
 import { useEffect, useRef, useState } from "preact/hooks";
-import { languageDisplayName, languageOptions } from "../lib/languages";
+import { languageDisplayName, languageOptionLabel, languageOptions } from "../lib/languages";
+import { t } from "../i18n";
 
 export interface LanguageSelectProps {
   value: string;
@@ -60,7 +61,7 @@ export function LanguageSelect({ value, onChange, exclude, placeholder, ariaLabe
         aria-haspopup="listbox"
         aria-expanded={open}
       >
-        <span>{value ? languageDisplayName(value) : placeholder ?? "言語を選択"}</span>
+        <span>{value ? languageDisplayName(value) : placeholder ?? t("langsel-select-placeholder")}</span>
         <ChevronDown size={16} />
       </button>
       {open && (
@@ -80,12 +81,12 @@ export function LanguageSelect({ value, onChange, exclude, placeholder, ariaLabe
                   setOpen(false);
                 }
               }}
-              placeholder="言語を検索"
-              aria-label="言語を検索"
+              placeholder={t("langsel-search-placeholder")}
+              aria-label={t("langsel-search-aria-label")}
             />
           </div>
           {filtered.length === 0 ? (
-            <p class="language-select-empty">該当する言語がありません。</p>
+            <p class="language-select-empty">{t("langsel-empty")}</p>
           ) : (
             filtered.map((language) => (
               <button
@@ -96,7 +97,7 @@ export function LanguageSelect({ value, onChange, exclude, placeholder, ariaLabe
                 aria-selected={language === value}
                 onClick={() => select(language)}
               >
-                {languageDisplayName(language)}
+                {languageOptionLabel(language)}
               </button>
             ))
           )}

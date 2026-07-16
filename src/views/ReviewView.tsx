@@ -6,9 +6,9 @@ import { useEffect, useState } from "preact/hooks";
 import { RotateCw } from "lucide-preact";
 import { dueCards, gradeCard } from "../lib/cards";
 import type { Card, ReviewGrade } from "../types";
-import { GRADE_LABELS } from "../lib/srs";
 import { loadSettings, subscribeSettings } from "../lib/settings";
 import { languageDisplayName } from "../lib/languages";
+import { t } from "../i18n";
 
 const GRADES: ReviewGrade[] = ["again", "hard", "good", "easy"];
 
@@ -49,16 +49,16 @@ export function ReviewView() {
     <div class="view-container review-view">
       <section class="card-panel">
         <div class="topic-header">
-          <h2>復習</h2>
-          <button type="button" class="link-button" onClick={refresh} title="キューを更新">
+          <h2>{t("review-title")}</h2>
+          <button type="button" class="link-button" onClick={refresh} title={t("review-refresh-title")}>
             <RotateCw size={14} />
           </button>
         </div>
 
         {queue.length === 0 ? (
-          <p class="hint-text">今復習すべきカードはありません。練習タブで間違いをカード化するとここに追加されます。</p>
+          <p class="hint-text">{t("review-empty-hint")}</p>
         ) : !current ? (
-          <p class="hint-text status-ok">お疲れさまでした。{doneCount}枚を復習しました。</p>
+          <p class="hint-text status-ok">{t("review-session-done", { count: doneCount })}</p>
         ) : (
           <div class="review-card">
             <p class="review-progress">
@@ -71,7 +71,7 @@ export function ReviewView() {
 
             {!revealed ? (
               <button type="button" class="primary-button" onClick={() => setRevealed(true)}>
-                答えを見る
+                {t("review-reveal-answer")}
               </button>
             ) : (
               <>
@@ -87,7 +87,7 @@ export function ReviewView() {
                 <div class="grade-buttons">
                   {GRADES.map((g) => (
                     <button key={g} type="button" class={`grade-button grade-button-${g}`} onClick={() => grade(g)}>
-                      {GRADE_LABELS[g]}
+                      {t(`review-grade-${g}`)}
                     </button>
                   ))}
                 </div>

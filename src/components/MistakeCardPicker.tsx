@@ -3,6 +3,7 @@
 // this is meant to be a quick accept/reject, not another data-entry chore).
 import { useState } from "preact/hooks";
 import type { CardCandidate } from "../lib/parse";
+import { t } from "../i18n";
 
 export interface MistakeCardPickerProps {
   candidates: CardCandidate[];
@@ -35,7 +36,7 @@ export function MistakeCardPicker({ candidates, onAdd }: MistakeCardPickerProps)
         </label>
       ))}
       <button type="button" class="primary-button" onClick={addSelected} disabled={!anySelected}>
-        選択したカードを復習デッキに追加
+        {t("practice-add-selected-cards")}
       </button>
     </div>
   );

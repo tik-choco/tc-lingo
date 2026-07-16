@@ -2,6 +2,7 @@
 // structured-output format from CLAUDE.md's design brief). Pure display —
 // callers own the retry-answer input and any follow-up actions.
 import { diffChars } from "../lib/diff";
+import { t } from "../i18n";
 
 export interface FeedbackPanelProps {
   original: string;
@@ -16,11 +17,11 @@ export function FeedbackPanel({ original, corrected, reasons, retryPrompt }: Fee
   return (
     <div class="feedback-panel">
       <div class="feedback-field">
-        <h3>原文</h3>
+        <h3>{t("practice-feedback-original")}</h3>
         <p class="feedback-original">{original}</p>
       </div>
       <div class="feedback-field">
-        <h3>修正版</h3>
+        <h3>{t("practice-feedback-corrected")}</h3>
         <p class="feedback-diff">
           {chunks.map((chunk, i) => (
             <span key={i} class={chunk.op === "same" ? undefined : `diff-${chunk.op}`}>
@@ -30,12 +31,12 @@ export function FeedbackPanel({ original, corrected, reasons, retryPrompt }: Fee
         </p>
       </div>
       <div class="feedback-field">
-        <h3>理由</h3>
+        <h3>{t("practice-feedback-reasons")}</h3>
         <p class="feedback-reasons">{reasons}</p>
       </div>
       {retryPrompt && (
         <div class="feedback-field">
-          <h3>再回答問題</h3>
+          <h3>{t("practice-feedback-retry-prompt")}</h3>
           <p class="feedback-retry-prompt">{retryPrompt}</p>
         </div>
       )}

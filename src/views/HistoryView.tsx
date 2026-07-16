@@ -10,6 +10,7 @@ import { diffChars } from "../lib/diff";
 import { FeedbackPanel } from "../components/FeedbackPanel";
 import { loadSettings, subscribeSettings } from "../lib/settings";
 import { languageDisplayName } from "../lib/languages";
+import { t } from "../i18n";
 
 function DiffLine({ before, after }: { before: string; after: string }) {
   const chunks = diffChars(before, after);
@@ -40,7 +41,7 @@ export function HistoryView() {
     return (
       <div class="view-container history-view">
         <section class="card-panel">
-          <p class="hint-text">まだトピックがありません。練習タブから始めてみましょう。</p>
+          <p class="hint-text">{t("history-empty-state")}</p>
         </section>
       </div>
     );
@@ -65,7 +66,7 @@ export function HistoryView() {
                 <button
                   type="button"
                   class="icon-button"
-                  title="このトピックを削除"
+                  title={t("history-delete-topic")}
                   onClick={() => {
                     if (openTopicId === topic.id) setOpenTopicId(null);
                     deleteTopic(topic.id);
@@ -83,10 +84,10 @@ export function HistoryView() {
                   const prev = i > 0 ? attempts[i - 1] : null;
                   return (
                     <div class="history-round" key={attempt.id}>
-                      <h3>ラウンド{attempt.round}</h3>
+                      <h3>{t("history-round-label", { round: attempt.round })}</h3>
                       {prev && (
                         <div class="feedback-field">
-                          <h4>前回の修正版との差分(このラウンドの原文)</h4>
+                          <h4>{t("history-diff-heading")}</h4>
                           <DiffLine before={prev.corrected} after={attempt.original} />
                         </div>
                       )}
@@ -98,7 +99,7 @@ export function HistoryView() {
                       />
                       {attempt.retryAnswer && (
                         <div class="feedback-field">
-                          <h4>再回答</h4>
+                          <h4>{t("history-retry-answer-heading")}</h4>
                           <p class="feedback-original">{attempt.retryAnswer}</p>
                         </div>
                       )}

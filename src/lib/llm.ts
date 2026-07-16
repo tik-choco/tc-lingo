@@ -6,6 +6,7 @@
 // sibling apps) since that would need vendoring the mistlib WASM build,
 // which this app's MVP scope doesn't need.
 import { streamChatCompletion } from "@tik-choco/mistai";
+import { t } from "../i18n";
 import type { ResolvedLlmTargetV1 } from "./llmConfig";
 import { parseCardCandidates, parseFeedback, parseTopicFanOutPlan, parseTopicSuggestion } from "./parse";
 import type { CardCandidate, FeedbackResult, TopicFanOutPlan, TopicSuggestion } from "./parse";
@@ -26,7 +27,7 @@ async function chatJson(target: ResolvedLlmTargetV1, systemPrompt: string, userP
     { role: "system", content: systemPrompt },
     { role: "user", content: JSON.stringify(userPayload) },
   ]);
-  if (!content.trim()) throw new Error("AIから応答がありませんでした。");
+  if (!content.trim()) throw new Error(t("error-empty-response"));
   return content;
 }
 
@@ -36,9 +37,9 @@ async function chatJson(target: ResolvedLlmTargetV1, systemPrompt: string, userP
 export async function testConnection(target: { baseUrl: string; apiKey: string; model: string }): Promise<void> {
   const content = await streamChatCompletion(
     { baseUrl: target.baseUrl.trim().replace(/\/+$/, ""), apiKey: target.apiKey, model: target.model },
-    [{ role: "user", content: "接続テストです。「OK」とだけ返してください。" }],
+    [{ role: "user", content: 'Connection test. Reply with only "OK".' }],
   );
-  if (!content.trim()) throw new Error("応答が空でした。");
+  if (!content.trim()) throw new Error(t("error-empty-test-response"));
 }
 
 export async function requestFeedback(params: {

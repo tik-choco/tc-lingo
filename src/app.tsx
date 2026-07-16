@@ -13,13 +13,16 @@ import { Onboarding } from "./components/Onboarding";
 import { markOnboardingDone, shouldShowOnboarding, subscribeOnboardingRequests } from "./lib/onboarding";
 import { loadSettings, setActiveLanguage, subscribeSettings } from "./lib/settings";
 import { languageDisplayName } from "./lib/languages";
+import { applyUiLanguageForNative, getUiSourceMessages, setUiOverlay, subscribeUiMessages, t } from "./i18n";
+import { translateUiMessages } from "./lib/uiTranslation";
+import { useLlmPreset } from "./hooks/useLlmPreset";
 
-const TABS: { id: MainTab; label: string; icon: typeof PenLine }[] = [
-  { id: "practice", label: "練習", icon: PenLine },
-  { id: "review", label: "復習", icon: Repeat2 },
-  { id: "cards", label: "カード", icon: Layers },
-  { id: "history", label: "履歴", icon: History },
-  { id: "settings", label: "設定", icon: SettingsIcon },
+const TABS: { id: MainTab; labelKey: string; icon: typeof PenLine }[] = [
+  { id: "practice", labelKey: "app-tab-practice", icon: PenLine },
+  { id: "review", labelKey: "app-tab-review", icon: Repeat2 },
+  { id: "cards", labelKey: "app-tab-cards", icon: Layers },
+  { id: "history", labelKey: "app-tab-history", icon: History },
+  { id: "settings", labelKey: "app-tab-settings", icon: SettingsIcon },
 ];
 
 const TAB_ORDER = TABS.map((t) => t.id);
@@ -31,6 +34,33 @@ export function App() {
   useEffect(() => subscribeSettings(() => setSettings(loadSettings())), []);
   const dir = useEnterDirection(TAB_ORDER, tab);
   const mainRef = useRef<HTMLElement>(null);
+
+  // The UI language follows the native language (i18n/index.ts). Re-render
+  // the whole tree whenever the active message table changes (language
+  // switch, or an LLM-translated overlay arriving).
+  const { target } = useLlmPreset();
+  const [, setMessagesVersion] = useState(0);
+  useEffect(() => subscribeUiMessages(() => setMessagesVersion((v) => v + 1)), []);
+
+  // Languages without a built-in dictionary get their UI strings translated
+  // once by the configured LLM and cached; until that resolves (or if no LLM
+  // is configured/reachable) the UI shows English.
+  const uiTranslationInFlight = useRef("");
+  useEffect(() => {
+    if (applyUiLanguageForNative(settings.nativeLanguage) !== "needs-translation") return;
+    if (!target) return;
+    const language = settings.nativeLanguage;
+    if (uiTranslationInFlight.current === language) return;
+    uiTranslationInFlight.current = language;
+    void translateUiMessages({ target, language, messages: getUiSourceMessages() })
+      .then((messages) => setUiOverlay(language, messages))
+      .catch(() => {
+        // No usable LLM or an unparsable answer: the UI stays in English.
+      })
+      .finally(() => {
+        if (uiTranslationInFlight.current === language) uiTranslationInFlight.current = "";
+      });
+  }, [settings.nativeLanguage, target]);
 
   useEffect(() => {
     if (mainRef.current) mainRef.current.scrollTop = 0;
@@ -67,14 +97,14 @@ export function App() {
           TC Lingo
         </div>
         <nav class="app-tabs">
-          {TABS.map(({ id, label, icon: Icon }) => (
+          {TABS.map(({ id, labelKey, icon: Icon }) => (
             <button
               key={id}
               class={`app-tab${tab === id ? " app-tab-active" : ""}`}
               onClick={() => selectTab(id)}
             >
               <Icon size={16} />
-              <span>{label}</span>
+              <span>{t(labelKey)}</span>
             </button>
           ))}
         </nav>
@@ -99,7 +129,7 @@ export function App() {
           <button
             class="theme-toggle"
             onClick={toggleTheme}
-            title={theme === "light" ? "ダークテーマに切り替え" : "ライトテーマに切り替え"}
+            title={theme === "light" ? t("app-theme-toggle-dark") : t("app-theme-toggle-light")}
           >
             {theme === "light" ? <Moon size={16} /> : <Sun size={16} />}
           </button>

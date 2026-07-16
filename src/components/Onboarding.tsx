@@ -24,6 +24,7 @@ import { testConnection } from "../lib/llm";
 import { addTargetLanguage, loadSettings, removeTargetLanguage, saveSettings } from "../lib/settings";
 import { languageDisplayName } from "../lib/languages";
 import { LanguageSelect } from "./LanguageSelect";
+import { t } from "../i18n";
 import "../styles/onboarding.css";
 
 const STEP_COUNT = 4;
@@ -110,8 +111,8 @@ export function Onboarding(props: { onClose: () => void }) {
 
   return (
     <div class="ob-overlay">
-      <div class="ob-card" role="dialog" aria-modal="true" aria-label="はじめてのセットアップ">
-        <button class="ob-close" type="button" onClick={props.onClose} title="閉じる" aria-label="閉じる">
+      <div class="ob-card" role="dialog" aria-modal="true" aria-label={t("ob-dialog-label")}>
+        <button class="ob-close" type="button" onClick={props.onClose} title={t("ob-close")} aria-label={t("ob-close")}>
           <X size={18} />
         </button>
 
@@ -120,13 +121,14 @@ export function Onboarding(props: { onClose: () => void }) {
             <div class="ob-hero">
               <Sparkles size={36} />
             </div>
-            <h2 class="ob-title">TC Lingo へようこそ！</h2>
+            <h2 class="ob-title">{t("ob-welcome-title")}</h2>
+            <p class="ob-text">{t("ob-welcome-body-1")}</p>
             <p class="ob-text">
-              TC Lingo は、選択式のドリルではなく「自分の言葉で書く → AIに添削してもらう → もう一度挑戦する」ことに絞った語学学習アプリです。
-            </p>
-            <p class="ob-text">
-              まずは2つだけ準備しましょう：<strong>LLMの接続設定</strong>と<strong>学習する言語</strong>です。
-              どちらもあとから設定画面でいつでも変更できます。
+              {t("ob-welcome-body-2-pre")}
+              <strong>{t("ob-welcome-llm")}</strong>
+              {t("ob-welcome-and")}
+              <strong>{t("ob-welcome-lang")}</strong>
+              {t("ob-welcome-body-2-post")}
             </p>
           </div>
         )}
@@ -135,41 +137,38 @@ export function Onboarding(props: { onClose: () => void }) {
           <div class="ob-body">
             <div class="ob-step-head">
               <Cpu size={22} />
-              <h2 class="ob-title">LLMの接続設定</h2>
+              <h2 class="ob-title">{t("ob-llm-title")}</h2>
             </div>
-            <p class="ob-text">
-              添削やトピック生成に使うLLMを設定します。OpenAI互換のAPIならどれでも使えます(OpenAI、LM
-              Studio、Ollamaなど)。tik-chocoの他アプリと共有される設定なので、一度設定すれば十分です。
-            </p>
+            <p class="ob-text">{t("ob-llm-body")}</p>
 
             <div class="ob-field">
-              <label class="ob-label">ベースURL</label>
+              <label class="ob-label">{t("ob-llm-base-url-label")}</label>
               <input
                 class="ob-input"
                 type="text"
-                placeholder="例: https://api.openai.com/v1"
+                placeholder={t("ob-llm-base-url-placeholder")}
                 value={llm.baseUrl}
                 onInput={(e) => updateLlm({ baseUrl: inputValue(e) })}
               />
             </div>
             <div class="ob-field">
-              <label class="ob-label">APIキー(不要なら空欄)</label>
+              <label class="ob-label">{t("ob-llm-api-key-label")}</label>
               <input
                 class="ob-input"
                 type="password"
-                placeholder="sk-..."
+                placeholder={t("ob-llm-api-key-placeholder")}
                 value={llm.apiKey}
                 onInput={(e) => updateLlm({ apiKey: inputValue(e) })}
               />
             </div>
             <div class="ob-field">
-              <label class="ob-label">モデル</label>
+              <label class="ob-label">{t("ob-llm-model-label")}</label>
               <div class="ob-model-row">
                 <input
                   class="ob-input"
                   type="text"
                   list="ob-model-options"
-                  placeholder="例: gpt-4.1-mini"
+                  placeholder={t("ob-llm-model-placeholder")}
                   value={llm.model}
                   onInput={(e) => updateLlm({ model: inputValue(e) })}
                 />
@@ -183,9 +182,9 @@ export function Onboarding(props: { onClose: () => void }) {
                   type="button"
                   onClick={loadModelOptions}
                   disabled={fetchingModels || !llm.baseUrl.trim()}
-                  title="モデル一覧を取得"
+                  title={t("ob-llm-fetch-title")}
                 >
-                  {fetchingModels ? "…" : "取得"}
+                  {fetchingModels ? t("ob-llm-fetch-busy") : t("ob-llm-fetch-label")}
                 </button>
               </div>
             </div>
@@ -198,16 +197,18 @@ export function Onboarding(props: { onClose: () => void }) {
                 disabled={testState.phase === "busy" || !llm.baseUrl.trim() || !llm.model.trim()}
               >
                 {testState.phase === "busy" ? <span class="spinner" /> : <Plug size={16} />}
-                {testState.phase === "busy" ? "接続中…" : "接続テスト"}
+                {testState.phase === "busy" ? t("ob-llm-test-busy") : t("ob-llm-test-button")}
               </button>
               {testState.phase === "ok" && (
                 <span class="ob-test-ok">
                   <Check size={16} />
-                  接続できました！
+                  {t("ob-llm-test-ok")}
                 </span>
               )}
             </div>
-            {testState.phase === "error" && <p class="ob-error">接続に失敗しました: {testState.message}</p>}
+            {testState.phase === "error" && (
+              <p class="ob-error">{t("ob-llm-test-error", { message: testState.message })}</p>
+            )}
           </div>
         )}
 
@@ -215,11 +216,11 @@ export function Onboarding(props: { onClose: () => void }) {
           <div class="ob-body">
             <div class="ob-step-head">
               <Languages size={22} />
-              <h2 class="ob-title">学習する言語を選ぶ</h2>
+              <h2 class="ob-title">{t("ob-lang-title")}</h2>
             </div>
-            <p class="ob-text">学習中の言語と、添削の説明に使う母語を設定します。あとから設定画面でいつでも変更できます。</p>
+            <p class="ob-text">{t("ob-lang-body")}</p>
             <div class="ob-field">
-              <label class="ob-label">学習中の言語</label>
+              <label class="ob-label">{t("ob-lang-target-label")}</label>
               <div class="language-chip-list">
                 {langSettings.targetLanguages.map((lang) => (
                   <span class="language-chip" key={lang}>
@@ -227,8 +228,8 @@ export function Onboarding(props: { onClose: () => void }) {
                     <button
                       type="button"
                       disabled={langSettings.targetLanguages.length <= 1}
-                      title="削除"
-                      aria-label={`${languageDisplayName(lang)}を削除`}
+                      title={t("ob-lang-remove-title")}
+                      aria-label={t("ob-remove-language", { language: languageDisplayName(lang) })}
                       onClick={() => {
                         removeTargetLanguage(lang);
                         setLangSettings(loadSettings());
@@ -246,12 +247,12 @@ export function Onboarding(props: { onClose: () => void }) {
                   setLangSettings(loadSettings());
                 }}
                 exclude={langSettings.targetLanguages}
-                placeholder="言語を追加"
-                ariaLabel="学習言語を追加"
+                placeholder={t("ob-lang-add-placeholder")}
+                ariaLabel={t("ob-lang-add-aria")}
               />
             </div>
             <div class="ob-field">
-              <label class="ob-label">母語(説明に使う言語)</label>
+              <label class="ob-label">{t("ob-lang-native-label")}</label>
               <LanguageSelect
                 value={langSettings.nativeLanguage}
                 onChange={(lang) => {
@@ -259,7 +260,7 @@ export function Onboarding(props: { onClose: () => void }) {
                   saveSettings(next);
                   setLangSettings(next);
                 }}
-                ariaLabel="母語を選択"
+                ariaLabel={t("ob-lang-native-aria")}
               />
             </div>
           </div>
@@ -269,35 +270,35 @@ export function Onboarding(props: { onClose: () => void }) {
           <div class="ob-body">
             <div class="ob-step-head">
               <Check size={22} />
-              <h2 class="ob-title">準備完了です！</h2>
+              <h2 class="ob-title">{t("ob-done-title")}</h2>
             </div>
             <ul class="ob-feature-list">
               <li>
                 <PenLine size={16} />
                 <span>
-                  <strong>練習</strong> — トピックに自由記述で答え、AIが原文/修正版/理由/再回答問題を返します
+                  <strong>{t("ob-feature-practice-label")}</strong> {t("ob-feature-practice-desc")}
                 </span>
               </li>
               <li>
                 <Repeat2 size={16} />
                 <span>
-                  <strong>復習</strong> — 選択肢のない検索練習で、登録したカードを復習します
+                  <strong>{t("ob-feature-review-label")}</strong> {t("ob-feature-review-desc")}
                 </span>
               </li>
               <li>
                 <Layers size={16} />
                 <span>
-                  <strong>カード</strong> — 間違いから自動で作られたカードや、自分で追加したカードを管理します
+                  <strong>{t("ob-feature-cards-label")}</strong> {t("ob-feature-cards-desc")}
                 </span>
               </li>
               <li>
                 <History size={16} />
                 <span>
-                  <strong>履歴</strong> — 同じトピックを最大3回記録し、ラウンド間の変化を確認できます
+                  <strong>{t("ob-feature-history-label")}</strong> {t("ob-feature-history-desc")}
                 </span>
               </li>
             </ul>
-            <p class="ob-text ob-text-subtle">編集はすべて自動保存されます。それでは、始めましょう！</p>
+            <p class="ob-text ob-text-subtle">{t("ob-done-footer")}</p>
           </div>
         )}
 
@@ -311,31 +312,31 @@ export function Onboarding(props: { onClose: () => void }) {
             {step > 0 && step < 3 && (
               <button class="ob-btn" type="button" onClick={() => setStep(step - 1)}>
                 <ArrowLeft size={16} />
-                戻る
+                {t("ob-back")}
               </button>
             )}
             {step === 0 && (
               <button class="ob-btn ob-btn-accent" type="button" onClick={() => setStep(1)}>
-                はじめる
+                {t("ob-start")}
                 <ArrowRight size={16} />
               </button>
             )}
             {step === 1 && (
               <button class="ob-btn ob-btn-accent" type="button" onClick={handleLlmNext}>
-                保存して次へ
+                {t("ob-save-next")}
                 <ArrowRight size={16} />
               </button>
             )}
             {step === 2 && (
               <button class="ob-btn ob-btn-accent" type="button" onClick={handleLanguageNext}>
-                保存して次へ
+                {t("ob-save-next")}
                 <ArrowRight size={16} />
               </button>
             )}
             {step === 3 && (
               <button class="ob-btn ob-btn-accent" type="button" onClick={props.onClose}>
                 <Check size={16} />
-                完了
+                {t("ob-finish")}
               </button>
             )}
           </div>

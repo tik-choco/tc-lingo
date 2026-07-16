@@ -2,6 +2,7 @@
 // a ```json fence despite instructions not to — strip that before parsing.
 // Every parse* function throws a plain Error with a short, user-facing
 // message on failure; callers show it directly rather than a stack trace.
+import { t } from "../i18n";
 
 function extractJson(content: string): unknown {
   const trimmed = content.trim();
@@ -10,7 +11,7 @@ function extractJson(content: string): unknown {
   try {
     return JSON.parse(body);
   } catch {
-    throw new Error("AIの応答をJSONとして解析できませんでした。もう一度試してください。");
+    throw new Error(t("error-parse-json"));
   }
 }
 
@@ -25,7 +26,7 @@ export function parseFeedback(content: string): FeedbackResult {
   const corrected = typeof parsed.corrected === "string" ? parsed.corrected : "";
   const reasons = typeof parsed.reasons === "string" ? parsed.reasons : "";
   const retryPrompt = typeof parsed.retryPrompt === "string" ? parsed.retryPrompt : "";
-  if (!corrected) throw new Error("AIの応答に修正版が含まれていませんでした。");
+  if (!corrected) throw new Error(t("error-missing-correction"));
   return { corrected, reasons, retryPrompt };
 }
 
@@ -38,7 +39,7 @@ export function parseTopicSuggestion(content: string): TopicSuggestion {
   const parsed = extractJson(content) as Record<string, unknown>;
   const title = typeof parsed.title === "string" ? parsed.title : "";
   const prompt = typeof parsed.prompt === "string" ? parsed.prompt : "";
-  if (!title || !prompt) throw new Error("AIの応答にトピックが含まれていませんでした。");
+  if (!title || !prompt) throw new Error(t("error-missing-topic"));
   return { title, prompt };
 }
 

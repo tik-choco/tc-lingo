@@ -13,12 +13,12 @@ import { planTopicFanOut, requestFeedback, requestMistakeCards, requestTopicSugg
 import type { CardCandidate, FeedbackResult } from "../lib/parse";
 import { FeedbackPanel } from "../components/FeedbackPanel";
 import { MistakeCardPicker } from "../components/MistakeCardPicker";
+import { t } from "../i18n";
+import { languageDisplayName } from "../lib/languages";
 
-const ROUND_LABEL: Record<AttemptRound, string> = {
-  1: "初回",
-  2: "改善版(同日)",
-  3: "再挑戦(翌日以降)",
-};
+function roundLabel(round: AttemptRound): string {
+  return t(`practice-round-${round}`);
+}
 
 export function PracticeView() {
   const { target } = useLlmPreset();
@@ -89,7 +89,7 @@ export function PracticeView() {
 
   async function generateTopic() {
     if (!target) {
-      setError("設定タブでLLM接続を追加してください。");
+      setError(t("practice-need-llm"));
       return;
     }
     setError("");
@@ -99,12 +99,12 @@ export function PracticeView() {
         target,
         targetLanguage: settings.activeLanguage,
         nativeLanguage: settings.nativeLanguage,
-        recentTitles: topics.slice(0, 10).map((t) => t.title),
+        recentTitles: topics.slice(0, 10).map((topic) => topic.title),
       });
       const topic = addTopic({ title: suggestion.title, prompt: suggestion.prompt, custom: false, language: settings.activeLanguage });
       setActiveTopicId(topic.id);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "トピックの生成に失敗しました。");
+      setError(e instanceof Error ? e.message : t("practice-topic-generate-failed"));
     } finally {
       setGeneratingTopic(false);
     }
@@ -112,7 +112,7 @@ export function PracticeView() {
 
   async function generateAllTopics() {
     if (!target) {
-      setError("設定タブでLLM接続を追加してください。");
+      setError(t("practice-need-llm"));
       return;
     }
     setError("");
@@ -143,7 +143,7 @@ export function PracticeView() {
       if (preferred) setActiveTopicId(preferred.id);
       setBatchGeneratedCount(plan.targets.length);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "トピックの生成に失敗しました。");
+      setError(e instanceof Error ? e.message : t("practice-topic-generate-failed"));
     } finally {
       setGeneratingAllTopics(false);
     }
@@ -163,7 +163,7 @@ export function PracticeView() {
     event.preventDefault();
     if (!activeTopic || round === null || !text.trim()) return;
     if (!target) {
-      setError("設定タブでLLM接続を追加してください。");
+      setError(t("practice-need-llm"));
       return;
     }
     setError("");
@@ -186,7 +186,7 @@ export function PracticeView() {
       });
       setCurrentAttempt(attempt);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "添削の取得に失敗しました。");
+      setError(e instanceof Error ? e.message : t("practice-feedback-failed"));
     } finally {
       setSubmitting(false);
     }
@@ -212,7 +212,7 @@ export function PracticeView() {
       });
       setCandidates(found);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "カード候補の抽出に失敗しました。");
+      setError(e instanceof Error ? e.message : t("practice-extract-failed"));
     } finally {
       setExtracting(false);
     }
@@ -231,34 +231,34 @@ export function PracticeView() {
     return (
       <div class="view-container practice-view">
         <section class="card-panel">
-          <h2>今日のトピックを選ぶ</h2>
-          <p class="hint-text">検索練習ではなく出力練習です。選択肢はありません — 自分の言葉で書いてください。</p>
+          <h2>{t("practice-choose-topic-heading")}</h2>
+          <p class="hint-text">{t("practice-choose-topic-hint")}</p>
           <div class="button-row">
             <button type="button" class="primary-button" onClick={generateTopic} disabled={generatingTopic}>
               <Sparkles size={16} />
-              {generatingTopic ? "生成中…" : "AIにトピックを提案してもらう"}
+              {generatingTopic ? t("practice-generating") : t("practice-suggest-topic")}
             </button>
             {settings.targetLanguages.length > 1 && (
               <button type="button" onClick={generateAllTopics} disabled={generatingAllTopics || generatingTopic}>
-                {generatingAllTopics ? "生成中…" : "全言語まとめてトピック生成"}
+                {generatingAllTopics ? t("practice-generating") : t("practice-generate-all-topics")}
               </button>
             )}
             <button type="button" onClick={() => setShowCustomForm((v) => !v)}>
-              自分でトピックを入力する
+              {t("practice-enter-custom-topic")}
             </button>
           </div>
           {showCustomForm && (
             <form class="field-grid" onSubmit={addCustomTopic}>
               <label>
-                トピック名
+                {t("practice-custom-title-label")}
                 <input type="text" value={customTitle} onInput={(e) => setCustomTitle((e.target as HTMLInputElement).value)} />
               </label>
               <label>
-                指示文
+                {t("practice-custom-prompt-label")}
                 <textarea value={customPrompt} onInput={(e) => setCustomPrompt((e.target as HTMLTextAreaElement).value)} rows={3} />
               </label>
               <button type="submit" class="primary-button">
-                このトピックで始める
+                {t("practice-start-with-topic")}
               </button>
             </form>
           )}
@@ -267,7 +267,7 @@ export function PracticeView() {
 
         {topics.length > 0 && (
           <section class="card-panel">
-            <h2>過去のトピック</h2>
+            <h2>{t("practice-past-topics-heading")}</h2>
             <ul class="topic-pick-list">
               {topics.slice(0, 8).map((t) => (
                 <li key={t.id}>
@@ -288,9 +288,9 @@ export function PracticeView() {
       <div class="view-container practice-view">
         <section class="card-panel">
           <h2>{activeTopic.title}</h2>
-          <p class="hint-text status-ok">このトピックは3回とも完了しました。履歴タブで変化を確認できます。</p>
+          <p class="hint-text status-ok">{t("practice-all-rounds-done-hint")}</p>
           <button type="button" class="primary-button" onClick={resetForNewTopic}>
-            新しいトピックを始める
+            {t("practice-start-new-topic")}
           </button>
         </section>
       </div>
@@ -302,15 +302,17 @@ export function PracticeView() {
       <section class="card-panel">
         <div class="topic-header">
           <h2>{activeTopic.title}</h2>
-          <span class="round-badge">{ROUND_LABEL[round]}</span>
+          <span class="round-badge">{roundLabel(round)}</span>
         </div>
         <p class="topic-prompt">{activeTopic.prompt}</p>
-        {batchGeneratedCount > 0 && <p class="hint-text status-ok">{batchGeneratedCount}言語分のトピックを生成しました。</p>}
+        {batchGeneratedCount > 0 && (
+          <p class="hint-text status-ok">{t("practice-batch-generated", { count: batchGeneratedCount })}</p>
+        )}
 
         {previousAttempt && (
           <div class="previous-attempt">
             <button type="button" class="link-button" onClick={() => setShowPrevious((v) => !v)}>
-              {showPrevious ? "前回の添削を隠す" : "前回の添削を見る"}
+              {showPrevious ? t("practice-hide-previous") : t("practice-show-previous")}
             </button>
             {showPrevious && (
               <FeedbackPanel
@@ -330,14 +332,14 @@ export function PracticeView() {
               value={text}
               onInput={(e) => setText((e.target as HTMLTextAreaElement).value)}
               rows={6}
-              placeholder={`${settings.activeLanguage}で書いてみましょう。`}
+              placeholder={t("practice-write-placeholder", { language: languageDisplayName(settings.activeLanguage) })}
             />
             <div class="button-row">
               <button type="submit" class="primary-button" disabled={submitting || !text.trim()}>
-                {submitting ? "添削中…" : "AIに添削してもらう"}
+                {submitting ? t("practice-submitting") : t("practice-request-feedback")}
               </button>
               <button type="button" onClick={resetForNewTopic}>
-                別のトピックにする
+                {t("practice-different-topic")}
               </button>
             </div>
             {error && <p class="error-text">{error}</p>}
@@ -353,14 +355,14 @@ export function PracticeView() {
 
             {currentAttempt.retryPrompt && (
               <div class="feedback-field">
-                <h3>再回答</h3>
+                <h3>{t("practice-retry-heading")}</h3>
                 <textarea
                   class="practice-textarea"
                   value={retryAnswer}
                   onInput={(e) => setRetryAnswer((e.target as HTMLTextAreaElement).value)}
                   onBlur={saveRetryAnswer}
                   rows={3}
-                  placeholder="再回答問題に答えてみましょう。"
+                  placeholder={t("practice-retry-placeholder")}
                 />
               </div>
             )}
@@ -368,28 +370,28 @@ export function PracticeView() {
             {candidates === null ? (
               <div class="button-row">
                 <button type="button" onClick={extractCards} disabled={extracting}>
-                  {extracting ? "抽出中…" : "間違いをカード化"}
+                  {extracting ? t("practice-extracting") : t("practice-extract-cards")}
                 </button>
               </div>
             ) : candidates.length > 0 ? (
               <MistakeCardPicker candidates={candidates} onAdd={addSelectedCards} />
             ) : (
-              <p class="hint-text">カード化できそうな間違いは見つかりませんでした。</p>
+              <p class="hint-text">{t("practice-no-cards-found")}</p>
             )}
-            {cardsAdded > 0 && <p class="hint-text status-ok">{cardsAdded}枚のカードを復習デッキに追加しました。</p>}
+            {cardsAdded > 0 && <p class="hint-text status-ok">{t("practice-cards-added", { count: cardsAdded })}</p>}
 
             {error && <p class="error-text">{error}</p>}
 
             <div class="button-row">
               {nextRoundFor(activeTopic.id) !== null ? (
                 <button type="button" class="primary-button" onClick={resetForNextRound}>
-                  次のラウンドへ進む
+                  {t("practice-next-round")}
                 </button>
               ) : (
-                <p class="hint-text status-ok">3回すべて完了しました。</p>
+                <p class="hint-text status-ok">{t("practice-all-rounds-complete")}</p>
               )}
               <button type="button" onClick={resetForNewTopic}>
-                新しいトピックを始める
+                {t("practice-start-new-topic")}
               </button>
             </div>
           </>
