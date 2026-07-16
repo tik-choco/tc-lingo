@@ -1,0 +1,456 @@
+/* ============================================================
+   TC Lingo — design system foundation
+   Same token system as the tik-choco suite (tc-books/tc-translate/tc-news):
+   layered surfaces, soft elevation, a spacing scale, refined
+   typography, and an explicit light-default theme (dark only via
+   [data-theme="dark"] — the OS preference is not followed).
+   The accent is a soft, muted sky blue — chosen deliberately gentle and
+   low-saturation (this app leans into retrieval practice and correction,
+   which can already feel effortful; the palette shouldn't add to that).
+   Distinct from tc-books (saturated green), tc-translate (teal), tc-news
+   (red).
+   Component/view stylesheets build on these tokens only.
+   ============================================================ */
+
+:root {
+  color-scheme: light;
+
+  /* Surfaces & structure */
+  --bg: #f5f8fb;
+  --bg-accent: #eef2f7;
+  --surface: #ffffff;
+  --surface-2: #f2f5f9;
+  --surface-3: #e8edf3;
+  --elevated: #ffffff;
+  --border: #dde6ef;
+  --border-strong: #c3d3e3;
+
+  /* Text */
+  --text: #1c2733;
+  --text-muted: #5c6773;
+  --text-subtle: #8b95a3;
+  --on-primary: #ffffff;
+
+  /* Brand accent (soft sky blue) */
+  --primary: #6e97c7;
+  --primary-hover: #5c84b5;
+  --primary-active: #4c72a1;
+  --primary-soft: rgba(110, 151, 199, 0.1);
+  --primary-soft-strong: rgba(110, 151, 199, 0.16);
+  --primary-border: rgba(110, 151, 199, 0.35);
+
+  /* Status */
+  --success: #16a34a;
+  --success-soft: rgba(22, 163, 74, 0.1);
+  --danger: #dc2626;
+  --danger-text: #b91c1c;
+  --danger-soft: rgba(220, 38, 38, 0.08);
+  --danger-border: rgba(220, 38, 38, 0.3);
+  --warning: #d97706;
+  --warning-soft: rgba(217, 119, 6, 0.1);
+
+  /* SRS grade semantics: again(red)/hard(amber)/good(sky blue)/easy(green) */
+  --grade-again: #dc2626;
+  --grade-hard: #d97706;
+  --grade-good: #6e97c7;
+  --grade-easy: #16a34a;
+
+  /* Diff semantics for the topic-history view */
+  --diff-added: #16a34a;
+  --diff-added-soft: rgba(22, 163, 74, 0.12);
+  --diff-removed: #dc2626;
+  --diff-removed-soft: rgba(220, 38, 38, 0.1);
+
+  --ring: rgba(110, 151, 199, 0.5);
+  /* Scrim behind modals / sheets on mobile */
+  --scrim: rgba(16, 24, 40, 0.45);
+
+  /* Radii */
+  --radius-xs: 6px;
+  --radius-s: 8px;
+  --radius-m: 12px;
+  --radius-l: 16px;
+  --radius-pill: 999px;
+
+  /* Spacing scale */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+
+  /* Elevation — soft, layered, tuned for light backgrounds */
+  --shadow-1: 0 1px 2px rgba(16, 24, 40, 0.06), 0 1px 3px rgba(16, 24, 40, 0.08);
+  --shadow-2: 0 4px 12px rgba(16, 24, 40, 0.08), 0 2px 6px rgba(16, 24, 40, 0.05);
+  --shadow-3: 0 12px 32px rgba(16, 24, 40, 0.14), 0 4px 12px rgba(16, 24, 40, 0.08);
+
+  /* Glass header backdrop */
+  --header-bg: rgba(255, 255, 255, 0.72);
+
+  /* Motion */
+  --ease: cubic-bezier(0.2, 0, 0, 1);
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --dur-fast: 130ms;
+  --dur: 220ms;
+  --dur-slow: 360ms;
+  /* How far an incoming panel slides during a tab switch (.pane-enter) */
+  --pane-shift: 14px;
+
+  --sans: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --mono: ui-monospace, 'Cascadia Mono', 'SF Mono', Consolas, monospace;
+
+  font: 16px/1.5 var(--sans);
+  color: var(--text);
+  background: var(--bg);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --bg: #111820;
+  --bg-accent: #141c24;
+  --surface: #182029;
+  --surface-2: #1c2530;
+  --surface-3: #26313d;
+  --elevated: #1a2330;
+  --border: #26313d;
+  --border-strong: #374556;
+
+  --text: #e6edf5;
+  --text-muted: #9aa7b5;
+  --text-subtle: #6d7885;
+  --on-primary: #0d1620;
+
+  --primary: #8fb3dd;
+  --primary-hover: #a3c2e4;
+  --primary-active: #7ba3cf;
+  --primary-soft: rgba(143, 179, 221, 0.16);
+  --primary-soft-strong: rgba(143, 179, 221, 0.24);
+  --primary-border: rgba(143, 179, 221, 0.4);
+
+  --success: #4ade80;
+  --success-soft: rgba(74, 222, 128, 0.14);
+  --danger: #f87171;
+  --danger-text: #fca5a5;
+  --danger-soft: rgba(248, 113, 113, 0.12);
+  --danger-border: rgba(248, 113, 113, 0.35);
+  --warning: #fbbf24;
+  --warning-soft: rgba(251, 191, 36, 0.14);
+
+  --grade-again: #f87171;
+  --grade-hard: #fbbf24;
+  --grade-good: #8fb3dd;
+  --grade-easy: #4ade80;
+
+  --diff-added: #4ade80;
+  --diff-added-soft: rgba(74, 222, 128, 0.14);
+  --diff-removed: #f87171;
+  --diff-removed-soft: rgba(248, 113, 113, 0.12);
+
+  --ring: rgba(143, 179, 221, 0.55);
+  --scrim: rgba(0, 0, 0, 0.6);
+
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4), 0 1px 3px rgba(0, 0, 0, 0.3);
+  --shadow-2: 0 4px 14px rgba(0, 0, 0, 0.45), 0 2px 6px rgba(0, 0, 0, 0.35);
+  --shadow-3: 0 16px 40px rgba(0, 0, 0, 0.55), 0 6px 16px rgba(0, 0, 0, 0.4);
+
+  --header-bg: rgba(17, 22, 29, 0.72);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
+
+#app {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
+
+h1,
+h2,
+h3,
+h4,
+p {
+  margin: 0;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+}
+
+textarea,
+input,
+select {
+  font: inherit;
+  color: inherit;
+}
+
+a {
+  color: var(--primary);
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+:focus {
+  outline: none;
+}
+
+:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+  border-radius: var(--radius-xs);
+}
+
+/* ============================================================
+   Panel enter animations (tab / screen switches).
+   Wrap the active panel in a keyed element:
+     <div key={active} class={paneEnterClass(dir)}>…</div>
+   with dir from useEnterDirection — the key remount restarts the
+   animation, the modifier picks which side it slides in from.
+   Enter-only by design: the old panel unmounts instantly, so there
+   is never a frame with two panels fighting over layout.
+   ============================================================ */
+
+.pane-enter {
+  animation: pane-fade-in var(--dur) var(--ease-out) both;
+}
+
+.pane-enter--from-right {
+  animation-name: pane-slide-from-right;
+}
+
+.pane-enter--from-left {
+  animation-name: pane-slide-from-left;
+}
+
+@keyframes pane-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes pane-slide-from-right {
+  from {
+    opacity: 0;
+    transform: translateX(var(--pane-shift));
+  }
+}
+
+@keyframes pane-slide-from-left {
+  from {
+    opacity: 0;
+    transform: translateX(calc(-1 * var(--pane-shift)));
+  }
+}
+
+/* Users who ask the OS for less motion get (near-)instant switches
+   everywhere — animations collapse to a single imperceptible frame. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Thin custom scrollbars */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: var(--radius-pill);
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--text-subtle);
+  background-clip: content-box;
+}
+
+/* ============================================================
+   App shell chrome (header + tab nav). Views own their own CSS
+   under src/styles/; this is the one bit of layout that wraps
+   them all, so it lives here alongside the tokens.
+   ============================================================ */
+
+.app-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+}
+
+.app-header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-5);
+  border-bottom: 1px solid var(--border);
+  background: var(--header-bg);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.app-header-brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-weight: 700;
+  font-size: 1.05rem;
+  letter-spacing: 0.01em;
+  color: var(--primary);
+  white-space: nowrap;
+}
+
+.app-tabs {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-left: auto;
+  overflow-x: auto;
+}
+
+.app-tab {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: none;
+  background: transparent;
+  border-radius: var(--radius-s);
+  color: var(--text-muted);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
+}
+
+.app-tab:hover {
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.app-tab-active {
+  background: var(--primary-soft);
+  color: var(--primary);
+  font-weight: 600;
+}
+
+.app-header-links {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-shrink: 0;
+}
+
+/* Active-language switcher: only rendered when the learner has more than
+   one target language configured (see Settings). Practice/Review/Cards/
+   History all filter to whichever chip is active here. */
+.language-switcher {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  flex-shrink: 0;
+  overflow-x: auto;
+  max-width: 220px;
+}
+
+.language-switcher-chip {
+  padding: var(--space-1) var(--space-3);
+  border: none;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.language-switcher-chip:hover:not(.active) {
+  background: var(--surface-3);
+  color: var(--text);
+}
+
+.language-switcher-chip.active {
+  background: var(--primary);
+  color: var(--on-primary);
+}
+
+@media (max-width: 640px) {
+  .language-switcher {
+    max-width: 140px;
+  }
+}
+
+.theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color var(--dur) var(--ease), border-color var(--dur) var(--ease);
+}
+
+.theme-toggle:hover {
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+
+.app-main {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+@media (max-width: 640px) {
+  .app-tab span {
+    display: none;
+  }
+
+  .app-header {
+    padding: var(--space-3);
+    gap: var(--space-2);
+  }
+}

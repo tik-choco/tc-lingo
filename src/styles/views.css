@@ -1,0 +1,588 @@
+/* ============================================================
+   TC Lingo — view/component styles. Design-token-only (see
+   ../index.css for the token definitions) — no raw hex/rgba here.
+   ============================================================ */
+
+.view-container {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: var(--space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.card-panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-l);
+  box-shadow: var(--shadow-1);
+  padding: var(--space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.card-panel h2 {
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+
+.hint-text {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  line-height: 1.6;
+}
+
+.status-ok {
+  color: var(--success);
+}
+
+.status-warn {
+  color: var(--warning);
+}
+
+.error-text {
+  color: var(--danger-text);
+  font-size: 0.9rem;
+  background: var(--danger-soft);
+  border: 1px solid var(--danger-border);
+  border-radius: var(--radius-s);
+  padding: var(--space-2) var(--space-3);
+}
+
+.button-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+button {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-s);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
+}
+
+button:hover:not(:disabled) {
+  background: var(--surface-2);
+  border-color: var(--border-strong);
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.primary-button {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: var(--on-primary);
+}
+
+.primary-button:hover:not(:disabled) {
+  background: var(--primary-hover);
+  border-color: var(--primary-hover);
+}
+
+.link-button {
+  border: none;
+  background: transparent;
+  color: var(--primary);
+  padding: var(--space-1) 0;
+}
+
+.link-button:hover:not(:disabled) {
+  background: transparent;
+  text-decoration: underline;
+}
+
+.icon-button {
+  padding: var(--space-1);
+  width: 28px;
+  height: 28px;
+  justify-content: center;
+}
+
+.field-grid {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.field-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.field-grid input,
+.field-grid textarea {
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-s);
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.field-grid input:focus,
+.field-grid textarea:focus,
+.practice-textarea:focus {
+  border-color: var(--primary-border);
+}
+
+.model-row {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.model-row input {
+  flex: 1;
+}
+
+/* ---------------- Practice view ---------------- */
+
+.topic-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.round-badge {
+  flex-shrink: 0;
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-pill);
+  background: var(--primary-soft);
+  color: var(--primary);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.topic-prompt {
+  color: var(--text);
+  line-height: 1.7;
+  background: var(--surface-2);
+  border-radius: var(--radius-s);
+  padding: var(--space-3) var(--space-4);
+}
+
+.practice-textarea {
+  width: 100%;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-s);
+  background: var(--surface-2);
+  color: var(--text);
+  resize: vertical;
+  font-family: inherit;
+}
+
+.previous-attempt {
+  border-top: 1px dashed var(--border);
+  padding-top: var(--space-3);
+}
+
+.topic-pick-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.topic-pick-list button {
+  font-size: 0.85rem;
+}
+
+/* ---------------- Feedback panel ---------------- */
+
+.feedback-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  border-top: 1px solid var(--border);
+  padding-top: var(--space-3);
+}
+
+.feedback-field h3,
+.feedback-field h4 {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--text-subtle);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: var(--space-1);
+}
+
+.feedback-original {
+  color: var(--text-muted);
+  line-height: 1.6;
+}
+
+.feedback-diff,
+.feedback-reasons,
+.feedback-retry-prompt {
+  color: var(--text);
+  line-height: 1.7;
+}
+
+.diff-added {
+  background: var(--diff-added-soft);
+  color: var(--diff-added);
+  border-radius: 3px;
+  padding: 0 2px;
+}
+
+.diff-removed {
+  background: var(--diff-removed-soft);
+  color: var(--diff-removed);
+  text-decoration: line-through;
+  border-radius: 3px;
+  padding: 0 2px;
+}
+
+/* ---------------- Mistake card picker ---------------- */
+
+.mistake-card-picker {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  border-top: 1px solid var(--border);
+  padding-top: var(--space-3);
+}
+
+.mistake-card-item {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  font-size: 0.9rem;
+}
+
+.mistake-card-reading,
+.mistake-card-meaning {
+  color: var(--text-muted);
+}
+
+/* ---------------- Review view ---------------- */
+
+.review-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-4);
+  text-align: center;
+  padding: var(--space-4) 0;
+}
+
+.review-progress {
+  color: var(--text-subtle);
+  font-size: 0.85rem;
+}
+
+.review-prompt {
+  font-size: 1.4rem;
+  font-weight: 600;
+}
+
+.review-answer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.review-answer-front {
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+
+.review-answer-reading {
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+.review-answer-meaning {
+  color: var(--text);
+}
+
+.review-answer-example,
+.review-answer-context {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+.grade-buttons {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.grade-button {
+  font-weight: 600;
+  color: var(--on-primary);
+}
+
+.grade-button-again {
+  background: var(--grade-again);
+  border-color: var(--grade-again);
+}
+
+.grade-button-hard {
+  background: var(--grade-hard);
+  border-color: var(--grade-hard);
+}
+
+.grade-button-good {
+  background: var(--grade-good);
+  border-color: var(--grade-good);
+}
+
+.grade-button-easy {
+  background: var(--grade-easy);
+  border-color: var(--grade-easy);
+}
+
+/* ---------------- Cards view ---------------- */
+
+.card-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.card-list-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-s);
+  background: var(--surface-2);
+}
+
+.card-list-reading,
+.card-list-meaning {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+.card-list-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-shrink: 0;
+}
+
+.due-badge {
+  font-size: 0.75rem;
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-pill);
+  background: var(--surface-3);
+  color: var(--text-subtle);
+}
+
+.due-badge-ready {
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+
+.source-badge {
+  font-size: 0.75rem;
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-pill);
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+
+/* ---------------- Language select (Settings / Onboarding / Practice) ---------------- */
+
+.language-select {
+  position: relative;
+}
+
+.language-select-trigger {
+  width: 100%;
+  justify-content: space-between;
+  background: var(--surface-2);
+}
+
+.language-select-trigger.open {
+  border-color: var(--primary-border);
+}
+
+.language-select-menu {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + var(--space-1));
+  left: 0;
+  right: 0;
+  max-height: 280px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-2);
+  background: var(--elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-m);
+  box-shadow: var(--shadow-3);
+}
+
+.language-select-search {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  margin-bottom: var(--space-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-s);
+  background: var(--surface-2);
+  color: var(--text-subtle);
+}
+
+.language-select-search input {
+  flex: 1;
+  border: none;
+  background: transparent;
+  color: var(--text);
+}
+
+.language-select-search input:focus {
+  outline: none;
+}
+
+.language-select-option {
+  justify-content: flex-start;
+  border: none;
+  background: transparent;
+  text-align: left;
+  border-radius: var(--radius-s);
+}
+
+.language-select-option.current {
+  background: var(--primary-soft);
+  color: var(--primary);
+  font-weight: 600;
+}
+
+.language-select-empty {
+  padding: var(--space-2) var(--space-3);
+  color: var(--text-subtle);
+  font-size: 0.85rem;
+}
+
+/* Target-language chips (Settings, Onboarding): one per language the
+   learner is currently studying, with a remove control. */
+.language-chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.language-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2) var(--space-1) var(--space-3);
+  border-radius: var(--radius-pill);
+  background: var(--primary-soft);
+  color: var(--primary);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.language-chip button {
+  padding: 2px;
+  width: 20px;
+  height: 20px;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--primary);
+}
+
+.language-chip button:hover:not(:disabled) {
+  background: var(--primary-soft-strong);
+}
+
+/* Small language badge used on cards/topics to show which target language
+   they belong to when the learner studies more than one at once. */
+.language-badge {
+  font-size: 0.75rem;
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-pill);
+  background: var(--surface-3);
+  color: var(--text-muted);
+}
+
+/* ---------------- Settings view ---------------- */
+
+.preset-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.preset-item {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+
+.preset-item-active {
+  background: var(--primary-soft);
+  border-color: var(--primary-border);
+  color: var(--primary);
+}
+
+.preset-item-label {
+  font-weight: 600;
+  font-size: 0.85rem;
+}
+
+.preset-item-model {
+  font-size: 0.75rem;
+  color: var(--text-subtle);
+}
+
+/* ---------------- History view ---------------- */
+
+.history-topic-toggle {
+  font-size: 1.05rem;
+  font-weight: 700;
+  padding: 0;
+}
+
+.history-detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  border-top: 1px solid var(--border);
+  padding-top: var(--space-3);
+}
+
+.history-round {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  background: var(--surface-2);
+  border-radius: var(--radius-m);
+}
+
+.history-round h3 {
+  font-size: 0.9rem;
+  color: var(--primary);
+}
