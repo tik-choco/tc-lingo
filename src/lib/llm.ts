@@ -9,6 +9,7 @@ import { streamChatCompletion } from "@tik-choco/mistai";
 import type { ResolvedLlmTargetV1 } from "./llmConfig";
 import { parseCardCandidates, parseFeedback, parseTopicFanOutPlan, parseTopicSuggestion } from "./parse";
 import type { CardCandidate, FeedbackResult, TopicFanOutPlan, TopicSuggestion } from "./parse";
+import { readingSpec } from "./languages";
 
 function chatConfig(target: ResolvedLlmTargetV1) {
   return {
@@ -108,9 +109,10 @@ export async function requestMistakeCards(params: {
   corrected: string;
   reasons: string;
 }): Promise<CardCandidate[]> {
+  const reading = readingSpec(params.targetLanguage);
   const content = await chatJson(
     params.target,
-    `You are TC Lingo's flashcard extractor. From a learner's original attempt, the corrected ${params.targetLanguage} version, and the explanation of what changed, pick 1 to 3 of the most reusable words or short phrases the learner should drill (prioritize things they got wrong or phrased awkwardly, not things that were already correct). For each, return a card. Return only JSON: an array of objects, each with exactly these keys: "front" (the ${params.targetLanguage} word/phrase), "reading" (pronunciation help if useful for ${params.targetLanguage}, else empty string), "meaning" (translation/definition in ${params.nativeLanguage}), "exampleSentence" (a natural short example sentence in ${params.targetLanguage} using it, ideally adapted from the corrected text), "context" (when/how it's used, in ${params.nativeLanguage}), "cloze" (the example sentence with the front word/phrase replaced by "___"). Return an empty array if nothing is worth drilling.`,
+    `You are TC Lingo's flashcard extractor. From a learner's original attempt, the corrected ${params.targetLanguage} version, and the explanation of what changed, pick 1 to 3 of the most reusable words or short phrases the learner should drill (prioritize things they got wrong or phrased awkwardly, not things that were already correct). For each, return a card. Return only JSON: an array of objects, each with exactly these keys: "front" (the ${params.targetLanguage} word/phrase), "reading" (${reading.llmInstruction}), "meaning" (translation/definition in ${params.nativeLanguage}), "exampleSentence" (a natural short example sentence in ${params.targetLanguage} using it, ideally adapted from the corrected text), "context" (when/how it's used, in ${params.nativeLanguage}), "cloze" (the example sentence with the front word/phrase replaced by "___"). Return an empty array if nothing is worth drilling.`,
     { original: params.original, corrected: params.corrected, reasons: params.reasons },
   );
   return parseCardCandidates(content);

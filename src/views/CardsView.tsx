@@ -2,7 +2,7 @@ import { useEffect, useState } from "preact/hooks";
 import { Trash2 } from "lucide-preact";
 import { addCard, deleteCard, loadCards, subscribeCards } from "../lib/cards";
 import { loadSettings, subscribeSettings } from "../lib/settings";
-import { languageDisplayName } from "../lib/languages";
+import { languageDisplayName, readingSpec } from "../lib/languages";
 import { LanguageSelect } from "../components/LanguageSelect";
 import type { Card } from "../types";
 
@@ -62,6 +62,9 @@ export function CardsView() {
   const visible = cards.filter((c) => !c.language || c.language === settings.activeLanguage);
   const sorted = [...visible].sort((a, b) => new Date(a.dueAt).getTime() - new Date(b.dueAt).getTime());
 
+  const cardLanguage = settings.targetLanguages.length > 1 ? language : settings.targetLanguages[0];
+  const readingField = readingSpec(cardLanguage);
+
   return (
     <div class="view-container cards-view">
       <section class="card-panel">
@@ -79,8 +82,13 @@ export function CardsView() {
               <input type="text" value={front} onInput={(e) => setFront((e.target as HTMLInputElement).value)} />
             </label>
             <label>
-              読み方(任意)
-              <input type="text" value={reading} onInput={(e) => setReading((e.target as HTMLInputElement).value)} />
+              {readingField.label}(任意)
+              <input
+                type="text"
+                value={reading}
+                onInput={(e) => setReading((e.target as HTMLInputElement).value)}
+                placeholder={readingField.placeholder}
+              />
             </label>
             <label>
               意味
