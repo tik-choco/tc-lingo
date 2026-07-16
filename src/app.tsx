@@ -15,7 +15,8 @@ import { loadSettings, setActiveLanguage, subscribeSettings } from "./lib/settin
 import { languageDisplayName } from "./lib/languages";
 import { applyUiLanguageForNative, getUiSourceMessages, setUiOverlay, subscribeUiMessages, t } from "./i18n";
 import { translateUiMessages } from "./lib/uiTranslation";
-import { useLlmPreset } from "./hooks/useLlmPreset";
+import { useLlmConnection } from "./hooks/useLlmConnection";
+import { useNetworkConsumerConnection } from "./hooks/useNetworkConsumerConnection";
 
 const TABS: { id: MainTab; labelKey: string; icon: typeof PenLine }[] = [
   { id: "practice", labelKey: "app-tab-practice", icon: PenLine },
@@ -38,9 +39,15 @@ export function App() {
   // The UI language follows the native language (i18n/index.ts). Re-render
   // the whole tree whenever the active message table changes (language
   // switch, or an LLM-translated overlay arriving).
-  const { target } = useLlmPreset();
+  const { target, mode, roomId, connection } = useLlmConnection();
   const [, setMessagesVersion] = useState(0);
   useEffect(() => subscribeUiMessages(() => setMessagesVersion((v) => v + 1)), []);
+
+  // Eagerly (re)connects the AI Network consumer session whenever that's the
+  // configured transport, instead of waiting for the first LLM call to join
+  // the room lazily. Reconnects on a room id change, disconnects when the
+  // mode is switched back to "api" or the room id is cleared.
+  useNetworkConsumerConnection({ enabled: mode === "network" && roomId !== "", roomId });
 
   // Languages without a built-in dictionary get their UI strings translated
   // once by the configured LLM and cached; until that resolves (or if no LLM
@@ -48,11 +55,11 @@ export function App() {
   const uiTranslationInFlight = useRef("");
   useEffect(() => {
     if (applyUiLanguageForNative(settings.nativeLanguage) !== "needs-translation") return;
-    if (!target) return;
+    if (!connection) return;
     const language = settings.nativeLanguage;
     if (uiTranslationInFlight.current === language) return;
     uiTranslationInFlight.current = language;
-    void translateUiMessages({ target, language, messages: getUiSourceMessages() })
+    void translateUiMessages({ connection, language, messages: getUiSourceMessages() })
       .then((messages) => setUiOverlay(language, messages))
       .catch(() => {
         // No usable LLM or an unparsable answer: the UI stays in English.
@@ -60,7 +67,11 @@ export function App() {
       .finally(() => {
         if (uiTranslationInFlight.current === language) uiTranslationInFlight.current = "";
       });
-  }, [settings.nativeLanguage, target]);
+    // `connection` is a freshly-allocated object on every resolve, so depend
+    // on its stable identity fields instead (mode + which target/room it
+    // points at) to avoid re-running this effect on every unrelated
+    // re-resolve (e.g. an unrelated settings change firing subscribeSettings).
+  }, [settings.nativeLanguage, mode, target?.presetId, roomId]);
 
   useEffect(() => {
     if (mainRef.current) mainRef.current.scrollTop = 0;

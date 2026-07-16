@@ -60,7 +60,18 @@ export interface PracticeAttempt {
   reasons: string;
   retryPrompt: string;
   retryAnswer: string;
+  /** AI-corrected version of retryAnswer, from a learner-triggered "check my
+   * answer" pass over the retry (see PracticeView). "" until checked. */
+  retryCorrected: string;
+  /** Explanation for retryCorrected, in the learner's native language. */
+  retryReasons: string;
 }
+
+/** Which transport the app's LLM calls should use: a direct API preset from
+ * the shared llm config (see lib/llmConfig.ts), or the P2P AI Network room
+ * (mistllm-wire v1) configured at `llmConfig.network.roomId`. See
+ * lib/llmConnection.ts for how this is resolved into an actual connection. */
+export type LlmConnectionMode = "api" | "network";
 
 /** Supports studying more than one language at once: `targetLanguages` is
  * the full set the learner is juggling, `activeLanguage` (always a member of
@@ -72,4 +83,5 @@ export interface LingoSettings {
   activeLanguage: string;
   nativeLanguage: string;
   presetId: string;
+  connectionMode: LlmConnectionMode;
 }

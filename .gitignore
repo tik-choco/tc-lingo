@@ -12,6 +12,11 @@ dist
 dist-ssr
 *.local
 
+.env
+.env.*
+!.env.example
+.mistlib-src/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

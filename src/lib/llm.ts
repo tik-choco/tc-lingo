@@ -1,15 +1,18 @@
 // LLM calls: structured output+correction feedback, topic suggestion, and
 // mistake→flashcard extraction. All three are one-shot JSON requests
 // (stream: false semantics achieved by ignoring onDelta) against whichever
-// shared preset the user has configured — see lib/llmConfig.ts and
-// lib/settings.ts. Direct HTTP only; no P2P Network transport (unlike some
-// sibling apps) since that would need vendoring the mistlib WASM build,
-// which this app's MVP scope doesn't need.
+// connection the user has configured — either a direct API preset (see
+// lib/llmConfig.ts and lib/settings.ts) or the P2P AI Network room
+// (mistllm-wire v1, see lib/network.ts / lib/llmConnection.ts). Callers pass
+// a resolved `LlmConnection`; this module just branches on its `kind`.
 import { streamChatCompletion } from "@tik-choco/mistai";
+import type { ChatMessage } from "@tik-choco/mistai";
 import { t } from "../i18n";
 import type { ResolvedLlmTargetV1 } from "./llmConfig";
-import { parseCardCandidates, parseFeedback, parseTopicFanOutPlan, parseTopicSuggestion } from "./parse";
-import type { CardCandidate, FeedbackResult, TopicFanOutPlan, TopicSuggestion } from "./parse";
+import type { LlmConnection } from "./llmConnection";
+import { requestNetworkChat } from "./network";
+import { parseCardCandidates, parseFeedback, parseRetryFeedback, parseTopicFanOutPlan, parseTopicSuggestion } from "./parse";
+import type { CardCandidate, FeedbackResult, RetryFeedbackResult, TopicFanOutPlan, TopicSuggestion } from "./parse";
 import { readingSpec } from "./languages";
 
 function chatConfig(target: ResolvedLlmTargetV1) {
@@ -22,11 +25,21 @@ function chatConfig(target: ResolvedLlmTargetV1) {
   };
 }
 
-async function chatJson(target: ResolvedLlmTargetV1, systemPrompt: string, userPayload: unknown): Promise<string> {
-  const content = await streamChatCompletion(chatConfig(target), [
+async function chatJson(connection: LlmConnection, systemPrompt: string, userPayload: unknown): Promise<string> {
+  const messages: ChatMessage[] = [
     { role: "system", content: systemPrompt },
     { role: "user", content: JSON.stringify(userPayload) },
-  ]);
+  ];
+  const content =
+    connection.kind === "network"
+      ? // Don't force this client's own (API-mode) model onto the request:
+        // the room's provider falls back to its own configured model
+        // whenever no model is specified, so omitting it here makes the
+        // network connection automatically use whatever model the connected
+        // peer has set up, instead of demanding a model name it may not
+        // offer. Same rationale as tc-translate's lib/llm.ts.
+        await requestNetworkChat(connection.roomId, messages, undefined)
+      : await streamChatCompletion(chatConfig(connection.target), messages);
   if (!content.trim()) throw new Error(t("error-empty-response"));
   return content;
 }
@@ -42,23 +55,51 @@ export async function testConnection(target: { baseUrl: string; apiKey: string; 
   if (!content.trim()) throw new Error(t("error-empty-test-response"));
 }
 
+/** Same round-trip as `testConnection`, but over the AI Network room instead
+ * of a direct API preset — used by the Settings/Onboarding room-id field's
+ * own "接続テスト" button. */
+export async function testNetworkConnection(roomId: string): Promise<void> {
+  const content = await requestNetworkChat(roomId, [{ role: "user", content: 'Connection test. Reply with only "OK".' }], undefined);
+  if (!content.trim()) throw new Error(t("error-empty-test-response"));
+}
+
 export async function requestFeedback(params: {
-  target: ResolvedLlmTargetV1;
+  connection: LlmConnection;
   targetLanguage: string;
   nativeLanguage: string;
   topicPrompt: string;
   userText: string;
 }): Promise<FeedbackResult> {
   const content = await chatJson(
-    params.target,
+    params.connection,
     `You are TC Lingo's writing/speaking coach. The learner is producing output in ${params.targetLanguage}; explanations must be written in ${params.nativeLanguage}. Given a topic prompt and the learner's attempt, correct their text naturally (fix grammar, word choice, and unnatural phrasing while preserving their intended meaning), explain the key reasons for each correction in ${params.nativeLanguage} (concise, bullet-like sentences), and propose one short follow-up question or variation in ${params.targetLanguage} that lets the learner immediately retry using the corrected pattern. Return only JSON with exactly these keys: "corrected" (the corrected ${params.targetLanguage} text), "reasons" (explanation in ${params.nativeLanguage}), "retryPrompt" (a short follow-up prompt in ${params.targetLanguage}). Do not restate the original text.`,
     { topicPrompt: params.topicPrompt, learnerText: params.userText },
   );
   return parseFeedback(content);
 }
 
+/** "Check my answer" pass over a retry (follow-up) answer: same corrected +
+ * reasons shape as requestFeedback but scoped to just the retry exchange, no
+ * further retryPrompt. Called on demand from PracticeView, not automatically
+ * on every retry keystroke. */
+export async function requestRetryFeedback(params: {
+  connection: LlmConnection;
+  targetLanguage: string;
+  nativeLanguage: string;
+  topicPrompt: string;
+  retryPrompt: string;
+  retryAnswer: string;
+}): Promise<RetryFeedbackResult> {
+  const content = await chatJson(
+    params.connection,
+    `You are TC Lingo's writing/speaking coach. The learner is producing output in ${params.targetLanguage}; explanations must be written in ${params.nativeLanguage}. They already got feedback on an initial attempt at the topic prompt, and are now answering a short follow-up question (retryPrompt) meant to let them retry using the corrected pattern. Given the topic prompt, the follow-up question, and the learner's answer to it, correct their answer naturally (fix grammar, word choice, and unnatural phrasing while preserving their intended meaning) and explain the key reasons for each correction in ${params.nativeLanguage} (concise, bullet-like sentences). Return only JSON with exactly these keys: "corrected" (the corrected ${params.targetLanguage} text), "reasons" (explanation in ${params.nativeLanguage}). Do not restate the original answer.`,
+    { topicPrompt: params.topicPrompt, retryPrompt: params.retryPrompt, retryAnswer: params.retryAnswer },
+  );
+  return parseRetryFeedback(content);
+}
+
 export async function requestTopicSuggestion(params: {
-  target: ResolvedLlmTargetV1;
+  connection: LlmConnection;
   targetLanguage: string;
   nativeLanguage: string;
   recentTitles: string[];
@@ -66,14 +107,24 @@ export async function requestTopicSuggestion(params: {
    * topics generated together across several languages feel coordinated
    * rather than random. Omit for a normal single-language suggestion. */
   theme?: string;
+  /** Optional due-for-review card fronts (spaced re-use, see CLAUDE.md's
+   * core loop diagram) to loosely weave into the generated topic, so
+   * practice output naturally re-exercises vocabulary the learner is due to
+   * review instead of always drawing on fresh words. Omit or pass [] for a
+   * normal suggestion with no review tie-in. */
+  reviewWords?: string[];
 }): Promise<TopicSuggestion> {
   const themeHint = params.theme
     ? ` Loosely build today's topic around this shared theme if it fits naturally: "${params.theme}". Don't force it — a good, natural topic beats a forced match.`
     : "";
+  const reviewHint =
+    params.reviewWords && params.reviewWords.length > 0
+      ? ` The learner is due to review these words/phrases (reviewWords): pick 1-2 that would fit naturally into the topic, and include a sentence in prompt nudging the learner to try using them. If none of them fit naturally, ignore reviewWords entirely — a good, natural topic beats a forced vocabulary match.`
+      : "";
   const content = await chatJson(
-    params.target,
-    `You are TC Lingo's topic generator. Suggest one short, concrete daily speaking/writing topic for a learner of ${params.targetLanguage} (whose native language is ${params.nativeLanguage}), answerable in about 60-90 seconds or a short paragraph. Prefer everyday, personal, or opinion topics over abstract ones. Avoid repeating any topic in recentTitles.${themeHint} Return only JSON with exactly these keys: "title" (a short label in ${params.nativeLanguage}), "prompt" (the actual instruction/question, written in ${params.targetLanguage}).`,
-    { recentTitles: params.recentTitles },
+    params.connection,
+    `You are TC Lingo's topic generator. Suggest one short, concrete daily speaking/writing topic for a learner of ${params.targetLanguage} (whose native language is ${params.nativeLanguage}), answerable in about 60-90 seconds or a short paragraph. Prefer everyday, personal, or opinion topics over abstract ones. Avoid repeating any topic in recentTitles.${themeHint}${reviewHint} Return only JSON with exactly these keys: "title" (a short label in ${params.nativeLanguage}), "prompt" (the actual instruction/question, written in ${params.targetLanguage}).`,
+    { recentTitles: params.recentTitles, reviewWords: params.reviewWords ?? [] },
   );
   return parseTopicSuggestion(content);
 }
@@ -86,7 +137,7 @@ export async function requestTopicSuggestion(params: {
  * in parallel — same orchestrator-plans/worker-executes shape as
  * tc-translate's lib/simultaneousTranslate.ts planTranslationFanOut. */
 export async function planTopicFanOut(params: {
-  target: ResolvedLlmTargetV1;
+  connection: LlmConnection;
   nativeLanguage: string;
   candidateLanguages: string[];
   recentTitlesByLanguage: Record<string, string[]>;
@@ -95,7 +146,7 @@ export async function planTopicFanOut(params: {
     return { theme: "", targets: params.candidateLanguages };
   }
   const content = await chatJson(
-    params.target,
+    params.connection,
     `You are the orchestrator for TC Lingo's multi-language practice planner. The learner studies several languages at once: ${params.candidateLanguages.join(", ")} (native language: ${params.nativeLanguage}). Given each language's recently used topic titles (recentTitlesByLanguage), pick one short shared theme, written in ${params.nativeLanguage}, that today's topics across all these languages can loosely share, and decide which of the candidate languages should get a freshly generated topic dispatched to a topic-generation worker this round — normally all of them. Return only JSON: {"theme": string, "targets": string[]}. "targets" must be a subset of candidateLanguages, in their original order.`,
     { candidateLanguages: params.candidateLanguages, recentTitlesByLanguage: params.recentTitlesByLanguage },
   );
@@ -103,7 +154,7 @@ export async function planTopicFanOut(params: {
 }
 
 export async function requestMistakeCards(params: {
-  target: ResolvedLlmTargetV1;
+  connection: LlmConnection;
   targetLanguage: string;
   nativeLanguage: string;
   original: string;
@@ -112,7 +163,7 @@ export async function requestMistakeCards(params: {
 }): Promise<CardCandidate[]> {
   const reading = readingSpec(params.targetLanguage);
   const content = await chatJson(
-    params.target,
+    params.connection,
     `You are TC Lingo's flashcard extractor. From a learner's original attempt, the corrected ${params.targetLanguage} version, and the explanation of what changed, pick 1 to 3 of the most reusable words or short phrases the learner should drill (prioritize things they got wrong or phrased awkwardly, not things that were already correct). For each, return a card. Return only JSON: an array of objects, each with exactly these keys: "front" (the ${params.targetLanguage} word/phrase), "reading" (${reading.llmInstruction}), "meaning" (translation/definition in ${params.nativeLanguage}), "exampleSentence" (a natural short example sentence in ${params.targetLanguage} using it, ideally adapted from the corrected text), "context" (when/how it's used, in ${params.nativeLanguage}), "cloze" (the example sentence with the front word/phrase replaced by "___"). Return an empty array if nothing is worth drilling.`,
     { original: params.original, corrected: params.corrected, reasons: params.reasons },
   );

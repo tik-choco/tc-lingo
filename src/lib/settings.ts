@@ -4,7 +4,7 @@
 // should use by default. Persisted at tc-lingo:settings-v1 — NOT the shared
 // LLM connection details themselves, those live in the co-owned
 // tc-shared-llm-config-v1 key.
-import type { LingoSettings } from "../types";
+import type { LingoSettings, LlmConnectionMode } from "../types";
 import { loadJson, saveJson, subscribeStorage } from "./storage";
 
 const STORAGE_NAME = "settings-v1";
@@ -50,10 +50,29 @@ function detectNativeLanguage(): string {
 function defaultSettings(): LingoSettings {
   const nativeLanguage = detectNativeLanguage();
   const target = nativeLanguage === "English" ? "Japanese" : "English";
-  return { targetLanguages: [target], activeLanguage: target, nativeLanguage, presetId: "" };
+  return { targetLanguages: [target], activeLanguage: target, nativeLanguage, presetId: "", connectionMode: "api" };
 }
 
 function isLingoSettings(value: unknown): value is LingoSettings {
+  if (value === null || typeof value !== "object") return false;
+  const r = value as Record<string, unknown>;
+  return (
+    Array.isArray(r.targetLanguages) &&
+    r.targetLanguages.every((l) => typeof l === "string") &&
+    typeof r.activeLanguage === "string" &&
+    typeof r.nativeLanguage === "string" &&
+    typeof r.presetId === "string" &&
+    (r.connectionMode === "api" || r.connectionMode === "network")
+  );
+}
+
+/** Pre-AI-Network shape (same fields as `LingoSettings` minus
+ * `connectionMode`). Migrated in-place on load — missing `connectionMode`
+ * defaults to "api" — so existing installs keep behaving as direct API
+ * connections instead of silently falling back to the defaults. */
+function isPreConnectionModeSettings(
+  value: unknown,
+): value is { targetLanguages: string[]; activeLanguage: string; nativeLanguage: string; presetId: string } {
   if (value === null || typeof value !== "object") return false;
   const r = value as Record<string, unknown>;
   return (
@@ -84,12 +103,24 @@ export function loadSettings(): LingoSettings {
     if (!raw.targetLanguages.includes(raw.activeLanguage)) return { ...raw, activeLanguage: raw.targetLanguages[0] };
     return raw;
   }
+  if (isPreConnectionModeSettings(raw)) {
+    const migrated: LingoSettings = { ...raw, connectionMode: "api" };
+    if (migrated.targetLanguages.length === 0) {
+      const fallback = defaultSettings().targetLanguages[0];
+      return { ...migrated, targetLanguages: [fallback], activeLanguage: fallback };
+    }
+    if (!migrated.targetLanguages.includes(migrated.activeLanguage)) {
+      return { ...migrated, activeLanguage: migrated.targetLanguages[0] };
+    }
+    return migrated;
+  }
   if (isLegacySettings(raw)) {
     return {
       targetLanguages: [raw.targetLanguage],
       activeLanguage: raw.targetLanguage,
       nativeLanguage: raw.nativeLanguage,
       presetId: raw.presetId,
+      connectionMode: "api",
     };
   }
   return defaultSettings();
@@ -132,6 +163,15 @@ export function setActiveLanguage(language: string): LingoSettings {
   const current = loadSettings();
   if (!current.targetLanguages.includes(language)) return current;
   const next: LingoSettings = { ...current, activeLanguage: language };
+  saveSettings(next);
+  return next;
+}
+
+/** Switches this app's LLM transport between a direct API preset and the AI
+ * Network room (see lib/llmConnection.ts for how this is resolved). */
+export function setConnectionMode(mode: LlmConnectionMode): LingoSettings {
+  const current = loadSettings();
+  const next: LingoSettings = { ...current, connectionMode: mode };
   saveSettings(next);
   return next;
 }

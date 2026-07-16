@@ -1,10 +1,13 @@
 // Runtime UI localization for native languages without a hand-written
 // dictionary (see i18n/index.ts): the English source strings are translated
 // once by the configured LLM and cached. Ported from tc-translate's
-// lib/uiTranslation.ts, using this app's ResolvedLlmTargetV1 connection.
+// lib/uiTranslation.ts, using this app's resolved LlmConnection (direct API
+// preset or AI Network room — see lib/llmConnection.ts).
 import { streamChatCompletion } from "@tik-choco/mistai";
+import type { ChatMessage } from "@tik-choco/mistai";
 import type { MessageTable } from "../i18n/types";
-import type { ResolvedLlmTargetV1 } from "./llmConfig";
+import type { LlmConnection } from "./llmConnection";
+import { requestNetworkChat } from "./network";
 
 function extractJsonObject(text: string): Record<string, unknown> {
   const start = text.indexOf("{");
@@ -27,32 +30,37 @@ function placeholderSignature(value: string): string {
  * usable table.
  */
 export async function translateUiMessages(params: {
-  target: ResolvedLlmTargetV1;
+  connection: LlmConnection;
   language: string;
   messages: MessageTable;
 }): Promise<MessageTable> {
-  const { target, language, messages } = params;
-  const content = await streamChatCompletion(
+  const { connection, language, messages } = params;
+  const chatMessages: ChatMessage[] = [
     {
-      baseUrl: target.baseUrl.trim().replace(/\/+$/, ""),
-      apiKey: target.apiKey,
-      model: target.model,
-      temperature: target.temperature,
-      reasoningEffort: target.reasoningEffort,
+      role: "system",
+      content:
+        `You localize the user interface of a language-learning app. Translate every value of the JSON object the user sends from English into ${language}. ` +
+        "Respond with ONLY a valid JSON object containing exactly the same keys. " +
+        "Keep placeholder tokens such as {count} or {language} exactly as they are. " +
+        "Leave technical terms like API, Base URL, and product/model names untranslated. " +
+        "Keep translations concise; they are UI labels and short hints.",
     },
-    [
-      {
-        role: "system",
-        content:
-          `You localize the user interface of a language-learning app. Translate every value of the JSON object the user sends from English into ${language}. ` +
-          "Respond with ONLY a valid JSON object containing exactly the same keys. " +
-          "Keep placeholder tokens such as {count} or {language} exactly as they are. " +
-          "Leave technical terms like API, Base URL, and product/model names untranslated. " +
-          "Keep translations concise; they are UI labels and short hints.",
-      },
-      { role: "user", content: JSON.stringify(messages) },
-    ],
-  );
+    { role: "user", content: JSON.stringify(messages) },
+  ];
+  const content =
+    connection.kind === "network"
+      ? // See lib/llm.ts's chatJson for why no model is passed here.
+        await requestNetworkChat(connection.roomId, chatMessages, undefined)
+      : await streamChatCompletion(
+          {
+            baseUrl: connection.target.baseUrl.trim().replace(/\/+$/, ""),
+            apiKey: connection.target.apiKey,
+            model: connection.target.model,
+            temperature: connection.target.temperature,
+            reasoningEffort: connection.target.reasoningEffort,
+          },
+          chatMessages,
+        );
 
   const parsed = extractJsonObject(content);
   const result: MessageTable = {};

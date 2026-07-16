@@ -295,6 +295,57 @@ button:disabled {
   font-weight: 600;
 }
 
+.review-recall-instruction {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.review-prompt-hint {
+  color: var(--text-muted);
+  font-size: 0.95rem;
+}
+
+.review-hint-label {
+  color: var(--text-subtle);
+  font-weight: 600;
+}
+
+.review-answer-form {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  max-width: 360px;
+}
+
+.review-answer-input {
+  flex: 1;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-s);
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.review-answer-input:focus {
+  border-color: var(--primary-border);
+}
+
+.review-answer-compare {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.review-answer-compare-label {
+  color: var(--text-subtle);
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
 .review-answer {
   display: flex;
   flex-direction: column;
@@ -404,6 +455,59 @@ button:disabled {
   border-radius: var(--radius-pill);
   background: var(--warning-soft);
   color: var(--warning);
+}
+
+.cloze-missing-badge {
+  font-size: 0.75rem;
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-pill);
+  background: var(--surface-3);
+  color: var(--text-subtle);
+}
+
+.card-list-entry {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.card-list-clickable {
+  cursor: pointer;
+}
+
+.card-list-detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border-radius: var(--radius-s);
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.card-detail-row {
+  font-size: 0.9rem;
+  color: var(--text);
+  line-height: 1.5;
+}
+
+.card-detail-label {
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-right: var(--space-2);
+}
+
+.card-detail-source {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.card-detail-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  font-size: 0.75rem;
+  color: var(--text-subtle);
 }
 
 /* ---------------- Language select (Settings / Onboarding / Practice) ---------------- */
@@ -557,6 +661,128 @@ button:disabled {
   color: var(--text-subtle);
 }
 
+/* Connection mode segmented toggle (直接API接続 / AI Network). */
+.connection-mode-toggle {
+  display: inline-flex;
+  align-self: flex-start;
+  padding: 2px;
+  gap: 2px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+}
+
+.connection-mode-button {
+  border: none;
+  background: transparent;
+  border-radius: var(--radius-pill);
+  padding: var(--space-1) var(--space-3);
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.connection-mode-button:hover:not(:disabled) {
+  background: var(--surface-3);
+  border-color: transparent;
+  color: var(--text);
+}
+
+.connection-mode-button-active {
+  background: var(--primary);
+  color: var(--on-primary);
+}
+
+.connection-mode-button-active:hover:not(:disabled) {
+  background: var(--primary-hover);
+  color: var(--on-primary);
+}
+
+/* AI Network room id + connection status (Settings, network mode only). */
+.network-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.network-status {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  background: var(--surface-2);
+  border-radius: var(--radius-m);
+  border: 1px solid transparent;
+}
+
+.network-status-error {
+  border-color: var(--danger-border);
+}
+
+.network-status-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.network-status-step {
+  position: relative;
+  padding: var(--space-1) var(--space-3) var(--space-1) var(--space-5);
+  border-radius: var(--radius-pill);
+  background: var(--surface-3);
+  color: var(--text-subtle);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.network-status-step::before {
+  content: "";
+  position: absolute;
+  left: var(--space-3);
+  top: 50%;
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-pill);
+  background: var(--text-subtle);
+  transform: translateY(-50%);
+}
+
+.network-status-step.done {
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+
+.network-status-step.done::before {
+  background: var(--primary);
+}
+
+.network-status-step.current {
+  background: var(--primary-soft-strong);
+  color: var(--primary);
+}
+
+.network-status-step.current::before {
+  background: var(--primary);
+  animation: network-status-pulse 1.4s var(--ease) infinite;
+}
+
+@keyframes network-status-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.network-status-timestamp {
+  font-size: 0.75rem;
+}
+
 /* ---------------- History view ---------------- */
 
 .history-topic-toggle {
@@ -585,4 +811,22 @@ button:disabled {
 .history-round h3 {
   font-size: 0.9rem;
   color: var(--primary);
+}
+
+.history-round-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.history-round-date,
+.history-last-practiced {
+  font-size: 0.75rem;
+  flex-shrink: 0;
+}
+
+.history-retry-qa {
+  border-top: 1px dashed var(--border);
+  padding-top: var(--space-2);
 }

@@ -5,6 +5,7 @@
 import { useEffect, useState } from "preact/hooks";
 import { RotateCw } from "lucide-preact";
 import { dueCards, gradeCard } from "../lib/cards";
+import { diffChars } from "../lib/diff";
 import type { Card, ReviewGrade } from "../types";
 import { loadSettings, subscribeSettings } from "../lib/settings";
 import { languageDisplayName } from "../lib/languages";
@@ -20,12 +21,17 @@ export function ReviewView() {
   const [index, setIndex] = useState(0);
   const [revealed, setRevealed] = useState(false);
   const [doneCount, setDoneCount] = useState(0);
+  // Optional retrieval-practice typing: the learner can type their recalled
+  // answer before revealing, and it's compared (trim-equality, else a char
+  // diff) against `front` once revealed. Cleared whenever the card changes.
+  const [typedAnswer, setTypedAnswer] = useState("");
 
   function refresh() {
     setQueue(dueCards(new Date(), settings.activeLanguage));
     setIndex(0);
     setRevealed(false);
     setDoneCount(0);
+    setTypedAnswer("");
   }
 
   useEffect(() => {
@@ -33,6 +39,7 @@ export function ReviewView() {
     setIndex(0);
     setRevealed(false);
     setDoneCount(0);
+    setTypedAnswer("");
   }, [settings.activeLanguage]);
 
   const current = queue[index] ?? null;
@@ -43,6 +50,7 @@ export function ReviewView() {
     setDoneCount((n) => n + 1);
     setIndex((i) => i + 1);
     setRevealed(false);
+    setTypedAnswer("");
   }
 
   return (
@@ -67,14 +75,54 @@ export function ReviewView() {
                 <span class="language-badge">{languageDisplayName(current.language)}</span>
               )}
             </p>
-            <p class="review-prompt">{current.cloze || current.front}</p>
-
-            {!revealed ? (
-              <button type="button" class="primary-button" onClick={() => setRevealed(true)}>
-                {t("review-reveal-answer")}
-              </button>
+            {current.cloze ? (
+              <>
+                <p class="review-prompt">{current.cloze}</p>
+                <p class="review-prompt-hint">
+                  <span class="review-hint-label">{t("review-hint-label")}</span> {current.meaning}
+                </p>
+              </>
             ) : (
               <>
+                <p class="review-recall-instruction">{t("review-recall-instruction")}</p>
+                <p class="review-prompt">{current.meaning}</p>
+                {current.context && <p class="review-prompt-hint">{current.context}</p>}
+              </>
+            )}
+
+            {!revealed ? (
+              <div class="review-answer-form">
+                <input
+                  type="text"
+                  class="review-answer-input"
+                  value={typedAnswer}
+                  placeholder={t("review-answer-input-placeholder")}
+                  onInput={(e) => setTypedAnswer((e.target as HTMLInputElement).value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") setRevealed(true);
+                  }}
+                />
+                <button type="button" class="primary-button" onClick={() => setRevealed(true)}>
+                  {t("review-reveal-answer")}
+                </button>
+              </div>
+            ) : (
+              <>
+                {typedAnswer.trim() &&
+                  (typedAnswer.trim() === current.front.trim() ? (
+                    <p class="hint-text status-ok">{t("review-answer-correct")}</p>
+                  ) : (
+                    <div class="review-answer-compare">
+                      <p class="review-answer-compare-label">{t("review-answer-your-answer")}</p>
+                      <p class="feedback-diff">
+                        {diffChars(typedAnswer.trim(), current.front).map((chunk, i) => (
+                          <span key={i} class={chunk.op === "same" ? undefined : `diff-${chunk.op}`}>
+                            {chunk.text}
+                          </span>
+                        ))}
+                      </p>
+                    </div>
+                  ))}
                 <div class="review-answer">
                   <p class="review-answer-front">
                     {current.front}

@@ -10,7 +10,11 @@ import { diffChars } from "../lib/diff";
 import { FeedbackPanel } from "../components/FeedbackPanel";
 import { loadSettings, subscribeSettings } from "../lib/settings";
 import { languageDisplayName } from "../lib/languages";
-import { t } from "../i18n";
+import { t, getUiLanguage } from "../i18n";
+
+function formatAttemptDate(createdAt: string): string {
+  return new Date(createdAt).toLocaleDateString(getUiLanguage());
+}
 
 function DiffLine({ before, after }: { before: string; after: string }) {
   const chunks = diffChars(before, after);
@@ -52,6 +56,7 @@ export function HistoryView() {
       {topics.map((topic) => {
         const attempts = attemptsForTopic(topic.id);
         const open = openTopicId === topic.id;
+        const lastAttempt = attempts.length > 0 ? attempts[attempts.length - 1] : null;
         return (
           <section class="card-panel" key={topic.id}>
             <div class="topic-header">
@@ -61,6 +66,11 @@ export function HistoryView() {
               <div class="button-row">
                 {settings.targetLanguages.length > 1 && topic.language && (
                   <span class="language-badge">{languageDisplayName(topic.language)}</span>
+                )}
+                {lastAttempt && (
+                  <span class="history-last-practiced hint-text">
+                    {t("history-last-practiced", { date: formatAttemptDate(lastAttempt.createdAt) })}
+                  </span>
                 )}
                 <span class="round-badge">{attempts.length}/3</span>
                 <button
@@ -84,23 +94,46 @@ export function HistoryView() {
                   const prev = i > 0 ? attempts[i - 1] : null;
                   return (
                     <div class="history-round" key={attempt.id}>
-                      <h3>{t("history-round-label", { round: attempt.round })}</h3>
+                      <div class="history-round-header">
+                        <h3>{t("history-round-label", { round: attempt.round })}</h3>
+                        <span class="history-round-date hint-text">{formatAttemptDate(attempt.createdAt)}</span>
+                      </div>
                       {prev && (
                         <div class="feedback-field">
                           <h4>{t("history-diff-heading")}</h4>
                           <DiffLine before={prev.corrected} after={attempt.original} />
                         </div>
                       )}
+                      {/* retryPrompt is deliberately blanked here: the Q&A block
+                          below owns the follow-up question so it isn't shown twice. */}
                       <FeedbackPanel
                         original={attempt.original}
                         corrected={attempt.corrected}
                         reasons={attempt.reasons}
-                        retryPrompt={attempt.retryPrompt}
+                        retryPrompt=""
                       />
-                      {attempt.retryAnswer && (
-                        <div class="feedback-field">
+                      {attempt.retryPrompt && (
+                        <div class="feedback-field history-retry-qa">
+                          <h4>{t("practice-feedback-retry-prompt")}</h4>
+                          <p class="feedback-retry-prompt">{attempt.retryPrompt}</p>
                           <h4>{t("history-retry-answer-heading")}</h4>
-                          <p class="feedback-original">{attempt.retryAnswer}</p>
+                          {attempt.retryAnswer ? (
+                            <p class="feedback-original">{attempt.retryAnswer}</p>
+                          ) : (
+                            <p class="hint-text">{t("history-retry-not-answered")}</p>
+                          )}
+                          {attempt.retryCorrected && (
+                            <>
+                              <h4>{t("practice-feedback-corrected")}</h4>
+                              <DiffLine before={attempt.retryAnswer} after={attempt.retryCorrected} />
+                              {attempt.retryReasons && (
+                                <>
+                                  <h4>{t("practice-feedback-reasons")}</h4>
+                                  <p class="feedback-reasons">{attempt.retryReasons}</p>
+                                </>
+                              )}
+                            </>
+                          )}
                         </div>
                       )}
                     </div>

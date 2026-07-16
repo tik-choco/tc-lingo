@@ -32,7 +32,9 @@ function isAttempt(value: unknown): value is PracticeAttempt {
     typeof r.corrected === "string" &&
     typeof r.reasons === "string" &&
     typeof r.retryPrompt === "string" &&
-    typeof r.retryAnswer === "string"
+    typeof r.retryAnswer === "string" &&
+    (r.retryCorrected === undefined || typeof r.retryCorrected === "string") &&
+    (r.retryReasons === undefined || typeof r.retryReasons === "string")
   );
 }
 
@@ -48,9 +50,14 @@ function saveTopics(topics: Topic[]): void {
   saveJson(TOPICS_NAME, topics);
 }
 
+/** `retryCorrected`/`retryReasons` predate the retry-check feature on some
+ * saved attempts — backfilled to "" (unchecked) rather than dropped, same
+ * pattern as cards.ts's `language` backfill. */
 export function loadAttempts(): PracticeAttempt[] {
   const raw = loadJson<unknown[]>(ATTEMPTS_NAME, []);
-  return Array.isArray(raw) ? raw.filter(isAttempt) : [];
+  return Array.isArray(raw)
+    ? raw.filter(isAttempt).map((a) => ({ ...a, retryCorrected: a.retryCorrected ?? "", retryReasons: a.retryReasons ?? "" }))
+    : [];
 }
 
 function saveAttempts(attempts: PracticeAttempt[]): void {
@@ -105,6 +112,8 @@ export interface NewAttemptInput {
   reasons?: string;
   retryPrompt?: string;
   retryAnswer?: string;
+  retryCorrected?: string;
+  retryReasons?: string;
 }
 
 export function addAttempt(input: NewAttemptInput): PracticeAttempt {
@@ -118,6 +127,8 @@ export function addAttempt(input: NewAttemptInput): PracticeAttempt {
     reasons: input.reasons ?? "",
     retryPrompt: input.retryPrompt ?? "",
     retryAnswer: input.retryAnswer ?? "",
+    retryCorrected: input.retryCorrected ?? "",
+    retryReasons: input.retryReasons ?? "",
   };
   saveAttempts([...loadAttempts(), attempt]);
   return attempt;

@@ -30,6 +30,21 @@ export function parseFeedback(content: string): FeedbackResult {
   return { corrected, reasons, retryPrompt };
 }
 
+export interface RetryFeedbackResult {
+  corrected: string;
+  reasons: string;
+}
+
+/** Same shape as FeedbackResult minus retryPrompt — used for the "check my
+ * answer" pass over a follow-up retry answer (requestRetryFeedback). */
+export function parseRetryFeedback(content: string): RetryFeedbackResult {
+  const parsed = extractJson(content) as Record<string, unknown>;
+  const corrected = typeof parsed.corrected === "string" ? parsed.corrected : "";
+  const reasons = typeof parsed.reasons === "string" ? parsed.reasons : "";
+  if (!corrected) throw new Error(t("error-missing-correction"));
+  return { corrected, reasons };
+}
+
 export interface TopicSuggestion {
   title: string;
   prompt: string;

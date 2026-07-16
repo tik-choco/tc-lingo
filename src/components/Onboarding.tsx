@@ -12,6 +12,7 @@ import {
   History,
   Languages,
   Layers,
+  Network,
   PenLine,
   Plug,
   Repeat2,
@@ -20,8 +21,17 @@ import {
 } from "lucide-preact";
 import { fetchModels } from "@tik-choco/mistai";
 import { ensurePreset, ensureProvider, loadLlmConfig, saveLlmConfig } from "../lib/llmConfig";
-import { testConnection } from "../lib/llm";
-import { addTargetLanguage, loadSettings, removeTargetLanguage, saveSettings } from "../lib/settings";
+import { testConnection, testNetworkConnection } from "../lib/llm";
+import { setSharedNetworkRoomId } from "../lib/llmConnection";
+import { localizeNetworkError } from "../lib/network";
+import type { LlmConnectionMode } from "../types";
+import {
+  addTargetLanguage,
+  loadSettings,
+  removeTargetLanguage,
+  saveSettings,
+  setConnectionMode,
+} from "../lib/settings";
 import { languageDisplayName } from "../lib/languages";
 import { LanguageSelect } from "./LanguageSelect";
 import { t } from "../i18n";
@@ -44,12 +54,25 @@ function inputValue(event: Event): string {
 export function Onboarding(props: { onClose: () => void }) {
   const [step, setStep] = useState(0);
 
+  const [connectionModeDraft, setConnectionModeDraft] = useState<LlmConnectionMode>(
+    () => loadSettings().connectionMode,
+  );
+
   const [llm, setLlm] = useState<LlmDraft>({ baseUrl: "https://api.openai.com/v1", apiKey: "", model: "" });
   const [testState, setTestState] = useState<TestState>({ phase: "idle" });
   const [modelOptions, setModelOptions] = useState<string[]>([]);
   const [fetchingModels, setFetchingModels] = useState(false);
 
+  const [roomId, setRoomId] = useState(() => loadLlmConfig()?.network.roomId ?? "");
+  const [networkTestState, setNetworkTestState] = useState<TestState>({ phase: "idle" });
+
   const [langSettings, setLangSettings] = useState(loadSettings);
+
+  function selectConnectionMode(mode: LlmConnectionMode) {
+    setConnectionModeDraft(mode);
+    setTestState({ phase: "idle" });
+    setNetworkTestState({ phase: "idle" });
+  }
 
   function updateLlm(patch: Partial<LlmDraft>) {
     setLlm((prev) => ({ ...prev, ...patch }));
@@ -80,6 +103,17 @@ export function Onboarding(props: { onClose: () => void }) {
     }
   }
 
+  async function handleTestNetwork() {
+    if (networkTestState.phase === "busy") return;
+    setNetworkTestState({ phase: "busy" });
+    try {
+      await testNetworkConnection(roomId);
+      setNetworkTestState({ phase: "ok" });
+    } catch (error) {
+      setNetworkTestState({ phase: "error", message: localizeNetworkError(error, t("ob-network-test-error-fallback")) });
+    }
+  }
+
   /** Persists the draft as (or into) the shared config's default preset —
    * this is the connection every tik-choco app on the origin will offer by
    * default afterwards. */
@@ -101,7 +135,12 @@ export function Onboarding(props: { onClose: () => void }) {
   }
 
   function handleLlmNext() {
-    saveLlmDraft();
+    if (connectionModeDraft === "network") {
+      if (roomId.trim()) setSharedNetworkRoomId(roomId.trim());
+    } else {
+      saveLlmDraft();
+    }
+    setConnectionMode(connectionModeDraft);
     setStep(2);
   }
 
@@ -139,75 +178,142 @@ export function Onboarding(props: { onClose: () => void }) {
               <Cpu size={22} />
               <h2 class="ob-title">{t("ob-llm-title")}</h2>
             </div>
-            <p class="ob-text">{t("ob-llm-body")}</p>
 
-            <div class="ob-field">
-              <label class="ob-label">{t("ob-llm-base-url-label")}</label>
-              <input
-                class="ob-input"
-                type="text"
-                placeholder={t("ob-llm-base-url-placeholder")}
-                value={llm.baseUrl}
-                onInput={(e) => updateLlm({ baseUrl: inputValue(e) })}
-              />
-            </div>
-            <div class="ob-field">
-              <label class="ob-label">{t("ob-llm-api-key-label")}</label>
-              <input
-                class="ob-input"
-                type="password"
-                placeholder={t("ob-llm-api-key-placeholder")}
-                value={llm.apiKey}
-                onInput={(e) => updateLlm({ apiKey: inputValue(e) })}
-              />
-            </div>
-            <div class="ob-field">
-              <label class="ob-label">{t("ob-llm-model-label")}</label>
-              <div class="ob-model-row">
-                <input
-                  class="ob-input"
-                  type="text"
-                  list="ob-model-options"
-                  placeholder={t("ob-llm-model-placeholder")}
-                  value={llm.model}
-                  onInput={(e) => updateLlm({ model: inputValue(e) })}
-                />
-                <datalist id="ob-model-options">
-                  {modelOptions.map((id) => (
-                    <option key={id} value={id} />
-                  ))}
-                </datalist>
-                <button
-                  class="ob-icon-btn"
-                  type="button"
-                  onClick={loadModelOptions}
-                  disabled={fetchingModels || !llm.baseUrl.trim()}
-                  title={t("ob-llm-fetch-title")}
-                >
-                  {fetchingModels ? t("ob-llm-fetch-busy") : t("ob-llm-fetch-label")}
-                </button>
-              </div>
-            </div>
-
-            <div class="ob-test-row">
+            <div class="ob-mode-toggle" role="radiogroup" aria-label={t("ob-llm-mode-label")}>
               <button
-                class="ob-btn"
                 type="button"
-                onClick={() => void handleTest()}
-                disabled={testState.phase === "busy" || !llm.baseUrl.trim() || !llm.model.trim()}
+                role="radio"
+                aria-checked={connectionModeDraft === "api"}
+                class={`ob-mode-option${connectionModeDraft === "api" ? " is-active" : ""}`}
+                onClick={() => selectConnectionMode("api")}
               >
-                {testState.phase === "busy" ? <span class="spinner" /> : <Plug size={16} />}
-                {testState.phase === "busy" ? t("ob-llm-test-busy") : t("ob-llm-test-button")}
+                <Plug size={16} />
+                {t("ob-llm-mode-api")}
               </button>
-              {testState.phase === "ok" && (
-                <span class="ob-test-ok">
-                  <Check size={16} />
-                  {t("ob-llm-test-ok")}
-                </span>
-              )}
+              <button
+                type="button"
+                role="radio"
+                aria-checked={connectionModeDraft === "network"}
+                class={`ob-mode-option${connectionModeDraft === "network" ? " is-active" : ""}`}
+                onClick={() => selectConnectionMode("network")}
+              >
+                <Network size={16} />
+                {t("ob-llm-mode-network")}
+              </button>
             </div>
-            {testState.phase === "error" && (
-              <p class="ob-error">{t("ob-llm-test-error", { message: testState.message })}</p>
+
+            {connectionModeDraft === "api" ? (
+              <>
+                <p class="ob-text">{t("ob-llm-body")}</p>
+
+                <div class="ob-field">
+                  <label class="ob-label">{t("ob-llm-base-url-label")}</label>
+                  <input
+                    class="ob-input"
+                    type="text"
+                    placeholder={t("ob-llm-base-url-placeholder")}
+                    value={llm.baseUrl}
+                    onInput={(e) => updateLlm({ baseUrl: inputValue(e) })}
+                  />
+                </div>
+                <div class="ob-field">
+                  <label class="ob-label">{t("ob-llm-api-key-label")}</label>
+                  <input
+                    class="ob-input"
+                    type="password"
+                    placeholder={t("ob-llm-api-key-placeholder")}
+                    value={llm.apiKey}
+                    onInput={(e) => updateLlm({ apiKey: inputValue(e) })}
+                  />
+                </div>
+                <div class="ob-field">
+                  <label class="ob-label">{t("ob-llm-model-label")}</label>
+                  <div class="ob-model-row">
+                    <input
+                      class="ob-input"
+                      type="text"
+                      list="ob-model-options"
+                      placeholder={t("ob-llm-model-placeholder")}
+                      value={llm.model}
+                      onInput={(e) => updateLlm({ model: inputValue(e) })}
+                    />
+                    <datalist id="ob-model-options">
+                      {modelOptions.map((id) => (
+                        <option key={id} value={id} />
+                      ))}
+                    </datalist>
+                    <button
+                      class="ob-icon-btn"
+                      type="button"
+                      onClick={loadModelOptions}
+                      disabled={fetchingModels || !llm.baseUrl.trim()}
+                      title={t("ob-llm-fetch-title")}
+                    >
+                      {fetchingModels ? t("ob-llm-fetch-busy") : t("ob-llm-fetch-label")}
+                    </button>
+                  </div>
+                </div>
+
+                <div class="ob-test-row">
+                  <button
+                    class="ob-btn"
+                    type="button"
+                    onClick={() => void handleTest()}
+                    disabled={testState.phase === "busy" || !llm.baseUrl.trim() || !llm.model.trim()}
+                  >
+                    {testState.phase === "busy" ? <span class="spinner" /> : <Plug size={16} />}
+                    {testState.phase === "busy" ? t("ob-llm-test-busy") : t("ob-llm-test-button")}
+                  </button>
+                  {testState.phase === "ok" && (
+                    <span class="ob-test-ok">
+                      <Check size={16} />
+                      {t("ob-llm-test-ok")}
+                    </span>
+                  )}
+                </div>
+                {testState.phase === "error" && (
+                  <p class="ob-error">{t("ob-llm-test-error", { message: testState.message })}</p>
+                )}
+              </>
+            ) : (
+              <>
+                <p class="ob-text">{t("ob-network-body")}</p>
+
+                <div class="ob-field">
+                  <label class="ob-label">{t("ob-network-room-id-label")}</label>
+                  <input
+                    class="ob-input"
+                    type="text"
+                    placeholder={t("ob-network-room-id-placeholder")}
+                    value={roomId}
+                    onInput={(e) => {
+                      setRoomId(inputValue(e));
+                      setNetworkTestState({ phase: "idle" });
+                    }}
+                  />
+                </div>
+
+                <div class="ob-test-row">
+                  <button
+                    class="ob-btn"
+                    type="button"
+                    onClick={() => void handleTestNetwork()}
+                    disabled={networkTestState.phase === "busy" || !roomId.trim()}
+                  >
+                    {networkTestState.phase === "busy" ? <span class="spinner" /> : <Network size={16} />}
+                    {networkTestState.phase === "busy" ? t("ob-llm-test-busy") : t("ob-llm-test-button")}
+                  </button>
+                  {networkTestState.phase === "ok" && (
+                    <span class="ob-test-ok">
+                      <Check size={16} />
+                      {t("ob-llm-test-ok")}
+                    </span>
+                  )}
+                </div>
+                {networkTestState.phase === "error" && (
+                  <p class="ob-error">{t("ob-llm-test-error", { message: networkTestState.message })}</p>
+                )}
+              </>
             )}
           </div>
         )}

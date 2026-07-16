@@ -4,9 +4,12 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
+    "predev": "node scripts/fetch-mistlib.mjs",
     "dev": "vite --host",
+    "prebuild": "node scripts/fetch-mistlib.mjs",
     "build": "tsc -b && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "fetch-mistlib": "node scripts/fetch-mistlib.mjs"
   },
   "dependencies": {
     "@tik-choco/mistai": "github:tik-choco-lab/mistai",

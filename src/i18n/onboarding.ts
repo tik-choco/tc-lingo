@@ -17,6 +17,9 @@ export const onboardingMessages = {
     "ob-welcome-body-2-post": ". You can change either one anytime from the settings screen.",
 
     "ob-llm-title": "LLM connection settings",
+    "ob-llm-mode-label": "Connection method",
+    "ob-llm-mode-api": "Direct API",
+    "ob-llm-mode-network": "AI Network",
     "ob-llm-body":
       "Set up the LLM used for corrections and topic generation. Any OpenAI-compatible API works (OpenAI, LM Studio, Ollama, etc.). This setting is shared with other tik-choco apps, so you only need to set it up once.",
     "ob-llm-base-url-label": "Base URL",
@@ -32,6 +35,11 @@ export const onboardingMessages = {
     "ob-llm-test-button": "Test connection",
     "ob-llm-test-ok": "Connected successfully!",
     "ob-llm-test-error": "Connection failed: {message}",
+    "ob-network-body":
+      "Instead of your own API key, use an LLM shared by another peer over a P2P room. Set the same Room ID as the peer sharing their model and your requests will be routed to them.",
+    "ob-network-room-id-label": "Room ID",
+    "ob-network-room-id-placeholder": "e.g. my-team-room",
+    "ob-network-test-error-fallback": "Connection failed.",
 
     "ob-lang-title": "Choose the languages you're learning",
     "ob-lang-body":
@@ -75,6 +83,9 @@ export const onboardingMessages = {
     "ob-welcome-body-2-post": "です。どちらもあとから設定画面でいつでも変更できます。",
 
     "ob-llm-title": "LLMの接続設定",
+    "ob-llm-mode-label": "接続方式",
+    "ob-llm-mode-api": "直接API接続",
+    "ob-llm-mode-network": "AI Network",
     "ob-llm-body":
       "添削やトピック生成に使うLLMを設定します。OpenAI互換のAPIならどれでも使えます(OpenAI、LM Studio、Ollamaなど)。tik-chocoの他アプリと共有される設定なので、一度設定すれば十分です。",
     "ob-llm-base-url-label": "ベースURL",
@@ -90,6 +101,11 @@ export const onboardingMessages = {
     "ob-llm-test-button": "接続テスト",
     "ob-llm-test-ok": "接続できました！",
     "ob-llm-test-error": "接続に失敗しました: {message}",
+    "ob-network-body":
+      "自分のAPIキーの代わりに、P2Pのルームを通じて他のピアが提供するLLMを使います。モデルを共有しているピアと同じルームIDを設定すると、リクエストがそのピアに送られます。",
+    "ob-network-room-id-label": "ルームID",
+    "ob-network-room-id-placeholder": "例: my-team-room",
+    "ob-network-test-error-fallback": "接続に失敗しました。",
 
     "ob-lang-title": "学習する言語を選ぶ",
     "ob-lang-body": "学習中の言語と、添削の説明に使う母語を設定します。あとから設定画面でいつでも変更できます。",
@@ -131,6 +147,9 @@ export const onboardingMessages = {
     "ob-welcome-body-2-post": "。这两项之后都可以随时在设置界面中更改。",
 
     "ob-llm-title": "LLM 连接设置",
+    "ob-llm-mode-label": "连接方式",
+    "ob-llm-mode-api": "直接 API 连接",
+    "ob-llm-mode-network": "AI Network",
     "ob-llm-body":
       "设置用于批改和生成话题的 LLM。任何兼容 OpenAI 的 API 都可以使用(OpenAI、LM Studio、Ollama 等)。此设置会与其他 tik-choco 应用共享，只需设置一次即可。",
     "ob-llm-base-url-label": "基础 URL",
@@ -146,6 +165,11 @@ export const onboardingMessages = {
     "ob-llm-test-button": "测试连接",
     "ob-llm-test-ok": "连接成功！",
     "ob-llm-test-error": "连接失败: {message}",
+    "ob-network-body":
+      "不使用自己的 API 密钥，而是通过 P2P 房间使用其他节点共享的 LLM。设置与共享模型的节点相同的房间 ID，你的请求就会被路由给对方。",
+    "ob-network-room-id-label": "房间 ID",
+    "ob-network-room-id-placeholder": "例如: my-team-room",
+    "ob-network-test-error-fallback": "连接失败。",
 
     "ob-lang-title": "选择要学习的语言",
     "ob-lang-body": "设置正在学习的语言，以及用于解释批改内容的母语。之后可以随时在设置界面中更改。",
@@ -187,6 +211,9 @@ export const onboardingMessages = {
     "ob-welcome-body-2-post": "。這兩項之後都可以隨時在設定畫面中更改。",
 
     "ob-llm-title": "LLM 連線設定",
+    "ob-llm-mode-label": "連線方式",
+    "ob-llm-mode-api": "直接 API 連線",
+    "ob-llm-mode-network": "AI Network",
     "ob-llm-body":
       "設定用於批改和產生話題的 LLM。任何相容 OpenAI 的 API 都可以使用(OpenAI、LM Studio、Ollama 等)。此設定會與其他 tik-choco 應用程式共用，只需設定一次即可。",
     "ob-llm-base-url-label": "基礎 URL",
@@ -202,6 +229,11 @@ export const onboardingMessages = {
     "ob-llm-test-button": "測試連線",
     "ob-llm-test-ok": "連線成功！",
     "ob-llm-test-error": "連線失敗: {message}",
+    "ob-network-body":
+      "不使用自己的 API 金鑰，而是透過 P2P 房間使用其他節點共用的 LLM。設定與共用模型的節點相同的房間 ID，你的請求就會被路由給對方。",
+    "ob-network-room-id-label": "房間 ID",
+    "ob-network-room-id-placeholder": "例如: my-team-room",
+    "ob-network-test-error-fallback": "連線失敗。",
 
     "ob-lang-title": "選擇要學習的語言",
     "ob-lang-body": "設定正在學習的語言，以及用於說明批改內容的母語。之後可以隨時在設定畫面中更改。",
