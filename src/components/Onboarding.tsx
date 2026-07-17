@@ -3,7 +3,7 @@
 // closing at any point counts as "done" (the flag is owned by the caller via
 // `onClose`) — the settings screen can re-open it any time. Same shape as
 // tc-town's Onboarding.tsx, adapted to this app's own tokens/content.
-import { useState } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 import {
   ArrowLeft,
   ArrowRight,
@@ -24,6 +24,8 @@ import { ensurePreset, ensureProvider, loadLlmConfig, saveLlmConfig } from "../l
 import { testConnection, testNetworkConnection } from "../lib/llm";
 import { setSharedNetworkRoomId } from "../lib/llmConnection";
 import { localizeNetworkError } from "../lib/network";
+import { isEditableTarget, SHORTCUT_PRIORITY } from "../lib/keyboard";
+import { useShortcuts } from "../hooks/useShortcuts";
 import type { LlmConnectionMode } from "../types";
 import {
   addTargetLanguage,
@@ -36,6 +38,17 @@ import { languageDisplayName } from "../lib/languages";
 import { LanguageSelect } from "./LanguageSelect";
 import { t } from "../i18n";
 import "../styles/onboarding.css";
+
+// Focusable elements considered for the wizard's Tab focus trap. Kept simple
+// (no visibility computation beyond `disabled`/offsetParent) per the same
+// convention as other modals in this app.
+const FOCUSABLE_SELECTOR = 'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
+
+function getFocusableElements(container: HTMLElement): HTMLElement[] {
+  return Array.from(container.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)).filter(
+    (el) => !el.hasAttribute("disabled") && el.offsetParent !== null,
+  );
+}
 
 const STEP_COUNT = 4;
 
@@ -53,6 +66,9 @@ function inputValue(event: Event): string {
 
 export function Onboarding(props: { onClose: () => void }) {
   const [step, setStep] = useState(0);
+
+  const cardRef = useRef<HTMLDivElement>(null);
+  const previouslyFocused = useRef<Element | null>(null);
 
   const [connectionModeDraft, setConnectionModeDraft] = useState<LlmConnectionMode>(
     () => loadSettings().connectionMode,
@@ -148,9 +164,86 @@ export function Onboarding(props: { onClose: () => void }) {
     setStep(3);
   }
 
+  useEffect(() => {
+    previouslyFocused.current = document.activeElement;
+    cardRef.current?.focus();
+    return () => {
+      if (previouslyFocused.current instanceof HTMLElement) previouslyFocused.current.focus();
+    };
+  }, []);
+
+  // Minimal Tab/Shift+Tab focus trap: keep focus cycling within the card
+  // while the wizard is mounted.
+  function handleCardKeyDown(e: KeyboardEvent) {
+    if (e.key !== "Tab") return;
+    const card = cardRef.current;
+    if (!card) return;
+    const focusables = getFocusableElements(card);
+    if (focusables.length === 0) return;
+    const first = focusables[0];
+    const last = focusables[focusables.length - 1];
+    const active = document.activeElement;
+    if (e.shiftKey) {
+      if (active === first || active === card) {
+        e.preventDefault();
+        last.focus();
+      }
+    } else if (active === last) {
+      e.preventDefault();
+      first.focus();
+    }
+  }
+
+  useShortcuts(
+    SHORTCUT_PRIORITY.modal,
+    (e) => {
+      if (e.key === "Escape") {
+        props.onClose();
+        return true;
+      }
+      if (isEditableTarget(e.target)) return false;
+      if (e.key === "ArrowRight") {
+        if (step === 0) {
+          setStep(1);
+          return true;
+        }
+        if (step === 1) {
+          handleLlmNext();
+          return true;
+        }
+        if (step === 2) {
+          handleLanguageNext();
+          return true;
+        }
+        return false;
+      }
+      if (e.key === "ArrowLeft") {
+        if (step === 1) {
+          setStep(0);
+          return true;
+        }
+        if (step === 2) {
+          setStep(1);
+          return true;
+        }
+        return false;
+      }
+      return false;
+    },
+    { modal: true },
+  );
+
   return (
     <div class="ob-overlay">
-      <div class="ob-card" role="dialog" aria-modal="true" aria-label={t("ob-dialog-label")}>
+      <div
+        class="ob-card"
+        role="dialog"
+        aria-modal="true"
+        aria-label={t("ob-dialog-label")}
+        tabIndex={-1}
+        ref={cardRef}
+        onKeyDown={handleCardKeyDown}
+      >
         <button class="ob-close" type="button" onClick={props.onClose} title={t("ob-close")} aria-label={t("ob-close")}>
           <X size={18} />
         </button>

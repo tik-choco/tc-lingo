@@ -1,5 +1,15 @@
 import { useEffect, useRef, useState } from "preact/hooks";
-import { History, Languages, Layers, Moon, PenLine, Repeat2, Settings as SettingsIcon, Sun } from "lucide-preact";
+import {
+  History,
+  Keyboard,
+  Languages,
+  Layers,
+  Moon,
+  PenLine,
+  Repeat2,
+  Settings as SettingsIcon,
+  Sun,
+} from "lucide-preact";
 import type { MainTab } from "./types";
 import { onHashChange, readHash, writeHash } from "./lib/hashRoute";
 import { useTheme } from "./hooks/useTheme";
@@ -10,6 +20,7 @@ import { CardsView } from "./views/CardsView";
 import { HistoryView } from "./views/HistoryView";
 import { SettingsView } from "./views/SettingsView";
 import { Onboarding } from "./components/Onboarding";
+import { KeyboardHelp } from "./components/KeyboardHelp";
 import { markOnboardingDone, shouldShowOnboarding, subscribeOnboardingRequests } from "./lib/onboarding";
 import { loadSettings, setActiveLanguage, subscribeSettings } from "./lib/settings";
 import { languageDisplayName } from "./lib/languages";
@@ -17,6 +28,8 @@ import { applyUiLanguageForNative, getUiSourceMessages, setUiOverlay, subscribeU
 import { translateUiMessages } from "./lib/uiTranslation";
 import { useLlmConnection } from "./hooks/useLlmConnection";
 import { useNetworkConsumerConnection } from "./hooks/useNetworkConsumerConnection";
+import { isEditableTarget, SHORTCUT_PRIORITY } from "./lib/keyboard";
+import { useShortcuts } from "./hooks/useShortcuts";
 
 const TABS: { id: MainTab; labelKey: string; icon: typeof PenLine }[] = [
   { id: "practice", labelKey: "app-tab-practice", icon: PenLine },
@@ -100,6 +113,30 @@ export function App() {
     setShowOnboarding(false);
   }
 
+  // App-wide keyboard shortcuts: 1-5 switch tabs (and move focus into the
+  // main pane so arrow/scroll keys land there), "?" toggles the cheat
+  // sheet. Lowest priority tier — anything typed into an input, or any
+  // modifier combo, is left alone so browser/OS shortcuts and view-level
+  // handlers (e.g. Ctrl+Enter to submit) still work; a view or modal
+  // registered at a higher priority runs first regardless.
+  const [showKbdHelp, setShowKbdHelp] = useState(false);
+  useShortcuts(SHORTCUT_PRIORITY.app, (e) => {
+    if (isEditableTarget(e.target) || e.ctrlKey || e.metaKey || e.altKey) return false;
+    if ("12345".includes(e.key)) {
+      const next = TAB_ORDER[Number(e.key) - 1];
+      if (next) {
+        selectTab(next);
+        mainRef.current?.focus();
+        return true;
+      }
+    }
+    if (e.key === "?") {
+      setShowKbdHelp((v) => !v);
+      return true;
+    }
+    return false;
+  });
+
   return (
     <div class="app-shell">
       <header class="app-header">
@@ -139,6 +176,14 @@ export function App() {
           )}
           <button
             class="theme-toggle"
+            onClick={() => setShowKbdHelp(true)}
+            title={t("app-kbd-help-button")}
+            aria-label={t("app-kbd-help-button")}
+          >
+            <Keyboard size={16} />
+          </button>
+          <button
+            class="theme-toggle"
             onClick={toggleTheme}
             title={theme === "light" ? t("app-theme-toggle-dark") : t("app-theme-toggle-light")}
           >
@@ -146,7 +191,7 @@ export function App() {
           </button>
         </div>
       </header>
-      <main class="app-main" ref={mainRef}>
+      <main class="app-main" ref={mainRef} tabIndex={-1}>
         <div key={tab} class={paneEnterClass(dir)} style={{ height: "100%" }}>
           {tab === "practice" && <PracticeView />}
           {tab === "review" && <ReviewView />}
@@ -156,6 +201,7 @@ export function App() {
         </div>
       </main>
       {showOnboarding && <Onboarding onClose={closeOnboarding} />}
+      {showKbdHelp && <KeyboardHelp onClose={() => setShowKbdHelp(false)} />}
     </div>
   );
 }

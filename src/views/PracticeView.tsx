@@ -14,7 +14,9 @@ import { localizeNetworkError } from "../lib/network";
 import type { CardCandidate, FeedbackResult } from "../lib/parse";
 import { FeedbackPanel } from "../components/FeedbackPanel";
 import { MistakeCardPicker } from "../components/MistakeCardPicker";
+import { SpellingDrill } from "../components/SpellingDrill";
 import { diffChars } from "../lib/diff";
+import { correctedSentences, misspelledWords } from "../lib/spelling";
 import { t } from "../i18n";
 import { languageDisplayName } from "../lib/languages";
 
@@ -120,6 +122,24 @@ export function PracticeView() {
   function flushRetryAnswer() {
     if (currentAttempt) updateAttempt(currentAttempt.id, { retryAnswer });
   }
+
+  // Keyboard-only flow: focus the answer textarea the moment a fresh, empty
+  // prompt appears (topic freshly chosen, or a new round started via
+  // resetForNextRound) — but not on unrelated re-renders where the form was
+  // already visible and the learner may have moved focus elsewhere.
+  const answerTextareaRef = useRef<HTMLTextAreaElement>(null);
+  const showingAnswerForm = activeTopic !== null && round !== null && currentAttempt === null;
+  useEffect(() => {
+    if (showingAnswerForm) answerTextareaRef.current?.focus();
+  }, [showingAnswerForm, activeTopicId, round]);
+
+  // Once feedback arrives and a retry follow-up is offered, move focus there
+  // too so the learner can go from reading the correction straight into the
+  // retry without reaching for the mouse.
+  const retryTextareaRef = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => {
+    if (currentAttempt?.retryPrompt) retryTextareaRef.current?.focus();
+  }, [currentAttempt?.id]);
 
   function resetForNewTopic() {
     flushRetryAnswer();
@@ -375,7 +395,10 @@ export function PracticeView() {
     );
   }
 
-  if (round === null) {
+  // Round 3's submission makes nextRoundFor return null on the very next
+  // render — keep showing the just-received feedback (currentAttempt) and
+  // only switch to the all-done screen once nothing is being displayed.
+  if (round === null && !currentAttempt) {
     return (
       <div class="view-container practice-view">
         <section class="card-panel">
@@ -394,7 +417,9 @@ export function PracticeView() {
       <section class="card-panel">
         <div class="topic-header">
           <h2>{activeTopic.title}</h2>
-          <span class="round-badge">{roundLabel(round)}</span>
+          {(currentAttempt !== null || round !== null) && (
+            <span class="round-badge">{roundLabel(currentAttempt ? currentAttempt.round : (round as AttemptRound))}</span>
+          )}
         </div>
         <p class="topic-prompt">{activeTopic.prompt}</p>
         {batchGeneratedCount > 0 && (
@@ -420,15 +445,28 @@ export function PracticeView() {
         {!currentAttempt ? (
           <form onSubmit={submitAttempt}>
             <textarea
+              ref={answerTextareaRef}
               class="practice-textarea"
               value={text}
               onInput={(e) => setText((e.target as HTMLTextAreaElement).value)}
+              onKeyDown={(e) => {
+                if ((e.ctrlKey || e.metaKey) && e.key === "Enter" && !submitting && text.trim()) {
+                  e.preventDefault();
+                  submitAttempt(e);
+                }
+              }}
               rows={6}
               placeholder={t("practice-write-placeholder", { language: languageDisplayName(settings.activeLanguage) })}
             />
             <div class="button-row">
               <button type="submit" class="primary-button" disabled={submitting || !text.trim()}>
-                {submitting ? t("practice-submitting") : t("practice-request-feedback")}
+                {submitting ? (
+                  t("practice-submitting")
+                ) : (
+                  <>
+                    {t("practice-request-feedback")} <kbd class="kbd">Ctrl</kbd>+<kbd class="kbd">Enter</kbd>
+                  </>
+                )}
               </button>
               <button type="button" onClick={resetForNewTopic}>
                 {t("practice-different-topic")}
@@ -445,20 +483,39 @@ export function PracticeView() {
               retryPrompt={currentAttempt.retryPrompt}
             />
 
+            <SpellingDrill
+              key={currentAttempt.id}
+              words={misspelledWords(currentAttempt.original, currentAttempt.corrected)}
+              sentences={correctedSentences(currentAttempt.original, currentAttempt.corrected)}
+            />
+
             {currentAttempt.retryPrompt && (
               <div class="feedback-field">
                 <h3>{t("practice-retry-heading")}</h3>
                 <textarea
+                  ref={retryTextareaRef}
                   class="practice-textarea"
                   value={retryAnswer}
                   onInput={(e) => setRetryAnswer((e.target as HTMLTextAreaElement).value)}
                   onBlur={saveRetryAnswer}
+                  onKeyDown={(e) => {
+                    if ((e.ctrlKey || e.metaKey) && e.key === "Enter" && !checkingRetry && retryAnswer.trim() && connection) {
+                      e.preventDefault();
+                      checkRetryAnswer();
+                    }
+                  }}
                   rows={3}
                   placeholder={t("practice-retry-placeholder")}
                 />
                 <div class="button-row">
                   <button type="button" onClick={checkRetryAnswer} disabled={checkingRetry || !retryAnswer.trim() || !connection}>
-                    {checkingRetry ? t("practice-retry-checking") : t("practice-retry-check")}
+                    {checkingRetry ? (
+                      t("practice-retry-checking")
+                    ) : (
+                      <>
+                        {t("practice-retry-check")} <kbd class="kbd">Ctrl</kbd>+<kbd class="kbd">Enter</kbd>
+                      </>
+                    )}
                   </button>
                 </div>
                 {currentAttempt.retryCorrected && (
@@ -478,7 +535,7 @@ export function PracticeView() {
                 </button>
               </div>
             ) : candidates.length > 0 ? (
-              <MistakeCardPicker candidates={candidates} onAdd={addSelectedCards} />
+              <MistakeCardPicker candidates={candidates} onAdd={addSelectedCards} onClose={() => setCandidates(null)} />
             ) : (
               <p class="hint-text">{t("practice-no-cards-found")}</p>
             )}

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 import { ChevronDown, ChevronUp, Pencil, Trash2 } from "lucide-preact";
 import { addCard, deleteCard, loadCards, subscribeCards, updateCard } from "../lib/cards";
 import { loadSettings, subscribeSettings } from "../lib/settings";
@@ -39,6 +39,9 @@ export function CardsView() {
   const [context, setContext] = useState("");
   const [cloze, setCloze] = useState("");
   const [language, setLanguage] = useState(settings.activeLanguage);
+  // Refocused after a successful add so keyboard-only users can keep
+  // entering cards without reaching for the mouse.
+  const frontInputRef = useRef<HTMLInputElement>(null);
   useEffect(() => {
     setLanguage(settings.activeLanguage);
   }, [settings.activeLanguage]);
@@ -82,7 +85,7 @@ export function CardsView() {
 
   function saveEdit(event: Event, id: string) {
     event.preventDefault();
-    if (!editFront.trim() || !editMeaning.trim()) return;
+    if (!canSubmitEdit()) return;
     updateCard(id, {
       front: editFront,
       reading: editReading,
@@ -99,9 +102,13 @@ export function CardsView() {
     return topics.find((tp) => tp.id === c.sourceTopicId)?.title ?? null;
   }
 
+  function canSubmitNew(): boolean {
+    return front.trim() !== "" && meaning.trim() !== "";
+  }
+
   function submit(event: Event) {
     event.preventDefault();
-    if (!front.trim() || !meaning.trim()) return;
+    if (!canSubmitNew()) return;
     addCard({
       front,
       reading,
@@ -119,7 +126,29 @@ export function CardsView() {
     setContext("");
     setCloze("");
     setLanguage(settings.activeLanguage);
-    setShowForm(false);
+    // Keep the form open and return focus to the first field so a
+    // keyboard-only user can immediately enter the next card.
+    frontInputRef.current?.focus();
+  }
+
+  // Ctrl+Enter / Cmd+Enter submits the new-card form from any of its fields.
+  function handleNewCardKeyDown(e: KeyboardEvent) {
+    if ((e.ctrlKey || e.metaKey) && e.key === "Enter" && canSubmitNew()) {
+      e.preventDefault();
+      submit(e);
+    }
+  }
+
+  function canSubmitEdit(): boolean {
+    return editFront.trim() !== "" && editMeaning.trim() !== "";
+  }
+
+  // Ctrl+Enter / Cmd+Enter saves the in-place edit form from any of its fields.
+  function handleEditKeyDown(e: KeyboardEvent, id: string) {
+    if ((e.ctrlKey || e.metaKey) && e.key === "Enter" && canSubmitEdit()) {
+      e.preventDefault();
+      saveEdit(e, id);
+    }
   }
 
   const visible = cards.filter((c) => !c.language || c.language === settings.activeLanguage);
@@ -142,7 +171,13 @@ export function CardsView() {
           <form class="field-grid" onSubmit={submit}>
             <label>
               {t("cards-label-front")}
-              <input type="text" value={front} onInput={(e) => setFront((e.target as HTMLInputElement).value)} />
+              <input
+                ref={frontInputRef}
+                type="text"
+                value={front}
+                onInput={(e) => setFront((e.target as HTMLInputElement).value)}
+                onKeyDown={handleNewCardKeyDown}
+              />
             </label>
             <label>
               {t("cards-reading-optional", { label: readingField.label })}
@@ -150,12 +185,18 @@ export function CardsView() {
                 type="text"
                 value={reading}
                 onInput={(e) => setReading((e.target as HTMLInputElement).value)}
+                onKeyDown={handleNewCardKeyDown}
                 placeholder={readingField.placeholder}
               />
             </label>
             <label>
               {t("cards-label-meaning")}
-              <input type="text" value={meaning} onInput={(e) => setMeaning((e.target as HTMLInputElement).value)} />
+              <input
+                type="text"
+                value={meaning}
+                onInput={(e) => setMeaning((e.target as HTMLInputElement).value)}
+                onKeyDown={handleNewCardKeyDown}
+              />
             </label>
             <label>
               {t("cards-label-example")}
@@ -163,15 +204,26 @@ export function CardsView() {
                 type="text"
                 value={exampleSentence}
                 onInput={(e) => setExampleSentence((e.target as HTMLInputElement).value)}
+                onKeyDown={handleNewCardKeyDown}
               />
             </label>
             <label>
               {t("cards-label-context")}
-              <input type="text" value={context} onInput={(e) => setContext((e.target as HTMLInputElement).value)} />
+              <input
+                type="text"
+                value={context}
+                onInput={(e) => setContext((e.target as HTMLInputElement).value)}
+                onKeyDown={handleNewCardKeyDown}
+              />
             </label>
             <label>
               {t("cards-label-cloze")}
-              <input type="text" value={cloze} onInput={(e) => setCloze((e.target as HTMLInputElement).value)} />
+              <input
+                type="text"
+                value={cloze}
+                onInput={(e) => setCloze((e.target as HTMLInputElement).value)}
+                onKeyDown={handleNewCardKeyDown}
+              />
             </label>
             {settings.targetLanguages.length > 1 && (
               <label>
@@ -179,9 +231,14 @@ export function CardsView() {
                 <LanguageSelect value={language} onChange={setLanguage} ariaLabel={t("cards-language-aria-label")} />
               </label>
             )}
-            <button type="submit" class="primary-button">
-              {t("cards-submit")}
-            </button>
+            <div class="button-row">
+              <button type="submit" class="primary-button">
+                {t("cards-submit")}
+              </button>
+              <span class="hint-text">
+                <kbd class="kbd">Ctrl</kbd>+<kbd class="kbd">Enter</kbd>
+              </span>
+            </div>
           </form>
         )}
       </section>
@@ -221,6 +278,8 @@ export function CardsView() {
                           toggleExpand(c.id);
                         }}
                         title={expanded ? t("cards-collapse-title") : t("cards-expand-title")}
+                        aria-label={expanded ? t("cards-collapse-title") : t("cards-expand-title")}
+                        aria-expanded={expanded}
                       >
                         {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
                       </button>
@@ -232,6 +291,7 @@ export function CardsView() {
                           deleteCard(c.id);
                         }}
                         title={t("cards-delete-title")}
+                        aria-label={t("cards-delete-title")}
                       >
                         <Trash2 size={14} />
                       </button>
@@ -247,6 +307,7 @@ export function CardsView() {
                             type="text"
                             value={editFront}
                             onInput={(e) => setEditFront((e.target as HTMLInputElement).value)}
+                            onKeyDown={(e) => handleEditKeyDown(e, c.id)}
                           />
                         </label>
                         <label>
@@ -255,6 +316,7 @@ export function CardsView() {
                             type="text"
                             value={editReading}
                             onInput={(e) => setEditReading((e.target as HTMLInputElement).value)}
+                            onKeyDown={(e) => handleEditKeyDown(e, c.id)}
                             placeholder={editReadingField.placeholder}
                           />
                         </label>
@@ -264,6 +326,7 @@ export function CardsView() {
                             type="text"
                             value={editMeaning}
                             onInput={(e) => setEditMeaning((e.target as HTMLInputElement).value)}
+                            onKeyDown={(e) => handleEditKeyDown(e, c.id)}
                           />
                         </label>
                         <label>
@@ -272,6 +335,7 @@ export function CardsView() {
                             type="text"
                             value={editExample}
                             onInput={(e) => setEditExample((e.target as HTMLInputElement).value)}
+                            onKeyDown={(e) => handleEditKeyDown(e, c.id)}
                           />
                         </label>
                         <label>
@@ -280,6 +344,7 @@ export function CardsView() {
                             type="text"
                             value={editContext}
                             onInput={(e) => setEditContext((e.target as HTMLInputElement).value)}
+                            onKeyDown={(e) => handleEditKeyDown(e, c.id)}
                           />
                         </label>
                         <label>
@@ -288,6 +353,7 @@ export function CardsView() {
                             type="text"
                             value={editCloze}
                             onInput={(e) => setEditCloze((e.target as HTMLInputElement).value)}
+                            onKeyDown={(e) => handleEditKeyDown(e, c.id)}
                           />
                         </label>
                         <div class="button-row">
@@ -297,6 +363,9 @@ export function CardsView() {
                           <button type="button" onClick={cancelEdit}>
                             {t("cards-cancel-button")}
                           </button>
+                          <span class="hint-text">
+                            <kbd class="kbd">Ctrl</kbd>+<kbd class="kbd">Enter</kbd>
+                          </span>
                         </div>
                       </form>
                     ) : (

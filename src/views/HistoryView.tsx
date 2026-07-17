@@ -60,7 +60,12 @@ export function HistoryView() {
         return (
           <section class="card-panel" key={topic.id}>
             <div class="topic-header">
-              <button type="button" class="link-button history-topic-toggle" onClick={() => setOpenTopicId(open ? null : topic.id)}>
+              <button
+                type="button"
+                class="link-button history-topic-toggle"
+                aria-expanded={open}
+                onClick={() => setOpenTopicId(open ? null : topic.id)}
+              >
                 {topic.title}
               </button>
               <div class="button-row">
@@ -77,6 +82,7 @@ export function HistoryView() {
                   type="button"
                   class="icon-button"
                   title={t("history-delete-topic")}
+                  aria-label={t("history-delete-topic")}
                   onClick={() => {
                     if (openTopicId === topic.id) setOpenTopicId(null);
                     deleteTopic(topic.id);

@@ -2,7 +2,7 @@
 // loads (not re-derived live from storage) so grading a card mid-session
 // doesn't reshuffle the deck out from under the learner. "更新" re-snapshots
 // on demand (e.g. after adding cards elsewhere).
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 import { RotateCw } from "lucide-preact";
 import { dueCards, gradeCard } from "../lib/cards";
 import { diffChars } from "../lib/diff";
@@ -10,8 +10,11 @@ import type { Card, ReviewGrade } from "../types";
 import { loadSettings, subscribeSettings } from "../lib/settings";
 import { languageDisplayName } from "../lib/languages";
 import { t } from "../i18n";
+import { isEditableTarget, SHORTCUT_PRIORITY } from "../lib/keyboard";
+import { useShortcuts } from "../hooks/useShortcuts";
 
 const GRADES: ReviewGrade[] = ["again", "hard", "good", "easy"];
+const GRADE_KEYS = "1234";
 
 export function ReviewView() {
   const [settings, setSettings] = useState(loadSettings);
@@ -53,6 +56,46 @@ export function ReviewView() {
     setTypedAnswer("");
   }
 
+  // Keep keyboard-only review flowing without a mouse: the answer input is
+  // focused whenever a fresh, unrevealed card is on screen, and once
+  // revealed (the input unmounts) focus moves to the "good" grade button so
+  // Enter/Space and the 1-4 grade shortcut below all have somewhere to land.
+  const answerInputRef = useRef<HTMLInputElement>(null);
+  const goodButtonRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (!revealed) answerInputRef.current?.focus();
+  }, [current?.id, revealed]);
+
+  useEffect(() => {
+    if (revealed) goodButtonRef.current?.focus();
+  }, [current?.id, revealed]);
+
+  // View-priority shortcuts: before reveal, Enter/Space (outside any
+  // editable field — the input's own onKeyDown already handles Enter)
+  // reveals the answer; after reveal, 1-4 grade the card. This deliberately
+  // shadows the app-level 1-5 tab-switch shortcut while a card is revealed
+  // (view priority > app priority) — that's intended so grading doesn't
+  // accidentally jump tabs.
+  useShortcuts(SHORTCUT_PRIORITY.view, (e) => {
+    if (!current) return false;
+    if (isEditableTarget(e.target)) return false;
+    if (!revealed) {
+      if (e.key === "Enter" || e.key === " ") {
+        setRevealed(true);
+        return true;
+      }
+      return false;
+    }
+    if (e.ctrlKey || e.metaKey || e.altKey) return false;
+    const gradeIndex = GRADE_KEYS.indexOf(e.key);
+    if (gradeIndex !== -1) {
+      grade(GRADES[gradeIndex]);
+      return true;
+    }
+    return false;
+  });
+
   return (
     <div class="view-container review-view">
       <section class="card-panel">
@@ -93,6 +136,7 @@ export function ReviewView() {
             {!revealed ? (
               <div class="review-answer-form">
                 <input
+                  ref={answerInputRef}
                   type="text"
                   class="review-answer-input"
                   value={typedAnswer}
@@ -103,7 +147,7 @@ export function ReviewView() {
                   }}
                 />
                 <button type="button" class="primary-button" onClick={() => setRevealed(true)}>
-                  {t("review-reveal-answer")}
+                  {t("review-reveal-answer")} <kbd class="kbd">Enter</kbd>
                 </button>
               </div>
             ) : (
@@ -133,9 +177,15 @@ export function ReviewView() {
                   {current.context && <p class="review-answer-context">{current.context}</p>}
                 </div>
                 <div class="grade-buttons">
-                  {GRADES.map((g) => (
-                    <button key={g} type="button" class={`grade-button grade-button-${g}`} onClick={() => grade(g)}>
-                      {t(`review-grade-${g}`)}
+                  {GRADES.map((g, i) => (
+                    <button
+                      key={g}
+                      type="button"
+                      class={`grade-button grade-button-${g}`}
+                      onClick={() => grade(g)}
+                      ref={g === "good" ? goodButtonRef : undefined}
+                    >
+                      <kbd class="kbd">{i + 1}</kbd> {t(`review-grade-${g}`)}
                     </button>
                   ))}
                 </div>
