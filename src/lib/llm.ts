@@ -113,6 +113,12 @@ export async function requestTopicSuggestion(params: {
    * review instead of always drawing on fresh words. Omit or pass [] for a
    * normal suggestion with no review tie-in. */
   reviewWords?: string[];
+  /** Optional free-text description of what kind of topic the learner wants
+   * right now (e.g. "travel topics", "expressions for business email"),
+   * written in any language. When present, generation should honor it,
+   * taking priority over the shared theme hint above. Omit for a normal
+   * suggestion with no specific request. */
+  topicRequest?: string;
 }): Promise<TopicSuggestion> {
   const themeHint = params.theme
     ? ` Loosely build today's topic around this shared theme if it fits naturally: "${params.theme}". Don't force it — a good, natural topic beats a forced match.`
@@ -121,10 +127,14 @@ export async function requestTopicSuggestion(params: {
     params.reviewWords && params.reviewWords.length > 0
       ? ` The learner is due to review these words/phrases (reviewWords): pick 1-2 that would fit naturally into the topic, and include a sentence in prompt nudging the learner to try using them. If none of them fit naturally, ignore reviewWords entirely — a good, natural topic beats a forced vocabulary match.`
       : "";
+  const requestHint =
+    params.topicRequest && params.topicRequest.trim()
+      ? ` The learner described what kind of topic they want (topicRequest): "${params.topicRequest.trim()}". Follow this request when choosing the topic — it takes priority over the shared theme hint above — but the topic must still be short, concrete, and answerable in 60-90 seconds.`
+      : "";
   const content = await chatJson(
     params.connection,
-    `You are TC Lingo's topic generator. Suggest one short, concrete daily speaking/writing topic for a learner of ${params.targetLanguage} (whose native language is ${params.nativeLanguage}), answerable in about 60-90 seconds or a short paragraph. Prefer everyday, personal, or opinion topics over abstract ones. Avoid repeating any topic in recentTitles.${themeHint}${reviewHint} Return only JSON with exactly these keys: "title" (a short label in ${params.nativeLanguage}), "prompt" (the actual instruction/question, written in ${params.targetLanguage}).`,
-    { recentTitles: params.recentTitles, reviewWords: params.reviewWords ?? [] },
+    `You are TC Lingo's topic generator. Suggest one short, concrete daily speaking/writing topic for a learner of ${params.targetLanguage} (whose native language is ${params.nativeLanguage}), answerable in about 60-90 seconds or a short paragraph. Prefer everyday, personal, or opinion topics over abstract ones. Avoid repeating any topic in recentTitles.${themeHint}${requestHint}${reviewHint} Return only JSON with exactly these keys: "title" (a short label in ${params.nativeLanguage}), "prompt" (the actual instruction/question, written in ${params.targetLanguage}).`,
+    { recentTitles: params.recentTitles, reviewWords: params.reviewWords ?? [], topicRequest: params.topicRequest ?? "" },
   );
   return parseTopicSuggestion(content);
 }
@@ -141,14 +151,23 @@ export async function planTopicFanOut(params: {
   nativeLanguage: string;
   candidateLanguages: string[];
   recentTitlesByLanguage: Record<string, string[]>;
+  /** Optional free-text description of what kind of topic the learner wants
+   * right now, in any language (see requestTopicSuggestion's topicRequest).
+   * When present, the shared theme should be built around it instead of
+   * picked freely. Omit for a normal fan-out with no specific request. */
+  topicRequest?: string;
 }): Promise<TopicFanOutPlan> {
   if (params.candidateLanguages.length <= 1) {
     return { theme: "", targets: params.candidateLanguages };
   }
+  const requestHint =
+    params.topicRequest && params.topicRequest.trim()
+      ? ` The learner described what kind of topic they want (topicRequest): "${params.topicRequest.trim()}". Build the shared theme around this request instead of picking one freely.`
+      : "";
   const content = await chatJson(
     params.connection,
-    `You are the orchestrator for TC Lingo's multi-language practice planner. The learner studies several languages at once: ${params.candidateLanguages.join(", ")} (native language: ${params.nativeLanguage}). Given each language's recently used topic titles (recentTitlesByLanguage), pick one short shared theme, written in ${params.nativeLanguage}, that today's topics across all these languages can loosely share, and decide which of the candidate languages should get a freshly generated topic dispatched to a topic-generation worker this round — normally all of them. Return only JSON: {"theme": string, "targets": string[]}. "targets" must be a subset of candidateLanguages, in their original order.`,
-    { candidateLanguages: params.candidateLanguages, recentTitlesByLanguage: params.recentTitlesByLanguage },
+    `You are the orchestrator for TC Lingo's multi-language practice planner. The learner studies several languages at once: ${params.candidateLanguages.join(", ")} (native language: ${params.nativeLanguage}). Given each language's recently used topic titles (recentTitlesByLanguage), pick one short shared theme, written in ${params.nativeLanguage}, that today's topics across all these languages can loosely share, and decide which of the candidate languages should get a freshly generated topic dispatched to a topic-generation worker this round — normally all of them.${requestHint} Return only JSON: {"theme": string, "targets": string[]}. "targets" must be a subset of candidateLanguages, in their original order.`,
+    { candidateLanguages: params.candidateLanguages, recentTitlesByLanguage: params.recentTitlesByLanguage, topicRequest: params.topicRequest ?? "" },
   );
   return parseTopicFanOutPlan(content, params.candidateLanguages);
 }
@@ -166,6 +185,28 @@ export async function requestMistakeCards(params: {
     params.connection,
     `You are TC Lingo's flashcard extractor. From a learner's original attempt, the corrected ${params.targetLanguage} version, and the explanation of what changed, pick 1 to 3 of the most reusable words or short phrases the learner should drill (prioritize things they got wrong or phrased awkwardly, not things that were already correct). For each, return a card. Return only JSON: an array of objects, each with exactly these keys: "front" (the ${params.targetLanguage} word/phrase), "reading" (${reading.llmInstruction}), "meaning" (translation/definition in ${params.nativeLanguage}), "exampleSentence" (a natural short example sentence in ${params.targetLanguage} using it, ideally adapted from the corrected text), "context" (when/how it's used, in ${params.nativeLanguage}), "cloze" (the example sentence with the front word/phrase replaced by "___"). Return an empty array if nothing is worth drilling.`,
     { original: params.original, corrected: params.corrected, reasons: params.reasons },
+  );
+  return parseCardCandidates(content);
+}
+
+/** The `lingo-card-inbox` receive flow's optional "AIで語彙を抽出" step (see
+ * lib/cardInbox.ts / lib/inboxCandidates.ts for the deterministic mapping
+ * this supplements): given a translated sentence pair pulled from a
+ * tc-translate history item, pick reusable vocabulary from the ${targetLanguage}
+ * side worth drilling. Same one-shot JSON shape as requestMistakeCards, just
+ * fed a translation pair instead of a correction. */
+export async function requestTranslationCards(params: {
+  connection: LlmConnection;
+  targetLanguage: string;
+  nativeLanguage: string;
+  sourceText: string;
+  translationText: string;
+}): Promise<CardCandidate[]> {
+  const reading = readingSpec(params.targetLanguage);
+  const content = await chatJson(
+    params.connection,
+    `You are TC Lingo's flashcard extractor. From a source sentence and its ${params.targetLanguage} translation, pick 1 to 3 of the most reusable words or short phrases from the ${params.targetLanguage} translation that a learner should drill (prioritize vocabulary and set phrases over grammar particles or proper nouns). For each, return a card. Return only JSON: an array of objects, each with exactly these keys: "front" (the ${params.targetLanguage} word/phrase), "reading" (${reading.llmInstruction}), "meaning" (translation/definition in ${params.nativeLanguage}), "exampleSentence" (a natural short example sentence in ${params.targetLanguage} using it, ideally the translation itself or adapted from it), "context" (when/how it's used, in ${params.nativeLanguage}), "cloze" (the example sentence with the front word/phrase replaced by "___"). Return an empty array if nothing is worth drilling.`,
+    { sourceText: params.sourceText, translation: params.translationText },
   );
   return parseCardCandidates(content);
 }

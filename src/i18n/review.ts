@@ -17,6 +17,10 @@ export const reviewMessages = {
     "review-grade-hard": "Hard",
     "review-grade-good": "Good",
     "review-grade-easy": "Easy",
+    "review-speak-front": "Listen to the word",
+    "review-speak-front-stop": "Stop reading",
+    "review-speak-example": "Listen to the example sentence",
+    "review-speak-example-stop": "Stop reading",
   },
   ja: {
     "review-title": "復習",
@@ -33,6 +37,10 @@ export const reviewMessages = {
     "review-grade-hard": "難しい",
     "review-grade-good": "できた",
     "review-grade-easy": "簡単",
+    "review-speak-front": "単語を読み上げる",
+    "review-speak-front-stop": "読み上げを停止",
+    "review-speak-example": "例文を読み上げる",
+    "review-speak-example-stop": "読み上げを停止",
   },
   "zh-CN": {
     "review-title": "复习",
@@ -49,6 +57,10 @@ export const reviewMessages = {
     "review-grade-hard": "困难",
     "review-grade-good": "掌握",
     "review-grade-easy": "简单",
+    "review-speak-front": "朗读单词",
+    "review-speak-front-stop": "停止朗读",
+    "review-speak-example": "朗读例句",
+    "review-speak-example-stop": "停止朗读",
   },
   "zh-TW": {
     "review-title": "複習",
@@ -65,5 +77,9 @@ export const reviewMessages = {
     "review-grade-hard": "困難",
     "review-grade-good": "掌握",
     "review-grade-easy": "簡單",
+    "review-speak-front": "朗讀單字",
+    "review-speak-front-stop": "停止朗讀",
+    "review-speak-example": "朗讀例句",
+    "review-speak-example-stop": "停止朗讀",
   },
 } satisfies MessageBundle;

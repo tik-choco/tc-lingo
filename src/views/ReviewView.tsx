@@ -3,7 +3,7 @@
 // doesn't reshuffle the deck out from under the learner. "更新" re-snapshots
 // on demand (e.g. after adding cards elsewhere).
 import { useEffect, useRef, useState } from "preact/hooks";
-import { RotateCw } from "lucide-preact";
+import { Loader2, RotateCw, Square, Volume2 } from "lucide-preact";
 import { dueCards, gradeCard } from "../lib/cards";
 import { diffChars } from "../lib/diff";
 import type { Card, ReviewGrade } from "../types";
@@ -12,6 +12,7 @@ import { languageDisplayName } from "../lib/languages";
 import { t } from "../i18n";
 import { isEditableTarget, SHORTCUT_PRIORITY } from "../lib/keyboard";
 import { useShortcuts } from "../hooks/useShortcuts";
+import { useSpeech } from "../hooks/useSpeech";
 
 const GRADES: ReviewGrade[] = ["again", "hard", "good", "easy"];
 const GRADE_KEYS = "1234";
@@ -46,6 +47,9 @@ export function ReviewView() {
   }, [settings.activeLanguage]);
 
   const current = queue[index] ?? null;
+  const cardLanguage = current?.language || settings.activeLanguage;
+
+  const speech = useSpeech();
 
   function grade(g: ReviewGrade) {
     if (!current) return;
@@ -171,10 +175,63 @@ export function ReviewView() {
                   <p class="review-answer-front">
                     {current.front}
                     {current.reading && <span class="review-answer-reading"> ({current.reading})</span>}
+                    {speech.supported && (
+                      <button
+                        type="button"
+                        class="speak-button"
+                        onClick={() => speech.speak(current.front, cardLanguage, `${current.id}:front`)}
+                        disabled={speech.loadingId === `${current.id}:front`}
+                        aria-pressed={speech.speakingId === `${current.id}:front`}
+                        aria-label={
+                          speech.speakingId === `${current.id}:front` ? t("review-speak-front-stop") : t("review-speak-front")
+                        }
+                        title={speech.speakingId === `${current.id}:front` ? t("review-speak-front-stop") : t("review-speak-front")}
+                      >
+                        {speech.loadingId === `${current.id}:front` ? (
+                          <Loader2 size={14} class="speak-button-spin" />
+                        ) : speech.speakingId === `${current.id}:front` ? (
+                          <Square size={14} />
+                        ) : (
+                          <Volume2 size={14} />
+                        )}
+                      </button>
+                    )}
                   </p>
                   <p class="review-answer-meaning">{current.meaning}</p>
-                  {current.exampleSentence && <p class="review-answer-example">{current.exampleSentence}</p>}
+                  {current.exampleSentence && (
+                    <p class="review-answer-example">
+                      {current.exampleSentence}
+                      {speech.supported && (
+                        <button
+                          type="button"
+                          class="speak-button"
+                          onClick={() => speech.speak(current.exampleSentence, cardLanguage, `${current.id}:example`)}
+                          disabled={speech.loadingId === `${current.id}:example`}
+                          aria-pressed={speech.speakingId === `${current.id}:example`}
+                          aria-label={
+                            speech.speakingId === `${current.id}:example`
+                              ? t("review-speak-example-stop")
+                              : t("review-speak-example")
+                          }
+                          title={
+                            speech.speakingId === `${current.id}:example`
+                              ? t("review-speak-example-stop")
+                              : t("review-speak-example")
+                          }
+                        >
+                          {speech.loadingId === `${current.id}:example` ? (
+                            <Loader2 size={14} class="speak-button-spin" />
+                          ) : speech.speakingId === `${current.id}:example` ? (
+                            <Square size={14} />
+                          ) : (
+                            <Volume2 size={14} />
+                          )}
+                        </button>
+                      )}
+                    </p>
+                  )}
                   {current.context && <p class="review-answer-context">{current.context}</p>}
+                  {speech.speechError && <p class="speak-error">{speech.speechError}</p>}
                 </div>
                 <div class="grade-buttons">
                   {GRADES.map((g, i) => (

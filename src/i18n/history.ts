@@ -9,6 +9,10 @@ export const historyMessages = {
     "history-retry-answer-heading": "Your answer",
     "history-retry-not-answered": "Not answered yet.",
     "history-last-practiced": "Last practiced {date}",
+    "history-speak-prompt": "Listen to the topic prompt",
+    "history-speak-prompt-stop": "Stop reading",
+    "history-speak-retry-prompt": "Listen to the follow-up question",
+    "history-speak-retry-prompt-stop": "Stop reading",
   },
   ja: {
     "history-empty-state": "まだトピックがありません。練習タブから始めてみましょう。",
@@ -18,6 +22,10 @@ export const historyMessages = {
     "history-retry-answer-heading": "あなたの回答",
     "history-retry-not-answered": "まだ回答していません。",
     "history-last-practiced": "最終挑戦: {date}",
+    "history-speak-prompt": "お題を読み上げる",
+    "history-speak-prompt-stop": "読み上げを停止",
+    "history-speak-retry-prompt": "再回答問題を読み上げる",
+    "history-speak-retry-prompt-stop": "読み上げを停止",
   },
   "zh-CN": {
     "history-empty-state": "还没有主题。请从练习标签开始吧。",
@@ -27,6 +35,10 @@ export const historyMessages = {
     "history-retry-answer-heading": "你的回答",
     "history-retry-not-answered": "尚未作答。",
     "history-last-practiced": "最近练习：{date}",
+    "history-speak-prompt": "朗读题目",
+    "history-speak-prompt-stop": "停止朗读",
+    "history-speak-retry-prompt": "朗读追问问题",
+    "history-speak-retry-prompt-stop": "停止朗读",
   },
   "zh-TW": {
     "history-empty-state": "還沒有主題。請從練習標籤開始吧。",
@@ -36,5 +48,9 @@ export const historyMessages = {
     "history-retry-answer-heading": "你的回答",
     "history-retry-not-answered": "尚未作答。",
     "history-last-practiced": "最近練習：{date}",
+    "history-speak-prompt": "朗讀題目",
+    "history-speak-prompt-stop": "停止朗讀",
+    "history-speak-retry-prompt": "朗讀追問問題",
+    "history-speak-retry-prompt-stop": "停止朗讀",
   },
 } satisfies MessageBundle;

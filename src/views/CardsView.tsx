@@ -1,11 +1,27 @@
 import { useEffect, useRef, useState } from "preact/hooks";
-import { ChevronDown, ChevronUp, Pencil, Trash2 } from "lucide-preact";
+import { ChevronDown, ChevronUp, Loader2, Pencil, Square, Trash2, Volume2 } from "lucide-preact";
 import { addCard, deleteCard, loadCards, subscribeCards, updateCard } from "../lib/cards";
 import { loadSettings, subscribeSettings } from "../lib/settings";
 import { loadTopics } from "../lib/topics";
 import { languageDisplayName, readingSpec } from "../lib/languages";
 import { LanguageSelect } from "../components/LanguageSelect";
+import { MistakeCardPicker } from "../components/MistakeCardPicker";
 import { getUiLanguage, t } from "../i18n";
+import { useSpeech } from "../hooks/useSpeech";
+import { useLlmConnection } from "../hooks/useLlmConnection";
+import { localizeNetworkError } from "../lib/network";
+import { requestTranslationCards } from "../lib/llm";
+import type { CardCandidate } from "../lib/parse";
+import {
+  dismiss,
+  loadInboxItems,
+  markImported,
+  resolvePayload,
+  subscribeInbox,
+} from "../lib/cardInbox";
+import type { LingoCardInboxItem, LingoCardPayloadV1 } from "../lib/cardInbox";
+import { deterministicCandidates } from "../lib/inboxCandidates";
+import type { LlmConnection } from "../lib/llmConnection";
 import type { Card } from "../types";
 
 /** Days until due relative to local midnight; null for an unparsable date. */
@@ -24,12 +40,183 @@ function formatDue(diffDays: number | null): string {
   return t("cards-due-days", { days: diffDays });
 }
 
+/** Fetch state for one inbox row's payload — driven by lib/cardInbox.ts's
+ * resolvePayload, kept local to the row instead of lifted to CardsView since
+ * only one item is ever expanded/resolving at a time in practice, and
+ * per-row state keeps each row's async fetch independent of the others. */
+type RowResolution = { kind: "idle" } | { kind: "loading" } | { kind: "ok"; payload: LingoCardPayloadV1 } | { kind: "transient" } | { kind: "permanent" };
+
+/** One `lingo-card-inbox` row: collapsed shows just the sender's lightweight
+ * preview (no CID fetch yet); expanding triggers `resolvePayload` and, once
+ * resolved, shows the deterministic candidates (see lib/inboxCandidates.ts)
+ * through the shared MistakeCardPicker, plus an optional AI-assisted
+ * extraction pass that appends more candidates to the same picker. */
+function InboxItemRow({
+  item,
+  cards,
+  connection,
+  nativeLanguage,
+}: {
+  item: LingoCardInboxItem;
+  cards: Card[];
+  connection: LlmConnection | null;
+  nativeLanguage: string;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const [resolution, setResolution] = useState<RowResolution>({ kind: "idle" });
+  const [candidates, setCandidates] = useState<CardCandidate[]>([]);
+  const [extracting, setExtracting] = useState(false);
+  const [error, setError] = useState("");
+
+  async function resolve() {
+    setResolution({ kind: "loading" });
+    setError("");
+    const result = await resolvePayload(item);
+    if (result.kind === "resolved") {
+      setCandidates(deterministicCandidates(item, result.payload));
+      setResolution({ kind: "ok", payload: result.payload });
+    } else {
+      // "permanent" already recorded dismiss(item.id) inside resolvePayload;
+      // this row disappears on the next inbox refresh (subscribeInbox fires
+      // off that same storage write) before the "invalid" message below
+      // matters much, but it's accurate for the brief moment it's visible.
+      setResolution({ kind: result.kind });
+    }
+  }
+
+  function toggleExpand() {
+    if (expanded) {
+      setExpanded(false);
+      return;
+    }
+    setExpanded(true);
+    if (resolution.kind === "idle") resolve();
+  }
+
+  async function extractWithAi() {
+    if (!connection || resolution.kind !== "ok") return;
+    setExtracting(true);
+    setError("");
+    try {
+      const payload = resolution.payload;
+      const natural = payload.translations.find((tr) => tr.tone === "Natural") ?? payload.translations[0];
+      const found = await requestTranslationCards({
+        connection,
+        targetLanguage: item.targetLanguage,
+        nativeLanguage,
+        sourceText: payload.sourceText,
+        translationText: natural?.text ?? "",
+      });
+      setCandidates((prev) => [...prev, ...found]);
+    } catch (e) {
+      setError(localizeNetworkError(e, t("cards-inbox-extract-failed")));
+    } finally {
+      setExtracting(false);
+    }
+  }
+
+  function addSelected(selected: CardCandidate[]) {
+    for (const c of selected) {
+      addCard({ ...c, source: "translate", sourceTopicId: null, language: item.targetLanguage });
+    }
+    markImported(item.id);
+  }
+
+  const duplicateFlags = candidates.map((c) => cards.some((existing) => existing.front === c.front && existing.language === item.targetLanguage));
+
+  return (
+    <li class="card-list-entry">
+      <div class="card-list-item card-list-clickable" onClick={toggleExpand}>
+        <div class="card-list-main">
+          <strong>{item.sourcePreview}</strong>
+        </div>
+        <div class="card-list-meta">
+          <span class="source-badge">{t(item.kind === "explain" ? "cards-inbox-kind-explain" : "cards-inbox-kind-translate")}</span>
+          <span class="language-badge">{languageDisplayName(item.targetLanguage)}</span>
+          <button
+            type="button"
+            class="icon-button"
+            onClick={(e) => {
+              e.stopPropagation();
+              toggleExpand();
+            }}
+            title={expanded ? t("cards-collapse-title") : t("cards-expand-title")}
+            aria-label={expanded ? t("cards-collapse-title") : t("cards-expand-title")}
+            aria-expanded={expanded}
+          >
+            {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+          </button>
+          <button
+            type="button"
+            class="icon-button"
+            onClick={(e) => {
+              e.stopPropagation();
+              dismiss(item.id);
+            }}
+            title={t("cards-inbox-dismiss-title")}
+            aria-label={t("cards-inbox-dismiss-title")}
+          >
+            <Trash2 size={14} />
+          </button>
+        </div>
+      </div>
+
+      {expanded && (
+        <div class="card-list-detail">
+          {resolution.kind === "loading" && <p class="hint-text">{t("cards-inbox-loading")}</p>}
+          {resolution.kind === "transient" && (
+            <p class="error-text">
+              {t("cards-inbox-fetch-failed")}{" "}
+              <button type="button" class="link-button" onClick={resolve}>
+                {t("cards-inbox-retry")}
+              </button>
+            </p>
+          )}
+          {resolution.kind === "permanent" && <p class="error-text">{t("cards-inbox-invalid")}</p>}
+          {resolution.kind === "ok" && (
+            <>
+              {error && <p class="error-text">{error}</p>}
+              {candidates.length === 0 ? (
+                <p class="hint-text">{t("cards-inbox-no-candidates")}</p>
+              ) : (
+                <MistakeCardPicker
+                  candidates={candidates}
+                  duplicateFlags={duplicateFlags}
+                  ariaLabel={t("cards-inbox-picker-aria-label")}
+                  addLabel={t("cards-inbox-add-selected")}
+                  cancelLabel={t("cards-inbox-picker-cancel")}
+                  duplicateLabel={t("cards-inbox-already-added")}
+                  onAdd={addSelected}
+                  onClose={() => setExpanded(false)}
+                />
+              )}
+              {connection && (
+                <button type="button" onClick={extractWithAi} disabled={extracting}>
+                  {extracting ? t("cards-inbox-extracting") : t("cards-inbox-extract-ai")}
+                </button>
+              )}
+            </>
+          )}
+        </div>
+      )}
+    </li>
+  );
+}
+
 export function CardsView() {
   const [cards, setCards] = useState<Card[]>(loadCards);
   useEffect(() => subscribeCards(() => setCards(loadCards())), []);
 
   const [settings, setSettings] = useState(loadSettings);
   useEffect(() => subscribeSettings(() => setSettings(loadSettings())), []);
+
+  const { connection } = useLlmConnection();
+
+  const [inboxItems, setInboxItems] = useState<LingoCardInboxItem[]>(loadInboxItems);
+  useEffect(() => subscribeInbox(() => setInboxItems(loadInboxItems())), []);
+  const [showInbox, setShowInbox] = useState(false);
+
+  const speech = useSpeech();
 
   const [showForm, setShowForm] = useState(false);
   const [front, setFront] = useState("");
@@ -244,6 +431,27 @@ export function CardsView() {
       </section>
 
       <section class="card-panel">
+        <div class="topic-header">
+          <h2>{t("cards-inbox-heading", { count: inboxItems.length })}</h2>
+          <button type="button" onClick={() => setShowInbox((v) => !v)}>
+            {showInbox ? t("cards-close") : t("cards-inbox-open")}
+          </button>
+        </div>
+
+        {showInbox &&
+          (inboxItems.length === 0 ? (
+            <p class="hint-text">{t("cards-inbox-empty")}</p>
+          ) : (
+            <ul class="card-list">
+              {inboxItems.map((item) => (
+                <InboxItemRow key={item.id} item={item} cards={cards} connection={connection} nativeLanguage={settings.nativeLanguage} />
+              ))}
+            </ul>
+          ))}
+      </section>
+
+      <section class="card-panel">
+        {speech.speechError && <p class="speak-error">{speech.speechError}</p>}
         {sorted.length === 0 ? (
           <p class="hint-text">{t("cards-empty")}</p>
         ) : (
@@ -266,9 +474,34 @@ export function CardsView() {
                         {formatDue(dueDiffDays(c.dueAt))}
                       </span>
                       {c.source === "mistake" && <span class="source-badge">{t("cards-source-mistake")}</span>}
+                      {c.source === "translate" && <span class="source-badge">{t("cards-source-translate")}</span>}
                       {!c.cloze && <span class="cloze-missing-badge">{t("cards-cloze-missing")}</span>}
                       {settings.targetLanguages.length > 1 && c.language && (
                         <span class="language-badge">{languageDisplayName(c.language)}</span>
+                      )}
+                      {speech.supported && (
+                        <button
+                          type="button"
+                          class="speak-button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            speech.speak(c.front, c.language || settings.activeLanguage, `${c.id}:front`);
+                          }}
+                          disabled={speech.loadingId === `${c.id}:front`}
+                          aria-pressed={speech.speakingId === `${c.id}:front`}
+                          aria-label={
+                            speech.speakingId === `${c.id}:front` ? t("cards-speak-front-stop") : t("cards-speak-front")
+                          }
+                          title={speech.speakingId === `${c.id}:front` ? t("cards-speak-front-stop") : t("cards-speak-front")}
+                        >
+                          {speech.loadingId === `${c.id}:front` ? (
+                            <Loader2 size={14} class="speak-button-spin" />
+                          ) : speech.speakingId === `${c.id}:front` ? (
+                            <Square size={14} />
+                          ) : (
+                            <Volume2 size={14} />
+                          )}
+                        </button>
                       )}
                       <button
                         type="button"
@@ -374,6 +607,35 @@ export function CardsView() {
                           <p class="card-detail-row">
                             <span class="card-detail-label">{t("cards-detail-example")}</span>
                             {c.exampleSentence}
+                            {speech.supported && (
+                              <button
+                                type="button"
+                                class="speak-button"
+                                onClick={() =>
+                                  speech.speak(c.exampleSentence, c.language || settings.activeLanguage, `${c.id}:example`)
+                                }
+                                disabled={speech.loadingId === `${c.id}:example`}
+                                aria-pressed={speech.speakingId === `${c.id}:example`}
+                                aria-label={
+                                  speech.speakingId === `${c.id}:example`
+                                    ? t("cards-speak-example-stop")
+                                    : t("cards-speak-example")
+                                }
+                                title={
+                                  speech.speakingId === `${c.id}:example`
+                                    ? t("cards-speak-example-stop")
+                                    : t("cards-speak-example")
+                                }
+                              >
+                                {speech.loadingId === `${c.id}:example` ? (
+                                  <Loader2 size={14} class="speak-button-spin" />
+                                ) : speech.speakingId === `${c.id}:example` ? (
+                                  <Square size={14} />
+                                ) : (
+                                  <Volume2 size={14} />
+                                )}
+                              </button>
+                            )}
                           </p>
                         )}
                         {c.context && (

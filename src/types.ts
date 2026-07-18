@@ -3,9 +3,11 @@
 
 export type MainTab = "practice" | "review" | "cards" | "history" | "settings";
 
-/** How a card entered the deck: typed in by hand, or auto-extracted from an
- * AI correction during a practice round. */
-export type CardSource = "manual" | "mistake";
+/** How a card entered the deck: typed in by hand, auto-extracted from an AI
+ * correction during a practice round, or imported from the `lingo-card-inbox`
+ * sharedBus topic (tc-translate's translation/explain history — see
+ * lib/cardInbox.ts). */
+export type CardSource = "manual" | "mistake" | "translate";
 
 /** Extended SRS card: word/phrase plus enough context to review it as more
  * than a bare flashcard (reading, an example sentence, when it's used, and
@@ -73,6 +75,14 @@ export interface PracticeAttempt {
  * lib/llmConnection.ts for how this is resolved into an actual connection. */
 export type LlmConnectionMode = "api" | "network";
 
+/** Which engine "read this aloud" (hooks/useSpeech.ts) should use: the
+ * browser's built-in Web Speech API, an OpenAI-compatible `/audio/speech`
+ * endpoint (the shared llm config's `tts` entry, see lib/llmConfig.ts's
+ * resolveVoice), or the same endpoint reached over the AI Network room
+ * (lib/network.ts's requestNetworkTts). All three degrade to "browser" when
+ * unconfigured/unreachable — see useSpeech for the fallback chain. */
+export type TtsEngine = "browser" | "api" | "network";
+
 /** Supports studying more than one language at once: `targetLanguages` is
  * the full set the learner is juggling, `activeLanguage` (always a member of
  * `targetLanguages`) is which one Practice/Review/Cards/History currently
@@ -84,4 +94,5 @@ export interface LingoSettings {
   nativeLanguage: string;
   presetId: string;
   connectionMode: LlmConnectionMode;
+  ttsEngine: TtsEngine;
 }

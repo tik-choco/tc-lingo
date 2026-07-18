@@ -19,6 +19,9 @@ export const appMessages = {
     "app-kbd-review-reveal": "Reveal answer",
     "app-kbd-review-grade": "Grade a card (again/hard/good/easy)",
     "app-kbd-submit": "Submit",
+    "app-tts-fallback-browser": "Couldn't reach the speech API, so playing with the browser voice instead.",
+    "app-tts-failed": "Couldn't play the audio.",
+    "app-open-translate": "Open TC Translate",
   },
   ja: {
     "app-tab-practice": "練習",
@@ -37,6 +40,9 @@ export const appMessages = {
     "app-kbd-review-reveal": "答えを表示",
     "app-kbd-review-grade": "カードを評価(again/hard/good/easy)",
     "app-kbd-submit": "送信",
+    "app-tts-fallback-browser": "音声APIに接続できないため、ブラウザ音声で再生します",
+    "app-tts-failed": "音声の再生に失敗しました",
+    "app-open-translate": "TC Translateを開く",
   },
   "zh-CN": {
     "app-tab-practice": "练习",
@@ -55,6 +61,9 @@ export const appMessages = {
     "app-kbd-review-reveal": "显示答案",
     "app-kbd-review-grade": "评分卡片(again/hard/good/easy)",
     "app-kbd-submit": "提交",
+    "app-tts-fallback-browser": "无法连接语音API,已改用浏览器语音播放",
+    "app-tts-failed": "语音播放失败",
+    "app-open-translate": "打开TC Translate",
   },
   "zh-TW": {
     "app-tab-practice": "練習",
@@ -73,5 +82,8 @@ export const appMessages = {
     "app-kbd-review-reveal": "顯示答案",
     "app-kbd-review-grade": "評分卡片(again/hard/good/easy)",
     "app-kbd-submit": "送出",
+    "app-tts-fallback-browser": "無法連接語音API,已改用瀏覽器語音播放",
+    "app-tts-failed": "語音播放失敗",
+    "app-open-translate": "開啟TC Translate",
   },
 } satisfies MessageBundle;

@@ -27,6 +27,15 @@ export const languageOptions = [
   "Dutch",
   "Polish",
   "Swedish",
+  // tc-translate-only languages (mirrors src/constants.ts there) — added so
+  // tc-translate's `lingo-card-inbox` items (see lib/cardInbox.ts) in these
+  // languages get full display-name/BCP47/reading support here too, instead
+  // of just falling back to the canonical English name.
+  "Ukrainian",
+  "Filipino",
+  "Malay",
+  "Bengali",
+  "Hebrew",
 ];
 
 export const languageJapaneseNames: Record<string, string> = {
@@ -50,6 +59,11 @@ export const languageJapaneseNames: Record<string, string> = {
   Dutch: "オランダ語",
   Polish: "ポーランド語",
   Swedish: "スウェーデン語",
+  Ukrainian: "ウクライナ語",
+  Filipino: "フィリピン語",
+  Malay: "マレー語",
+  Bengali: "ベンガル語",
+  Hebrew: "ヘブライ語",
 };
 
 const languageChineseSimplifiedNames: Record<string, string> = {
@@ -73,6 +87,11 @@ const languageChineseSimplifiedNames: Record<string, string> = {
   Dutch: "荷兰语",
   Polish: "波兰语",
   Swedish: "瑞典语",
+  Ukrainian: "乌克兰语",
+  Filipino: "菲律宾语",
+  Malay: "马来语",
+  Bengali: "孟加拉语",
+  Hebrew: "希伯来语",
 };
 
 const languageChineseTraditionalNames: Record<string, string> = {
@@ -96,6 +115,11 @@ const languageChineseTraditionalNames: Record<string, string> = {
   Dutch: "荷蘭語",
   Polish: "波蘭語",
   Swedish: "瑞典語",
+  Ukrainian: "烏克蘭語",
+  Filipino: "菲律賓語",
+  Malay: "馬來語",
+  Bengali: "孟加拉語",
+  Hebrew: "希伯來語",
 };
 
 /** Each language's name in its own script, appended to picker labels so a
@@ -121,6 +145,11 @@ export const languageNativeNames: Record<string, string> = {
   Dutch: "Nederlands",
   Polish: "Polski",
   Swedish: "Svenska",
+  Ukrainian: "Українська",
+  Filipino: "Filipino",
+  Malay: "Bahasa Melayu",
+  Bengali: "বাংলা",
+  Hebrew: "עברית",
 };
 
 /** Display label for a language in the active UI language. Falls back to the
@@ -216,7 +245,64 @@ const readingSpecDefs: Record<string, ReadingSpecDef> = {
     placeholder: "",
     llmInstruction: "a Latin-alphabet romanization",
   },
+  Ukrainian: {
+    labelKey: "reading-label-romanization",
+    placeholder: "",
+    llmInstruction: "a Latin-alphabet romanization",
+  },
+  Bengali: {
+    labelKey: "reading-label-romanization",
+    placeholder: "",
+    llmInstruction: "a Latin-alphabet romanization",
+  },
+  Hebrew: {
+    labelKey: "reading-label-romanization",
+    placeholder: "",
+    llmInstruction: "a Latin-alphabet romanization",
+  },
+  // Filipino/Malay use the Latin script already, so they fall through to
+  // DEFAULT_READING_SPEC like the other Latin-script languages (English
+  // aside, which gets its own IPA entry above).
 };
+
+// Canonical language name (as in languageOptions) → BCP-47 tag, for
+// SpeechSynthesisUtterance.lang (hooks/useSpeech.ts). Mirrors i18n/index.ts's
+// documentLangCodes plus the four built-in UI languages.
+const bcp47Tags: Record<string, string> = {
+  English: "en",
+  Japanese: "ja",
+  Korean: "ko",
+  "Chinese (Simplified)": "zh-CN",
+  "Chinese (Traditional)": "zh-TW",
+  Spanish: "es",
+  French: "fr",
+  German: "de",
+  Portuguese: "pt",
+  Italian: "it",
+  Russian: "ru",
+  Arabic: "ar",
+  Hindi: "hi",
+  Indonesian: "id",
+  Vietnamese: "vi",
+  Thai: "th",
+  Turkish: "tr",
+  Dutch: "nl",
+  Polish: "pl",
+  Swedish: "sv",
+  Ukrainian: "uk",
+  Filipino: "fil",
+  Malay: "ms",
+  Bengali: "bn",
+  Hebrew: "he",
+};
+
+/** BCP-47 tag for a canonical language name (e.g. "Japanese" -> "ja",
+ * "Chinese (Simplified)" -> "zh-CN"), for SpeechSynthesisUtterance.lang.
+ * "" for a language outside languageOptions (including a user-typed value
+ * from before this list existed). */
+export function languageBcp47Tag(language: string): string {
+  return bcp47Tags[language] ?? "";
+}
 
 /** Reading-field spec for a target language, falling back to a generic
  * "reading" label for languages without a script-specific convention

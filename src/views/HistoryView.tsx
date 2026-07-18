@@ -4,6 +4,7 @@
 // incorporate last time's feedback, unprompted?" is the whole point of the
 // three-round design (see CLAUDE.md).
 import { useEffect, useState } from "preact/hooks";
+import { Loader2, Square, Volume2 } from "lucide-preact";
 import { attemptsForTopic, deleteTopic, loadTopics, subscribeTopics } from "../lib/topics";
 import type { Topic } from "../types";
 import { diffChars } from "../lib/diff";
@@ -11,6 +12,7 @@ import { FeedbackPanel } from "../components/FeedbackPanel";
 import { loadSettings, subscribeSettings } from "../lib/settings";
 import { languageDisplayName } from "../lib/languages";
 import { t, getUiLanguage } from "../i18n";
+import { useSpeech } from "../hooks/useSpeech";
 
 function formatAttemptDate(createdAt: string): string {
   return new Date(createdAt).toLocaleDateString(getUiLanguage());
@@ -40,6 +42,8 @@ export function HistoryView() {
   }, [settings.activeLanguage]);
 
   const [openTopicId, setOpenTopicId] = useState<string | null>(null);
+
+  const speech = useSpeech();
 
   if (topics.length === 0) {
     return (
@@ -95,7 +99,35 @@ export function HistoryView() {
 
             {open && (
               <div class="history-detail">
-                <p class="topic-prompt">{topic.prompt}</p>
+                <p class="topic-prompt">
+                  {topic.prompt}
+                  {speech.supported && (
+                    <button
+                      type="button"
+                      class="speak-button"
+                      onClick={() =>
+                        speech.speak(topic.prompt, topic.language || settings.activeLanguage, `${topic.id}:prompt`)
+                      }
+                      disabled={speech.loadingId === `${topic.id}:prompt`}
+                      aria-pressed={speech.speakingId === `${topic.id}:prompt`}
+                      aria-label={
+                        speech.speakingId === `${topic.id}:prompt` ? t("history-speak-prompt-stop") : t("history-speak-prompt")
+                      }
+                      title={
+                        speech.speakingId === `${topic.id}:prompt` ? t("history-speak-prompt-stop") : t("history-speak-prompt")
+                      }
+                    >
+                      {speech.loadingId === `${topic.id}:prompt` ? (
+                        <Loader2 size={14} class="speak-button-spin" />
+                      ) : speech.speakingId === `${topic.id}:prompt` ? (
+                        <Square size={14} />
+                      ) : (
+                        <Volume2 size={14} />
+                      )}
+                    </button>
+                  )}
+                </p>
+                {speech.speechError && <p class="speak-error">{speech.speechError}</p>}
                 {attempts.map((attempt, i) => {
                   const prev = i > 0 ? attempts[i - 1] : null;
                   return (
@@ -117,11 +149,47 @@ export function HistoryView() {
                         corrected={attempt.corrected}
                         reasons={attempt.reasons}
                         retryPrompt=""
+                        language={topic.language || settings.activeLanguage}
                       />
                       {attempt.retryPrompt && (
                         <div class="feedback-field history-retry-qa">
                           <h4>{t("practice-feedback-retry-prompt")}</h4>
-                          <p class="feedback-retry-prompt">{attempt.retryPrompt}</p>
+                          <p class="feedback-retry-prompt">
+                            {attempt.retryPrompt}
+                            {speech.supported && (
+                              <button
+                                type="button"
+                                class="speak-button"
+                                onClick={() =>
+                                  speech.speak(
+                                    attempt.retryPrompt,
+                                    topic.language || settings.activeLanguage,
+                                    `${attempt.id}:retry-prompt`,
+                                  )
+                                }
+                                disabled={speech.loadingId === `${attempt.id}:retry-prompt`}
+                                aria-pressed={speech.speakingId === `${attempt.id}:retry-prompt`}
+                                aria-label={
+                                  speech.speakingId === `${attempt.id}:retry-prompt`
+                                    ? t("history-speak-retry-prompt-stop")
+                                    : t("history-speak-retry-prompt")
+                                }
+                                title={
+                                  speech.speakingId === `${attempt.id}:retry-prompt`
+                                    ? t("history-speak-retry-prompt-stop")
+                                    : t("history-speak-retry-prompt")
+                                }
+                              >
+                                {speech.loadingId === `${attempt.id}:retry-prompt` ? (
+                                  <Loader2 size={14} class="speak-button-spin" />
+                                ) : speech.speakingId === `${attempt.id}:retry-prompt` ? (
+                                  <Square size={14} />
+                                ) : (
+                                  <Volume2 size={14} />
+                                )}
+                              </button>
+                            )}
+                          </p>
                           <h4>{t("history-retry-answer-heading")}</h4>
                           {attempt.retryAnswer ? (
                             <p class="feedback-original">{attempt.retryAnswer}</p>
@@ -130,7 +198,42 @@ export function HistoryView() {
                           )}
                           {attempt.retryCorrected && (
                             <>
-                              <h4>{t("practice-feedback-corrected")}</h4>
+                              <div class="topic-header">
+                                <h4>{t("practice-feedback-corrected")}</h4>
+                                {speech.supported && (
+                                  <button
+                                    type="button"
+                                    class="speak-button"
+                                    onClick={() =>
+                                      speech.speak(
+                                        attempt.retryCorrected,
+                                        topic.language || settings.activeLanguage,
+                                        `${attempt.id}:retry-corrected`,
+                                      )
+                                    }
+                                    disabled={speech.loadingId === `${attempt.id}:retry-corrected`}
+                                    aria-pressed={speech.speakingId === `${attempt.id}:retry-corrected`}
+                                    aria-label={
+                                      speech.speakingId === `${attempt.id}:retry-corrected`
+                                        ? t("practice-speak-corrected-stop")
+                                        : t("practice-speak-corrected")
+                                    }
+                                    title={
+                                      speech.speakingId === `${attempt.id}:retry-corrected`
+                                        ? t("practice-speak-corrected-stop")
+                                        : t("practice-speak-corrected")
+                                    }
+                                  >
+                                    {speech.loadingId === `${attempt.id}:retry-corrected` ? (
+                                      <Loader2 size={14} class="speak-button-spin" />
+                                    ) : speech.speakingId === `${attempt.id}:retry-corrected` ? (
+                                      <Square size={14} />
+                                    ) : (
+                                      <Volume2 size={14} />
+                                    )}
+                                  </button>
+                                )}
+                              </div>
                               <DiffLine before={attempt.retryAnswer} after={attempt.retryCorrected} />
                               {attempt.retryReasons && (
                                 <>

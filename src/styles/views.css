@@ -1034,8 +1034,66 @@ button:disabled {
   font-size: 0.85em;
 }
 
+/* ---------------- Settings view: TTS section ---------------- */
+
+.settings-tts-heading {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
 .kbd-help-desc {
   color: var(--text-muted);
   font-size: 0.9rem;
   text-align: right;
+}
+
+/* ---------------- Read-aloud (TTS) controls — hooks/useSpeech.ts ----------------
+   Small inline icon button embedded next to card fronts, example sentences,
+   and AI-corrected text (ReviewView/CardsView/FeedbackPanel). */
+
+.speak-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  margin-left: var(--space-1);
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  vertical-align: middle;
+  transition: color var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease);
+}
+
+.speak-button:hover:not(:disabled) {
+  color: var(--primary);
+  background: var(--primary-soft);
+}
+
+.speak-button[aria-pressed="true"] {
+  color: var(--primary);
+}
+
+.speak-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.speak-button-spin {
+  animation: speak-button-spin var(--dur-slow) linear infinite;
+}
+
+@keyframes speak-button-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.speak-error {
+  color: var(--text-muted);
+  font-size: 0.8rem;
 }

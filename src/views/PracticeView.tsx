@@ -3,12 +3,13 @@
 // mistakes into review cards. Same-topic repetition (round 1/2/3) is driven
 // entirely by lib/topics.ts's nextRoundFor.
 import { useEffect, useRef, useState } from "preact/hooks";
-import { Sparkles } from "lucide-preact";
+import { Loader2, Sparkles, Square, Volume2 } from "lucide-preact";
 import { addAttempt, addTopic, attemptsForTopic, loadTopics, nextRoundFor, subscribeTopics, updateAttempt } from "../lib/topics";
 import type { AttemptRound, PracticeAttempt, Topic } from "../types";
 import { addCard, dueCards } from "../lib/cards";
 import { loadSettings } from "../lib/settings";
 import { useLlmConnection } from "../hooks/useLlmConnection";
+import { useSpeech } from "../hooks/useSpeech";
 import { planTopicFanOut, requestFeedback, requestMistakeCards, requestRetryFeedback, requestTopicSuggestion } from "../lib/llm";
 import { localizeNetworkError } from "../lib/network";
 import type { CardCandidate, FeedbackResult } from "../lib/parse";
@@ -27,12 +28,43 @@ const MAX_REVIEW_WORDS_FOR_TOPIC = 5;
 
 /** Inline display for a retry-answer "check my answer" result: reuses the
  * same diff + reasons layout as FeedbackPanel's corrected field, but scoped
- * to just the retry exchange (no original/retryPrompt fields to repeat). */
-function RetryCheckResult({ retryAnswer, retryCorrected, retryReasons }: { retryAnswer: string; retryCorrected: string; retryReasons: string }) {
+ * to just the retry exchange (no original/retryPrompt fields to repeat).
+ * `language` drives its own read-aloud button (independent useSpeech
+ * instance from FeedbackPanel's — this is a separate piece of text). */
+function RetryCheckResult({
+  retryAnswer,
+  retryCorrected,
+  retryReasons,
+  language,
+}: {
+  retryAnswer: string;
+  retryCorrected: string;
+  retryReasons: string;
+  language: string;
+}) {
   const chunks = diffChars(retryAnswer, retryCorrected);
+  const speech = useSpeech();
+  const speakId = "retry-corrected";
+  const speaking = speech.speakingId === speakId;
+  const loading = speech.loadingId === speakId;
   return (
     <div class="feedback-field">
-      <h3>{t("practice-feedback-corrected")}</h3>
+      <div class="topic-header">
+        <h3>{t("practice-feedback-corrected")}</h3>
+        {speech.supported && (
+          <button
+            type="button"
+            class="speak-button"
+            onClick={() => speech.speak(retryCorrected, language, speakId)}
+            disabled={loading}
+            aria-pressed={speaking}
+            aria-label={speaking ? t("practice-speak-corrected-stop") : t("practice-speak-corrected")}
+            title={speaking ? t("practice-speak-corrected-stop") : t("practice-speak-corrected")}
+          >
+            {loading ? <Loader2 size={14} class="speak-button-spin" /> : speaking ? <Square size={14} /> : <Volume2 size={14} />}
+          </button>
+        )}
+      </div>
       <p class="feedback-diff">
         {chunks.map((chunk, i) => (
           <span key={i} class={chunk.op === "same" ? undefined : `diff-${chunk.op}`}>
@@ -46,6 +78,7 @@ function RetryCheckResult({ retryAnswer, retryCorrected, retryReasons }: { retry
           <p class="feedback-reasons">{retryReasons}</p>
         </>
       )}
+      {speech.speechError && <p class="speak-error">{speech.speechError}</p>}
     </div>
   );
 }
@@ -56,6 +89,7 @@ function roundLabel(round: AttemptRound): string {
 
 export function PracticeView() {
   const { connection } = useLlmConnection();
+  const speech = useSpeech();
   const settings = loadSettings();
 
   const [topics, setTopics] = useState<Topic[]>(() => loadTopics(settings.activeLanguage));
@@ -81,6 +115,7 @@ export function PracticeView() {
   const round = activeTopicId ? nextRoundFor(activeTopicId) : null;
   const previousAttempt = attempts.length > 0 ? attempts[attempts.length - 1] : null;
 
+  const [topicRequest, setTopicRequest] = useState("");
   const [showCustomForm, setShowCustomForm] = useState(false);
   const [customTitle, setCustomTitle] = useState("");
   const [customPrompt, setCustomPrompt] = useState("");
@@ -184,6 +219,7 @@ export function PracticeView() {
         reviewWords: dueCards(new Date(), settings.activeLanguage)
           .slice(0, MAX_REVIEW_WORDS_FOR_TOPIC)
           .map((c) => c.front),
+        topicRequest: topicRequest.trim() || undefined,
       });
       const topic = addTopic({ title: suggestion.title, prompt: suggestion.prompt, custom: false, language: settings.activeLanguage });
       setActiveTopicId(topic.id);
@@ -209,6 +245,7 @@ export function PracticeView() {
         recentTitlesByLanguage: Object.fromEntries(
           settings.targetLanguages.map((lang) => [lang, loadTopics(lang).slice(0, 10).map((t) => t.title)]),
         ),
+        topicRequest: topicRequest.trim() || undefined,
       });
       const created = await Promise.all(
         plan.targets.map(async (lang) => {
@@ -221,6 +258,7 @@ export function PracticeView() {
             reviewWords: dueCards(new Date(), lang)
               .slice(0, MAX_REVIEW_WORDS_FOR_TOPIC)
               .map((c) => c.front),
+            topicRequest: topicRequest.trim() || undefined,
           });
           return addTopic({ title: suggestion.title, prompt: suggestion.prompt, custom: false, language: lang });
         }),
@@ -345,6 +383,17 @@ export function PracticeView() {
         <section class="card-panel">
           <h2>{t("practice-choose-topic-heading")}</h2>
           <p class="hint-text">{t("practice-choose-topic-hint")}</p>
+          <div class="field-grid">
+            <label>
+              {t("practice-topic-request-label")}
+              <input
+                type="text"
+                value={topicRequest}
+                onInput={(e) => setTopicRequest((e.target as HTMLInputElement).value)}
+                placeholder={t("practice-topic-request-placeholder")}
+              />
+            </label>
+          </div>
           <div class="button-row">
             <button type="button" class="primary-button" onClick={generateTopic} disabled={generatingTopic}>
               <Sparkles size={16} />
@@ -395,6 +444,11 @@ export function PracticeView() {
     );
   }
 
+  // Read-aloud target language for this topic's feedback text: the topic's
+  // own language, falling back to the active study language for topics
+  // saved before multi-language support existed (see types.ts Topic).
+  const feedbackLanguage = activeTopic.language || settings.activeLanguage;
+
   // Round 3's submission makes nextRoundFor return null on the very next
   // render — keep showing the just-received feedback (currentAttempt) and
   // only switch to the all-done screen once nothing is being displayed.
@@ -421,7 +475,31 @@ export function PracticeView() {
             <span class="round-badge">{roundLabel(currentAttempt ? currentAttempt.round : (round as AttemptRound))}</span>
           )}
         </div>
-        <p class="topic-prompt">{activeTopic.prompt}</p>
+        <p class="topic-prompt">
+          {activeTopic.prompt}
+          {speech.supported && (
+            <button
+              type="button"
+              class="speak-button"
+              onClick={() => speech.speak(activeTopic.prompt, feedbackLanguage, `${activeTopic.id}:prompt`)}
+              disabled={speech.loadingId === `${activeTopic.id}:prompt`}
+              aria-pressed={speech.speakingId === `${activeTopic.id}:prompt`}
+              aria-label={
+                speech.speakingId === `${activeTopic.id}:prompt` ? t("practice-speak-topic-stop") : t("practice-speak-topic")
+              }
+              title={speech.speakingId === `${activeTopic.id}:prompt` ? t("practice-speak-topic-stop") : t("practice-speak-topic")}
+            >
+              {speech.loadingId === `${activeTopic.id}:prompt` ? (
+                <Loader2 size={14} class="speak-button-spin" />
+              ) : speech.speakingId === `${activeTopic.id}:prompt` ? (
+                <Square size={14} />
+              ) : (
+                <Volume2 size={14} />
+              )}
+            </button>
+          )}
+        </p>
+        {speech.speechError && <p class="speak-error">{speech.speechError}</p>}
         {batchGeneratedCount > 0 && (
           <p class="hint-text status-ok">{t("practice-batch-generated", { count: batchGeneratedCount })}</p>
         )}
@@ -437,6 +515,7 @@ export function PracticeView() {
                 corrected={previousAttempt.corrected}
                 reasons={previousAttempt.reasons}
                 retryPrompt={previousAttempt.retryPrompt}
+                language={feedbackLanguage}
               />
             )}
           </div>
@@ -481,6 +560,7 @@ export function PracticeView() {
               corrected={currentAttempt.corrected}
               reasons={currentAttempt.reasons}
               retryPrompt={currentAttempt.retryPrompt}
+              language={feedbackLanguage}
             />
 
             <SpellingDrill
@@ -523,6 +603,7 @@ export function PracticeView() {
                     retryAnswer={currentAttempt.retryAnswer}
                     retryCorrected={currentAttempt.retryCorrected}
                     retryReasons={currentAttempt.retryReasons}
+                    language={feedbackLanguage}
                   />
                 )}
               </div>

@@ -60,6 +60,14 @@ export function requestNetworkChat(
   return networkClient.requestChat(roomId, messages, { model, onDelta });
 }
 
+/** Requests speech synthesis over the LLM Network room; resolves with the audio Blob. */
+export function requestNetworkTts(
+  roomId: string,
+  params: { text: string; model?: string; voice?: string },
+): Promise<Blob> {
+  return networkClient.requestTts(roomId, params);
+}
+
 // ---------------------------------------------------------------------------
 // Localization rides the library's canonical MESSAGES_JA/MESSAGES_EN
 // catalogs so wording stays consistent with the other apps. Unlike

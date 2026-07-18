@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import {
+  ExternalLink,
   History,
   Keyboard,
   Languages,
@@ -11,6 +12,7 @@ import {
   Sun,
 } from "lucide-preact";
 import type { MainTab } from "./types";
+import { familyAppUrl } from "./lib/familyApps";
 import { onHashChange, readHash, writeHash } from "./lib/hashRoute";
 import { useTheme } from "./hooks/useTheme";
 import { paneEnterClass, useEnterDirection } from "./hooks/useEnterDirection";
@@ -57,10 +59,15 @@ export function App() {
   useEffect(() => subscribeUiMessages(() => setMessagesVersion((v) => v + 1)), []);
 
   // Eagerly (re)connects the AI Network consumer session whenever that's the
-  // configured transport, instead of waiting for the first LLM call to join
-  // the room lazily. Reconnects on a room id change, disconnects when the
-  // mode is switched back to "api" or the room id is cleared.
-  useNetworkConsumerConnection({ enabled: mode === "network" && roomId !== "", roomId });
+  // configured transport for chat/correction (connectionMode) OR for
+  // read-aloud (ttsEngine — see hooks/useSpeech.ts), instead of waiting for
+  // the first LLM/TTS call to join the room lazily. Reconnects on a room id
+  // change, disconnects once neither feature is pointed at the network and
+  // the room id is cleared.
+  useNetworkConsumerConnection({
+    enabled: (mode === "network" || settings.ttsEngine === "network") && roomId !== "",
+    roomId,
+  });
 
   // Languages without a built-in dictionary get their UI strings translated
   // once by the configured LLM and cached; until that resolves (or if no LLM
@@ -174,6 +181,16 @@ export function App() {
               ))}
             </div>
           )}
+          <a
+            class="theme-toggle"
+            href={familyAppUrl("tc-translate")}
+            target="_blank"
+            rel="noopener noreferrer"
+            title={t("app-open-translate")}
+            aria-label={t("app-open-translate")}
+          >
+            <ExternalLink size={16} />
+          </a>
           <button
             class="theme-toggle"
             onClick={() => setShowKbdHelp(true)}

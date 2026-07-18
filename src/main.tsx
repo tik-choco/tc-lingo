@@ -11,6 +11,6 @@ writeAppManifest({
   app: "tc-lingo",
   busVersion: BUS_VERSION,
   publishes: [],
-  consumes: [],
+  consumes: ["lingo-card-inbox"],
   reads: [],
 });

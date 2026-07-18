@@ -16,7 +16,7 @@ function isCard(value: unknown): value is Card {
     typeof r.exampleSentence === "string" &&
     typeof r.context === "string" &&
     typeof r.cloze === "string" &&
-    (r.source === "manual" || r.source === "mistake") &&
+    (r.source === "manual" || r.source === "mistake" || r.source === "translate") &&
     (r.sourceTopicId === null || typeof r.sourceTopicId === "string") &&
     (r.language === undefined || typeof r.language === "string") &&
     typeof r.createdAt === "string" &&

@@ -4,7 +4,7 @@
 // should use by default. Persisted at tc-lingo:settings-v1 — NOT the shared
 // LLM connection details themselves, those live in the co-owned
 // tc-shared-llm-config-v1 key.
-import type { LingoSettings, LlmConnectionMode } from "../types";
+import type { LingoSettings, LlmConnectionMode, TtsEngine } from "../types";
 import { loadJson, saveJson, subscribeStorage } from "./storage";
 
 const STORAGE_NAME = "settings-v1";
@@ -50,10 +50,41 @@ function detectNativeLanguage(): string {
 function defaultSettings(): LingoSettings {
   const nativeLanguage = detectNativeLanguage();
   const target = nativeLanguage === "English" ? "Japanese" : "English";
-  return { targetLanguages: [target], activeLanguage: target, nativeLanguage, presetId: "", connectionMode: "api" };
+  return {
+    targetLanguages: [target],
+    activeLanguage: target,
+    nativeLanguage,
+    presetId: "",
+    connectionMode: "api",
+    ttsEngine: "browser",
+  };
 }
 
 function isLingoSettings(value: unknown): value is LingoSettings {
+  if (value === null || typeof value !== "object") return false;
+  const r = value as Record<string, unknown>;
+  return (
+    Array.isArray(r.targetLanguages) &&
+    r.targetLanguages.every((l) => typeof l === "string") &&
+    typeof r.activeLanguage === "string" &&
+    typeof r.nativeLanguage === "string" &&
+    typeof r.presetId === "string" &&
+    (r.connectionMode === "api" || r.connectionMode === "network") &&
+    (r.ttsEngine === "browser" || r.ttsEngine === "api" || r.ttsEngine === "network")
+  );
+}
+
+/** Pre-TTS shape (same fields as `LingoSettings` minus `ttsEngine`). Migrated
+ * in-place on load — missing `ttsEngine` defaults to "browser" — so existing
+ * installs keep reading aloud via the Web Speech API instead of silently
+ * falling back to the defaults. */
+function isPreTtsEngineSettings(value: unknown): value is {
+  targetLanguages: string[];
+  activeLanguage: string;
+  nativeLanguage: string;
+  presetId: string;
+  connectionMode: LlmConnectionMode;
+} {
   if (value === null || typeof value !== "object") return false;
   const r = value as Record<string, unknown>;
   return (
@@ -67,9 +98,10 @@ function isLingoSettings(value: unknown): value is LingoSettings {
 }
 
 /** Pre-AI-Network shape (same fields as `LingoSettings` minus
- * `connectionMode`). Migrated in-place on load — missing `connectionMode`
- * defaults to "api" — so existing installs keep behaving as direct API
- * connections instead of silently falling back to the defaults. */
+ * `connectionMode`/`ttsEngine`). Migrated in-place on load — missing
+ * `connectionMode` defaults to "api", missing `ttsEngine` defaults to
+ * "browser" — so existing installs keep behaving as direct API connections
+ * instead of silently falling back to the defaults. */
 function isPreConnectionModeSettings(
   value: unknown,
 ): value is { targetLanguages: string[]; activeLanguage: string; nativeLanguage: string; presetId: string } {
@@ -103,8 +135,19 @@ export function loadSettings(): LingoSettings {
     if (!raw.targetLanguages.includes(raw.activeLanguage)) return { ...raw, activeLanguage: raw.targetLanguages[0] };
     return raw;
   }
+  if (isPreTtsEngineSettings(raw)) {
+    const migrated: LingoSettings = { ...raw, ttsEngine: "browser" };
+    if (migrated.targetLanguages.length === 0) {
+      const fallback = defaultSettings().targetLanguages[0];
+      return { ...migrated, targetLanguages: [fallback], activeLanguage: fallback };
+    }
+    if (!migrated.targetLanguages.includes(migrated.activeLanguage)) {
+      return { ...migrated, activeLanguage: migrated.targetLanguages[0] };
+    }
+    return migrated;
+  }
   if (isPreConnectionModeSettings(raw)) {
-    const migrated: LingoSettings = { ...raw, connectionMode: "api" };
+    const migrated: LingoSettings = { ...raw, connectionMode: "api", ttsEngine: "browser" };
     if (migrated.targetLanguages.length === 0) {
       const fallback = defaultSettings().targetLanguages[0];
       return { ...migrated, targetLanguages: [fallback], activeLanguage: fallback };
@@ -121,6 +164,7 @@ export function loadSettings(): LingoSettings {
       nativeLanguage: raw.nativeLanguage,
       presetId: raw.presetId,
       connectionMode: "api",
+      ttsEngine: "browser",
     };
   }
   return defaultSettings();
@@ -172,6 +216,14 @@ export function setActiveLanguage(language: string): LingoSettings {
 export function setConnectionMode(mode: LlmConnectionMode): LingoSettings {
   const current = loadSettings();
   const next: LingoSettings = { ...current, connectionMode: mode };
+  saveSettings(next);
+  return next;
+}
+
+/** Switches which engine "read this aloud" (hooks/useSpeech.ts) uses. */
+export function setTtsEngine(engine: TtsEngine): LingoSettings {
+  const current = loadSettings();
+  const next: LingoSettings = { ...current, ttsEngine: engine };
   saveSettings(next);
   return next;
 }
