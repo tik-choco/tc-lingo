@@ -2,7 +2,8 @@
 // pure/DOM-adjacent functions (no framework state) so app.tsx can wire it
 // into useState / useEffect however it likes. Same pattern as tc-books.
 //
-// Recognized shapes: #/practice  #/review  #/cards  #/history  #/settings
+// Recognized shapes: #/practice  #/reading  #/talk  #/review  #/cards
+// #/history  #/settings
 import type { MainTab } from "../types";
 
 export interface HashState {
@@ -14,6 +15,8 @@ const EMPTY_STATE: HashState = { tab: null };
 function isMainTab(value: string): value is MainTab {
   return (
     value === "practice" ||
+    value === "reading" ||
+    value === "talk" ||
     value === "review" ||
     value === "cards" ||
     value === "history" ||

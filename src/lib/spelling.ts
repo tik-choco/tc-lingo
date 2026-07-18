@@ -132,12 +132,12 @@ export function misspelledWords(original: string, corrected: string): Misspelled
   return pairs;
 }
 
-const MAX_SENTENCES = 3;
+const MAX_SENTENCES = 5;
 
 /** Split text into sentences on terminal punctuation (Latin and CJK), so
  * sentence-level practice works for Japanese/Chinese too, where the
  * word-level pairing above intentionally yields nothing. */
-function splitSentences(text: string): string[] {
+export function splitSentences(text: string): string[] {
   return text
     .split(/(?<=[.!?。！？])/u)
     .map((s) => s.trim())
@@ -147,9 +147,12 @@ function splitSentences(text: string): string[] {
 /** Sentence-level counterpart to misspelledWords: pair each corrected
  * sentence that changed with the learner's original version of it, so the
  * SpellingDrill can offer retyping the whole corrected sentence (not just
- * isolated words). Sentences the AI rewrote beyond recognition (edit
- * distance above ~50% of their length) are skipped — copy-typing a sentence
- * that shares nothing with what the learner wrote drills nothing. */
+ * isolated words). Every changed sentence is included, even ones the AI
+ * rewrote beyond recognition — if no original sentence is close enough by
+ * edit distance to call a "pair", the sentence is still included with
+ * `attempted: ""` (SpellingDrill already treats an empty `attempted` as "no
+ * prior attempt to show"), so the learner still gets to type the corrected
+ * sentence out. */
 export function correctedSentences(original: string, corrected: string): CorrectedSentence[] {
   const originalSentences = splitSentences(original);
   const correctedList = splitSentences(corrected);
@@ -178,6 +181,12 @@ export function correctedSentences(original: string, corrected: string): Correct
     if (bestIndex !== -1 && bestDistance > 0 && bestDistance <= maxDistance) {
       pairs.push({ attempted: available[bestIndex], correct: sentence });
       available.splice(bestIndex, 1);
+    } else {
+      // No close-enough original sentence to pair with (rewritten beyond
+      // recognition, or the learner's attempt had fewer sentences than the
+      // correction). Still include it so the whole corrected text is
+      // typeable, just without a "your attempt" comparison.
+      pairs.push({ attempted: "", correct: sentence });
     }
   }
 

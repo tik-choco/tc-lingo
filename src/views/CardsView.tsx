@@ -285,7 +285,7 @@ export function CardsView() {
   }
 
   function sourceTopicTitle(c: Card): string | null {
-    if (c.source !== "mistake" || !c.sourceTopicId) return null;
+    if ((c.source !== "mistake" && c.source !== "sentence") || !c.sourceTopicId) return null;
     return topics.find((tp) => tp.id === c.sourceTopicId)?.title ?? null;
   }
 
@@ -475,6 +475,7 @@ export function CardsView() {
                       </span>
                       {c.source === "mistake" && <span class="source-badge">{t("cards-source-mistake")}</span>}
                       {c.source === "translate" && <span class="source-badge">{t("cards-source-translate")}</span>}
+                      {c.source === "sentence" && <span class="source-badge">{t("cards-source-sentence")}</span>}
                       {!c.cloze && <span class="cloze-missing-badge">{t("cards-cloze-missing")}</span>}
                       {settings.targetLanguages.length > 1 && c.language && (
                         <span class="language-badge">{languageDisplayName(c.language)}</span>

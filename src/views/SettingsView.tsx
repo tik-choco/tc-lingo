@@ -16,6 +16,7 @@ import {
   loadSettings,
   removeTargetLanguage,
   saveSettings,
+  setAutoExtractCards,
   setConnectionMode,
   setTtsEngine,
   subscribeSettings,
@@ -23,6 +24,8 @@ import {
 import { setSharedNetworkRoomId } from "../lib/llmConnection";
 import { localizeConsumerError } from "../lib/network";
 import type { ConsumerStatus } from "../lib/network";
+import { CEFR_BANDS, computedBand, loadLevels, setLevelOverride, subscribeLevels } from "../lib/level";
+import type { CefrBand } from "../types";
 import { languageDisplayName } from "../lib/languages";
 import { LanguageSelect } from "../components/LanguageSelect";
 import { requestOnboarding } from "../lib/onboarding";
@@ -30,6 +33,11 @@ import { useLlmConnection } from "../hooks/useLlmConnection";
 import { useNetworkConsumerStatusWithTimestamp } from "../hooks/useNetworkConsumerStatus";
 import { useSpeech } from "../hooks/useSpeech";
 import { t } from "../i18n";
+
+// Mirrors level.ts's private MIN_SAMPLES — how many output samples the
+// automatic level estimate needs before a CEFR band is shown (below that,
+// the panel shows "still estimating" with a remaining-samples count).
+const MIN_LEVEL_SAMPLES = 3;
 
 // Short greeting used by the TTS "test playback" button, one per commonly
 // supported target language (see lib/languages.ts's languageOptions). A
@@ -68,6 +76,8 @@ function networkStepIndex(phase: ConsumerStatus["phase"]): number {
 export function SettingsView() {
   const [settings, setSettings] = useState(loadSettings);
   useEffect(() => subscribeSettings(() => setSettings(loadSettings())), []);
+  const [levelRecords, setLevelRecords] = useState(loadLevels);
+  useEffect(() => subscribeLevels(() => setLevelRecords(loadLevels())), []);
   const { config, target, mode, roomId } = useLlmConnection();
   const { status, updatedAt } = useNetworkConsumerStatusWithTimestamp();
   const currentStepIndex = networkStepIndex(status.phase);
@@ -251,6 +261,62 @@ export function SettingsView() {
             />
           </label>
           <p class="hint-text">{t("settings-native-language-hint")}</p>
+        </div>
+      </section>
+
+      <section class="card-panel">
+        <h2>{t("settings-automation-heading")}</h2>
+
+        <div class="field-grid">
+          <label class="toggle-row">
+            <input
+              type="checkbox"
+              checked={settings.autoExtractCards}
+              onChange={(e) => setAutoExtractCards((e.target as HTMLInputElement).checked)}
+            />
+            {t("settings-auto-extract-label")}
+          </label>
+          <p class="hint-text">{t("settings-auto-extract-hint")}</p>
+        </div>
+
+        <div class="field-grid">
+          <h3 class="settings-subheading">{t("settings-level-heading")}</h3>
+          <p class="hint-text">{t("settings-level-hint")}</p>
+          <div class="level-panel">
+            {settings.targetLanguages.map((lang) => {
+              const record = levelRecords.find((r) => r.language === lang) ?? null;
+              const band = computedBand(record);
+              const remaining = Math.max(0, MIN_LEVEL_SAMPLES - (record?.samples ?? 0));
+              return (
+                <div class="level-row" key={lang}>
+                  <span class="level-row-language">{languageDisplayName(lang)}</span>
+                  <span class="level-row-estimate">
+                    {band ? (
+                      <>
+                        <span class="level-row-band">{band}</span>
+                        <span>{t("settings-level-samples", { count: record?.samples ?? 0 })}</span>
+                      </>
+                    ) : (
+                      <span>{t("settings-level-estimating", { count: remaining })}</span>
+                    )}
+                  </span>
+                  <select
+                    class="level-row-select"
+                    value={record?.override ?? ""}
+                    onChange={(e) => setLevelOverride(lang, (e.target as HTMLSelectElement).value as CefrBand | "")}
+                    aria-label={t("settings-level-override-aria-label", { language: languageDisplayName(lang) })}
+                  >
+                    <option value="">{t("settings-level-override-auto")}</option>
+                    {CEFR_BANDS.map((b) => (
+                      <option key={b} value={b}>
+                        {b}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              );
+            })}
+          </div>
         </div>
       </section>
 

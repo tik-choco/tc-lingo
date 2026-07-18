@@ -17,6 +17,17 @@ export const settingsMessages = {
     "settings-native-language-aria-label": "Select native language",
     "settings-native-language-hint":
       "The app's display language switches to match your native language too. For languages without a built-in dictionary, your configured AI auto-translates the UI (it shows English until that finishes).",
+    "settings-automation-heading": "Learning automation",
+    "settings-auto-extract-label": "Automatically extract mistake cards",
+    "settings-auto-extract-hint":
+      "When on, corrections from Practice and Talk automatically become SRS cards in the background (duplicates are skipped). When off, use the manual extract button after each correction instead.",
+    "settings-level-heading": "Automatic level adjustment",
+    "settings-level-hint":
+      "Your estimated level automatically calibrates generation across the app — reading passages, conversation difficulty, topic suggestions, and practice feedback and follow-up questions. Pinning a level overrides the estimate.",
+    "settings-level-samples": "estimated from {count} outputs",
+    "settings-level-estimating": "Still estimating ({count} more outputs needed)",
+    "settings-level-override-auto": "Automatic",
+    "settings-level-override-aria-label": "Level override for {language}",
     "settings-llm-heading": "LLM connection",
     "settings-llm-hint":
       "This connection setting is shared with other tik-choco apps. Set it up once and other apps can use the same connection.",
@@ -88,6 +99,17 @@ export const settingsMessages = {
     "settings-native-language-aria-label": "母語を選択",
     "settings-native-language-hint":
       "アプリの表示言語も母語に合わせて切り替わります。辞書がない言語は設定済みのAIがUIを自動翻訳します(完了までは英語表示)。",
+    "settings-automation-heading": "学習の自動化",
+    "settings-auto-extract-label": "間違いカードの自動抽出",
+    "settings-auto-extract-hint":
+      "オンにすると、練習・会話タブでの修正がバックグラウンドで自動的にSRSカードになります(重複は除外)。オフにすると、修正後に手動で抽出ボタンを押す方式に戻ります。",
+    "settings-level-heading": "レベル自動調整",
+    "settings-level-hint":
+      "推定レベルは、読み物・会話・お題・練習フィードバックなどアプリ全体の生成内容に自動的に反映されます。レベルを固定すると自動推定より優先されます。",
+    "settings-level-samples": "{count}回分の出力から推定",
+    "settings-level-estimating": "推定中(あと{count}回の出力で判定)",
+    "settings-level-override-auto": "自動",
+    "settings-level-override-aria-label": "{language}のレベル固定",
     "settings-llm-heading": "LLM接続",
     "settings-llm-hint":
       "tik-choco の他アプリと共有する接続設定です。一度設定すれば TC Lingo 以外のアプリでも同じ接続を使えます。",
@@ -159,6 +181,16 @@ export const settingsMessages = {
     "settings-native-language-aria-label": "选择母语",
     "settings-native-language-hint":
       "应用的显示语言也会随母语一起切换。没有内置词典的语言,将由已配置的AI自动翻译界面(完成前显示英文)。",
+    "settings-automation-heading": "学习自动化",
+    "settings-auto-extract-label": "自动提取错误卡片",
+    "settings-auto-extract-hint":
+      "开启后,练习和对话标签中的修正会在后台自动生成SRS卡片(自动跳过重复项)。关闭后,需在每次修正后手动点击提取按钮。",
+    "settings-level-heading": "自动调整难度等级",
+    "settings-level-hint": "预估等级会自动应用于阅读文章、对话、话题建议、练习反馈等应用内的生成内容。固定等级会优先于自动预估。",
+    "settings-level-samples": "根据{count}次输出预估",
+    "settings-level-estimating": "预估中(还需{count}次输出才能判定)",
+    "settings-level-override-auto": "自动",
+    "settings-level-override-aria-label": "{language}的等级固定",
     "settings-llm-heading": "LLM 连接",
     "settings-llm-hint": "此连接设置与其他 tik-choco 应用共享。设置一次后,TC Lingo 以外的应用也能使用相同的连接。",
     "settings-connection-mode-label": "连接方式",
@@ -228,6 +260,16 @@ export const settingsMessages = {
     "settings-native-language-aria-label": "選擇母語",
     "settings-native-language-hint":
       "應用程式的顯示語言也會隨母語一起切換。沒有內建詞典的語言,將由已設定的AI自動翻譯介面(完成前顯示英文)。",
+    "settings-automation-heading": "學習自動化",
+    "settings-auto-extract-label": "自動擷取錯誤卡片",
+    "settings-auto-extract-hint":
+      "開啟後,練習和會話標籤中的修正會在背景自動產生SRS卡片(自動略過重複項)。關閉後,需在每次修正後手動點擊擷取按鈕。",
+    "settings-level-heading": "自動調整難度等級",
+    "settings-level-hint": "預估等級會自動套用於閱讀文章、會話、話題建議、練習回饋等應用程式內的生成內容。固定等級會優先於自動預估。",
+    "settings-level-samples": "根據{count}次輸出預估",
+    "settings-level-estimating": "預估中(還需{count}次輸出才能判定)",
+    "settings-level-override-auto": "自動",
+    "settings-level-override-aria-label": "{language}的等級固定",
     "settings-llm-heading": "LLM 連線",
     "settings-llm-hint": "此連線設定與其他 tik-choco 應用程式共用。設定一次後,TC Lingo 以外的應用程式也能使用相同的連線。",
     "settings-connection-mode-label": "連線方式",

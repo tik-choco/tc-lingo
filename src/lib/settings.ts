@@ -57,10 +57,37 @@ function defaultSettings(): LingoSettings {
     presetId: "",
     connectionMode: "api",
     ttsEngine: "browser",
+    autoExtractCards: true,
   };
 }
 
 function isLingoSettings(value: unknown): value is LingoSettings {
+  if (value === null || typeof value !== "object") return false;
+  const r = value as Record<string, unknown>;
+  return (
+    Array.isArray(r.targetLanguages) &&
+    r.targetLanguages.every((l) => typeof l === "string") &&
+    typeof r.activeLanguage === "string" &&
+    typeof r.nativeLanguage === "string" &&
+    typeof r.presetId === "string" &&
+    (r.connectionMode === "api" || r.connectionMode === "network") &&
+    (r.ttsEngine === "browser" || r.ttsEngine === "api" || r.ttsEngine === "network") &&
+    typeof r.autoExtractCards === "boolean"
+  );
+}
+
+/** Pre-auto-extract shape (same fields as `LingoSettings` minus
+ * `autoExtractCards`). Migrated in-place on load — the missing flag defaults
+ * to true (auto-extraction on) — so existing installs pick the feature up
+ * without a reset. */
+function isPreAutoExtractSettings(value: unknown): value is {
+  targetLanguages: string[];
+  activeLanguage: string;
+  nativeLanguage: string;
+  presetId: string;
+  connectionMode: LlmConnectionMode;
+  ttsEngine: TtsEngine;
+} {
   if (value === null || typeof value !== "object") return false;
   const r = value as Record<string, unknown>;
   return (
@@ -135,8 +162,19 @@ export function loadSettings(): LingoSettings {
     if (!raw.targetLanguages.includes(raw.activeLanguage)) return { ...raw, activeLanguage: raw.targetLanguages[0] };
     return raw;
   }
+  if (isPreAutoExtractSettings(raw)) {
+    const migrated: LingoSettings = { ...raw, autoExtractCards: true };
+    if (migrated.targetLanguages.length === 0) {
+      const fallback = defaultSettings().targetLanguages[0];
+      return { ...migrated, targetLanguages: [fallback], activeLanguage: fallback };
+    }
+    if (!migrated.targetLanguages.includes(migrated.activeLanguage)) {
+      return { ...migrated, activeLanguage: migrated.targetLanguages[0] };
+    }
+    return migrated;
+  }
   if (isPreTtsEngineSettings(raw)) {
-    const migrated: LingoSettings = { ...raw, ttsEngine: "browser" };
+    const migrated: LingoSettings = { ...raw, ttsEngine: "browser", autoExtractCards: true };
     if (migrated.targetLanguages.length === 0) {
       const fallback = defaultSettings().targetLanguages[0];
       return { ...migrated, targetLanguages: [fallback], activeLanguage: fallback };
@@ -147,7 +185,7 @@ export function loadSettings(): LingoSettings {
     return migrated;
   }
   if (isPreConnectionModeSettings(raw)) {
-    const migrated: LingoSettings = { ...raw, connectionMode: "api", ttsEngine: "browser" };
+    const migrated: LingoSettings = { ...raw, connectionMode: "api", ttsEngine: "browser", autoExtractCards: true };
     if (migrated.targetLanguages.length === 0) {
       const fallback = defaultSettings().targetLanguages[0];
       return { ...migrated, targetLanguages: [fallback], activeLanguage: fallback };
@@ -165,6 +203,7 @@ export function loadSettings(): LingoSettings {
       presetId: raw.presetId,
       connectionMode: "api",
       ttsEngine: "browser",
+      autoExtractCards: true,
     };
   }
   return defaultSettings();
@@ -224,6 +263,14 @@ export function setConnectionMode(mode: LlmConnectionMode): LingoSettings {
 export function setTtsEngine(engine: TtsEngine): LingoSettings {
   const current = loadSettings();
   const next: LingoSettings = { ...current, ttsEngine: engine };
+  saveSettings(next);
+  return next;
+}
+
+/** Toggles background mistake-card auto-extraction (lib/autoExtract.ts). */
+export function setAutoExtractCards(enabled: boolean): LingoSettings {
+  const current = loadSettings();
+  const next: LingoSettings = { ...current, autoExtractCards: enabled };
   saveSettings(next);
   return next;
 }

@@ -4,7 +4,9 @@
 // message on failure; callers show it directly rather than a stack trace.
 import { t } from "../i18n";
 
-function extractJson(content: string): unknown {
+/** Exported for the sibling parse helpers in lib/reading.ts,
+ * lib/conversation.ts, and lib/grammar.ts. */
+export function extractJson(content: string): unknown {
   const trimmed = content.trim();
   const fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
   const body = fenced ? fenced[1] : trimmed;
@@ -78,6 +80,21 @@ export function parseTopicFanOutPlan(content: string, candidateLanguages: string
   }
 }
 
+export interface AnswerVerdict {
+  acceptable: boolean;
+  note: string;
+}
+
+/** For the review tab's LLM second-opinion judge (llm.ts judgeReviewAnswer):
+ * a missing/non-boolean "acceptable" is a parse failure — the caller catches
+ * and falls back to the strict string judgement — while a missing note is
+ * just "". */
+export function parseAnswerVerdict(content: string): AnswerVerdict {
+  const parsed = extractJson(content) as Record<string, unknown>;
+  if (typeof parsed.acceptable !== "boolean") throw new Error(t("error-parse-json"));
+  return { acceptable: parsed.acceptable, note: typeof parsed.note === "string" ? parsed.note : "" };
+}
+
 export interface CardCandidate {
   front: string;
   reading: string;
@@ -102,4 +119,32 @@ export function parseCardCandidates(content: string): CardCandidate[] {
       cloze: typeof item.cloze === "string" ? item.cloze : "",
     }))
     .filter((c) => c.front && c.meaning);
+}
+
+export interface SentenceCardCandidate {
+  sentence: string;
+  reading: string;
+  translation: string;
+}
+
+/** For lib/sentenceCards.ts's "save the corrected sentence as-is" flow: the
+ * model is only asked for reading/translation, not to rewrite the sentence,
+ * but this stays as defensive as parseCardCandidates in case it echoes the
+ * input back reshaped anyway. */
+export function parseSentenceCards(content: string): SentenceCardCandidate[] {
+  const parsed = extractJson(content);
+  const list = Array.isArray(parsed)
+    ? parsed
+    : Array.isArray((parsed as Record<string, unknown>)?.sentences)
+      ? (parsed as Record<string, unknown>).sentences
+      : null;
+  if (!Array.isArray(list)) return [];
+  return list
+    .filter((item): item is Record<string, unknown> => typeof item === "object" && item !== null)
+    .map((item) => ({
+      sentence: typeof item.sentence === "string" ? item.sentence : "",
+      reading: typeof item.reading === "string" ? item.reading : "",
+      translation: typeof item.translation === "string" ? item.translation : "",
+    }))
+    .filter((c) => c.sentence && c.translation);
 }

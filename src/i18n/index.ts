@@ -8,28 +8,40 @@ import { loadSettings } from "../lib/settings";
 import { appMessages } from "./app";
 import { cardsMessages } from "./cards";
 import { domainMessages } from "./domain";
+import { grammarMessages } from "./grammar";
 import { historyMessages } from "./history";
 import { onboardingMessages } from "./onboarding";
 import { practiceMessages } from "./practice";
+import { readingMessages } from "./reading";
 import { reviewMessages } from "./review";
 import { settingsMessages } from "./settings";
-import type { MessageTable, UiLanguage } from "./types";
+import { talkMessages } from "./talk";
+import type { MessageBundle, MessageTable, UiLanguage } from "./types";
 
 export type { MessageTable, UiLanguage } from "./types";
 
 const UI_LANGUAGES: UiLanguage[] = ["en", "ja", "zh-CN", "zh-TW"];
 
+// Widened to MessageBundle before merging: spreading a dozen `satisfies`-typed
+// literal tables directly trips TS2590 ("union type too complex").
+const BUNDLES: MessageBundle[] = [
+  appMessages,
+  practiceMessages,
+  readingMessages,
+  talkMessages,
+  reviewMessages,
+  grammarMessages,
+  cardsMessages,
+  historyMessages,
+  settingsMessages,
+  onboardingMessages,
+  domainMessages,
+];
+
 function mergedTable(language: UiLanguage): MessageTable {
-  return {
-    ...appMessages[language],
-    ...practiceMessages[language],
-    ...reviewMessages[language],
-    ...cardsMessages[language],
-    ...historyMessages[language],
-    ...settingsMessages[language],
-    ...onboardingMessages[language],
-    ...domainMessages[language],
-  };
+  const table: MessageTable = {};
+  for (const bundle of BUNDLES) Object.assign(table, bundle[language]);
+  return table;
 }
 
 const tables = Object.fromEntries(UI_LANGUAGES.map((l) => [l, mergedTable(l)])) as Record<UiLanguage, MessageTable>;

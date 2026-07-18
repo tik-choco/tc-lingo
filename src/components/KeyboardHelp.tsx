@@ -27,11 +27,11 @@ interface ShortcutRow {
 }
 
 const ROWS: ShortcutRow[] = [
-  { keys: ["1", sep("–"), "5"], descriptionKey: "app-kbd-tabs" },
+  { keys: ["1", sep("–"), "7"], descriptionKey: "app-kbd-tabs" },
   { keys: ["?"], descriptionKey: "app-kbd-toggle-help" },
   { keys: ["Esc"], descriptionKey: "app-kbd-close-dialogs" },
   { keys: ["Enter", sep("/"), "Space"], descriptionKey: "app-kbd-review-reveal" },
-  { keys: ["1", sep("–"), "4"], descriptionKey: "app-kbd-review-grade" },
+  { keys: ["Enter", sep("/"), "Space"], descriptionKey: "app-kbd-review-next" },
   { keys: ["Ctrl", sep("+"), "Enter"], descriptionKey: "app-kbd-submit" },
 ];
 

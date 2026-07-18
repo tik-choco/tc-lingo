@@ -168,6 +168,23 @@ button:disabled {
   font-weight: 600;
 }
 
+/* Groups the round badge and estimated-level badge together on the right of
+   a topic-header that also has an <h2>/<h3> title (topic-header itself uses
+   justify-content: space-between, which would otherwise push multiple badges
+   apart instead of keeping them adjacent). */
+.topic-header-badges {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-shrink: 0;
+}
+
+/* Estimated-level chip (reuses the shared .language-badge pill; this just
+   keeps it from wrapping mid-label, matching .reading-level-badge). */
+.practice-level-badge {
+  white-space: nowrap;
+}
+
 .topic-prompt {
   color: var(--text);
   line-height: 1.7;
@@ -203,6 +220,20 @@ button:disabled {
 
 .topic-pick-list button {
   font-size: 0.85rem;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* Marks a past topic that still has rounds left (round 2/3 waiting) — same
+   pill look as .round-badge, sized down to sit inside the pick button. */
+.topic-resume-badge {
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-pill);
+  background: var(--primary-soft);
+  color: var(--primary);
+  font-size: 0.75rem;
+  font-weight: 600;
 }
 
 /* ---------------- Feedback panel ---------------- */
@@ -250,6 +281,18 @@ button:disabled {
   text-decoration: line-through;
   border-radius: 3px;
   padding: 0 2px;
+}
+
+/* Retry block: groups the follow-up question, the retry textarea, its
+   button row, and the check result into one visually contained unit. */
+.retry-block {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-m);
 }
 
 /* ---------------- Mistake card picker ---------------- */
@@ -372,34 +415,30 @@ button:disabled {
   font-size: 0.9rem;
 }
 
-.grade-buttons {
-  display: flex;
-  gap: var(--space-2);
-}
-
-.grade-button {
+.review-result {
+  display: inline-block;
+  margin: 0;
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-s);
   font-weight: 600;
   color: var(--on-primary);
 }
 
-.grade-button-again {
-  background: var(--grade-again);
-  border-color: var(--grade-again);
-}
-
-.grade-button-hard {
-  background: var(--grade-hard);
-  border-color: var(--grade-hard);
-}
-
-.grade-button-good {
-  background: var(--grade-good);
-  border-color: var(--grade-good);
-}
-
-.grade-button-easy {
+.review-result-correct {
   background: var(--grade-easy);
-  border-color: var(--grade-easy);
+}
+
+.review-result-near {
+  background: var(--grade-hard);
+}
+
+.review-result-wrong {
+  background: var(--grade-again);
+}
+
+.review-next-row {
+  display: flex;
+  gap: var(--space-2);
 }
 
 /* ---------------- Cards view ---------------- */
@@ -1096,4 +1135,72 @@ button:disabled {
 .speak-error {
   color: var(--text-muted);
   font-size: 0.8rem;
+}
+
+/* ---------------- Settings view: Learning automation section ----------------
+   Auto-extract checkbox row + per-language automatic-level panel. */
+
+.settings-subheading {
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+.toggle-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.level-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.level-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-s);
+  background: var(--surface-2);
+}
+
+.level-row-language {
+  font-weight: 600;
+  flex-shrink: 0;
+  min-width: 7em;
+}
+
+.level-row-estimate {
+  flex: 1;
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.level-row-band {
+  font-weight: 700;
+  color: var(--primary);
+  font-size: 0.9rem;
+}
+
+.level-row-select {
+  flex-shrink: 0;
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-s);
+  background: var(--surface);
+  color: var(--text);
+}
+
+.level-row-select:focus {
+  border-color: var(--primary-border);
 }

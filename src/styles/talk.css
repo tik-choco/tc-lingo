@@ -1,0 +1,210 @@
+/* ============================================================
+   TC Lingo — 会話 (Talk) tab. Chat log + composer for the
+   scripted-scenario dialogue practice (see lib/conversation.ts,
+   views/TalkView.tsx). Design-token-only, same system as
+   ../index.css / ./views.css.
+   ============================================================ */
+
+/* Estimated-level chip shown next to the start-conversation button (reuses
+   the shared .language-badge pill; see ../styles/reading.css's
+   .reading-level-badge for the same pattern). */
+.talk-level-badge {
+  white-space: nowrap;
+}
+
+.talk-session-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.talk-session-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.talk-session-open {
+  flex: 1;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  text-align: left;
+  background: var(--surface-2);
+}
+
+.talk-session-title {
+  font-weight: 600;
+}
+
+.talk-session-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.talk-ended-badge {
+  flex-shrink: 0;
+  font-size: 0.7rem;
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-pill);
+  background: var(--surface-3);
+  color: var(--text-subtle);
+  font-weight: 600;
+}
+
+.talk-session-delete {
+  flex-shrink: 0;
+  color: var(--text-subtle);
+}
+
+.talk-session-delete:hover:not(:disabled) {
+  color: var(--danger-text);
+  border-color: var(--danger-border);
+  background: var(--danger-soft);
+}
+
+.talk-scenario {
+  color: var(--text-muted);
+  line-height: 1.6;
+  background: var(--surface-2);
+  border-radius: var(--radius-s);
+  padding: var(--space-3) var(--space-4);
+}
+
+.talk-log {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.talk-bubble {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  max-width: 82%;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-m);
+  line-height: 1.6;
+}
+
+.talk-bubble-assistant {
+  align-self: flex-start;
+  background: var(--surface-2);
+  color: var(--text);
+  border-bottom-left-radius: var(--radius-xs);
+}
+
+.talk-bubble-learner {
+  align-self: flex-end;
+  background: var(--primary-soft);
+  color: var(--text);
+  border-bottom-right-radius: var(--radius-xs);
+}
+
+.talk-bubble-text {
+  white-space: pre-wrap;
+}
+
+.talk-bubble-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.talk-bubble-assistant .talk-bubble-actions {
+  justify-content: flex-start;
+}
+
+/* Inline, expanded-by-default correction under a learner bubble that had
+   something to fix (still per-turn collapsible) — keeps the log readable as
+   a conversation instead of turning every learner line into a full feedback
+   panel. */
+.talk-correction {
+  border-top: 1px dashed var(--border-strong);
+  padding-top: var(--space-1);
+  margin-top: var(--space-1);
+}
+
+.talk-correction-toggle {
+  font-size: 0.78rem;
+}
+
+.talk-correction-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding-top: var(--space-1);
+}
+
+.talk-correction-reasons {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+
+/* Unobtrusive background-auto-extraction notice (lib/autoExtract.ts) — sits
+   outside the collapsible body so it stays visible even when the learner
+   collapses the correction. */
+.talk-correction-auto-added {
+  color: var(--text-subtle);
+  font-size: 0.78rem;
+  line-height: 1.5;
+  margin-top: var(--space-1);
+}
+
+/* Opt-in "type to practice" toggle (lib/spelling.ts + SpellingDrill, same
+   copy-typing drill as the 練習 tab) — collapsed by default so the log stays
+   scannable; the embedded drill is width:100% already, which fits fine
+   inside the 82%-wide bubble (see .talk-bubble above). */
+.talk-typing-practice {
+  margin-top: var(--space-1);
+}
+
+.talk-typing-practice-toggle {
+  font-size: 0.78rem;
+}
+
+/* "Save corrected sentence(s) as SRS cards" affordance (lib/sentenceCards.ts)
+   — sits outside the collapsible body next to talk-correction-auto-added, so
+   it stays visible even when the correction itself is collapsed. */
+.talk-sentence-cards {
+  margin-top: var(--space-1);
+}
+
+.talk-sentence-cards-save {
+  font-size: 0.78rem;
+}
+
+.talk-sentence-cards-status,
+.talk-sentence-cards-error {
+  font-size: 0.78rem;
+  margin: 0;
+}
+
+.talk-typing-indicator {
+  align-self: flex-start;
+  color: var(--text-subtle);
+  font-size: 0.85rem;
+  font-style: italic;
+}
+
+.talk-composer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  border-top: 1px solid var(--border);
+  padding-top: var(--space-3);
+}
+
+.talk-extract {
+  border-top: 1px solid var(--border);
+  padding-top: var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}

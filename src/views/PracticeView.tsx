@@ -3,17 +3,20 @@
 // mistakes into review cards. Same-topic repetition (round 1/2/3) is driven
 // entirely by lib/topics.ts's nextRoundFor.
 import { useEffect, useRef, useState } from "preact/hooks";
-import { Loader2, Sparkles, Square, Volume2 } from "lucide-preact";
+import { Loader2, Save, Sparkles, Square, Volume2 } from "lucide-preact";
 import { addAttempt, addTopic, attemptsForTopic, loadTopics, nextRoundFor, subscribeTopics, updateAttempt } from "../lib/topics";
-import type { AttemptRound, PracticeAttempt, Topic } from "../types";
+import type { AttemptRound, Card, PracticeAttempt, Topic } from "../types";
 import { addCard, dueCards } from "../lib/cards";
-import { loadSettings } from "../lib/settings";
+import { changedCorrectedSentences, saveSentenceCards } from "../lib/sentenceCards";
+import { autoExtractMistakeCards } from "../lib/autoExtract";
+import { effectiveBand, levelInstruction, recordOutputSample, subscribeLevels } from "../lib/level";
+import { loadSettings, subscribeSettings } from "../lib/settings";
 import { useLlmConnection } from "../hooks/useLlmConnection";
 import { useSpeech } from "../hooks/useSpeech";
 import { planTopicFanOut, requestFeedback, requestMistakeCards, requestRetryFeedback, requestTopicSuggestion } from "../lib/llm";
 import { localizeNetworkError } from "../lib/network";
 import type { CardCandidate, FeedbackResult } from "../lib/parse";
-import { FeedbackPanel } from "../components/FeedbackPanel";
+import { FeedbackPanel, RetryPromptField } from "../components/FeedbackPanel";
 import { MistakeCardPicker } from "../components/MistakeCardPicker";
 import { SpellingDrill } from "../components/SpellingDrill";
 import { diffChars } from "../lib/diff";
@@ -90,10 +93,22 @@ function roundLabel(round: AttemptRound): string {
 export function PracticeView() {
   const { connection } = useLlmConnection();
   const speech = useSpeech();
-  const settings = loadSettings();
+  const [settings, setSettings] = useState(loadSettings);
+  useEffect(() => subscribeSettings(() => setSettings(loadSettings())), []);
+
+  /** Estimated CEFR band for the active language, "" while unknown (see
+   * lib/level.ts) — shown as a small chip so the learner sees what
+   * difficulty topic suggestions and feedback will target. */
+  const [levelBand, setLevelBand] = useState(() => effectiveBand(settings.activeLanguage));
+  useEffect(() => subscribeLevels(() => setLevelBand(effectiveBand(loadSettings().activeLanguage))), []);
+  useEffect(() => setLevelBand(effectiveBand(settings.activeLanguage)), [settings.activeLanguage]);
 
   const [topics, setTopics] = useState<Topic[]>(() => loadTopics(settings.activeLanguage));
-  const [activeTopicId, setActiveTopicId] = useState<string | null>(() => loadTopics(settings.activeLanguage)[0]?.id ?? null);
+  // Deliberately starts on the topic chooser instead of auto-resuming the
+  // newest topic: being dropped back into the same topic on every visit reads
+  // as repetition fatigue. Rounds 2/3 stay one tap away via the past-topics
+  // list's resume badges below — repetition is offered, not forced.
+  const [activeTopicId, setActiveTopicId] = useState<string | null>(null);
   const [attempts, setAttempts] = useState<PracticeAttempt[]>(() =>
     activeTopicId ? attemptsForTopic(activeTopicId) : [],
   );
@@ -132,6 +147,21 @@ export function PracticeView() {
   const [candidates, setCandidates] = useState<CardCandidate[] | null>(null);
   const [extracting, setExtracting] = useState(false);
   const [cardsAdded, setCardsAdded] = useState(0);
+  // Background auto-extraction results (lib/autoExtract.ts), shown as a small
+  // notice in place of the manual "extract cards" flow when
+  // settings.autoExtractCards is on — see submitAttempt/checkRetryAnswer.
+  const [autoAddedCards, setAutoAddedCards] = useState<Card[]>([]);
+  const [autoAddedRetryCards, setAutoAddedRetryCards] = useState<Card[]>([]);
+  // "Save corrected sentences as SRS cards" button state, kept separately for
+  // the main feedback vs. the retry-check result (see saveSentenceCards*
+  // below) — reset alongside the rest of the attempt state whenever a new
+  // round/topic starts.
+  const [savingSentenceCards, setSavingSentenceCards] = useState(false);
+  const [sentenceCardsSaved, setSentenceCardsSaved] = useState(false);
+  const [sentenceCardsSavedCount, setSentenceCardsSavedCount] = useState(0);
+  const [savingRetrySentenceCards, setSavingRetrySentenceCards] = useState(false);
+  const [retrySentenceCardsSaved, setRetrySentenceCardsSaved] = useState(false);
+  const [retrySentenceCardsSavedCount, setRetrySentenceCardsSavedCount] = useState(0);
   const [error, setError] = useState("");
 
   // Kept in sync with the latest retryAnswer/currentAttempt so the unmount
@@ -185,6 +215,14 @@ export function PracticeView() {
     setCheckingRetry(false);
     setCandidates(null);
     setCardsAdded(0);
+    setAutoAddedCards([]);
+    setAutoAddedRetryCards([]);
+    setSavingSentenceCards(false);
+    setSentenceCardsSaved(false);
+    setSentenceCardsSavedCount(0);
+    setSavingRetrySentenceCards(false);
+    setRetrySentenceCardsSaved(false);
+    setRetrySentenceCardsSavedCount(0);
     setShowPrevious(false);
     setError("");
     setBatchGeneratedCount(0);
@@ -198,6 +236,14 @@ export function PracticeView() {
     setCheckingRetry(false);
     setCandidates(null);
     setCardsAdded(0);
+    setAutoAddedCards([]);
+    setAutoAddedRetryCards([]);
+    setSavingSentenceCards(false);
+    setSentenceCardsSaved(false);
+    setSentenceCardsSavedCount(0);
+    setSavingRetrySentenceCards(false);
+    setRetrySentenceCardsSaved(false);
+    setRetrySentenceCardsSavedCount(0);
     setShowPrevious(false);
     setError("");
     setBatchGeneratedCount(0);
@@ -220,6 +266,7 @@ export function PracticeView() {
           .slice(0, MAX_REVIEW_WORDS_FOR_TOPIC)
           .map((c) => c.front),
         topicRequest: topicRequest.trim() || undefined,
+        levelHint: levelInstruction(settings.activeLanguage),
       });
       const topic = addTopic({ title: suggestion.title, prompt: suggestion.prompt, custom: false, language: settings.activeLanguage });
       setActiveTopicId(topic.id);
@@ -259,6 +306,7 @@ export function PracticeView() {
               .slice(0, MAX_REVIEW_WORDS_FOR_TOPIC)
               .map((c) => c.front),
             topicRequest: topicRequest.trim() || undefined,
+            levelHint: levelInstruction(lang),
           });
           return addTopic({ title: suggestion.title, prompt: suggestion.prompt, custom: false, language: lang });
         }),
@@ -292,6 +340,7 @@ export function PracticeView() {
       return;
     }
     setError("");
+    setAutoAddedCards([]);
     setSubmitting(true);
     try {
       const feedback: FeedbackResult = await requestFeedback({
@@ -310,6 +359,20 @@ export function PracticeView() {
         retryPrompt: feedback.retryPrompt,
       });
       setCurrentAttempt(attempt);
+      recordOutputSample(settings.activeLanguage, text, feedback.corrected);
+      // Fire-and-forget: never blocks feedback rendering. Gates on
+      // settings.autoExtractCards itself, so it's safe to always call.
+      autoExtractMistakeCards({
+        connection,
+        targetLanguage: settings.activeLanguage,
+        nativeLanguage: settings.nativeLanguage,
+        original: text,
+        corrected: feedback.corrected,
+        reasons: feedback.reasons,
+        sourceTopicId: activeTopic.id,
+      }).then((added) => {
+        if (added.length > 0) setAutoAddedCards(added);
+      });
     } catch (e) {
       setError(localizeNetworkError(e, t("practice-feedback-failed")));
     } finally {
@@ -328,6 +391,7 @@ export function PracticeView() {
       return;
     }
     setError("");
+    setAutoAddedRetryCards([]);
     setCheckingRetry(true);
     try {
       const result = await requestRetryFeedback({
@@ -340,10 +404,86 @@ export function PracticeView() {
       });
       updateAttempt(currentAttempt.id, { retryAnswer, retryCorrected: result.corrected, retryReasons: result.reasons });
       setCurrentAttempt({ ...currentAttempt, retryAnswer, retryCorrected: result.corrected, retryReasons: result.reasons });
+      recordOutputSample(settings.activeLanguage, retryAnswer, result.corrected);
+      // Same fire-and-forget auto-extraction as submitAttempt, but only when
+      // the retry actually needed a correction (a "" corrected means the
+      // retry answer was already natural — nothing to extract).
+      if (result.corrected.trim()) {
+        autoExtractMistakeCards({
+          connection,
+          targetLanguage: settings.activeLanguage,
+          nativeLanguage: settings.nativeLanguage,
+          original: retryAnswer,
+          corrected: result.corrected,
+          reasons: result.reasons,
+          sourceTopicId: activeTopic?.id ?? null,
+        }).then((added) => {
+          if (added.length > 0) setAutoAddedRetryCards(added);
+        });
+      }
     } catch (e) {
       setError(localizeNetworkError(e, t("practice-retry-check-failed")));
     } finally {
       setCheckingRetry(false);
+    }
+  }
+
+  // Saves the changed sentence(s) from the main feedback's original/corrected
+  // pair as SRS sentence cards (see lib/sentenceCards.ts). Separate from the
+  // mistake-word extraction flow below: this saves whole corrected sentences
+  // (recalled from their translation in review), not word/meaning pairs.
+  async function saveMainSentenceCards() {
+    if (!currentAttempt || !activeTopic) return;
+    if (!connection) {
+      setError(t("practice-need-llm"));
+      return;
+    }
+    setError("");
+    setSavingSentenceCards(true);
+    try {
+      const added = await saveSentenceCards({
+        connection,
+        targetLanguage: settings.activeLanguage,
+        nativeLanguage: settings.nativeLanguage,
+        original: currentAttempt.original,
+        corrected: currentAttempt.corrected,
+        sourceTopicId: activeTopic.id,
+      });
+      setSentenceCardsSaved(true);
+      setSentenceCardsSavedCount(added.length);
+    } catch (e) {
+      setError(localizeNetworkError(e, t("practice-save-sentence-failed")));
+    } finally {
+      setSavingSentenceCards(false);
+    }
+  }
+
+  // Same as saveMainSentenceCards but scoped to the retry-check exchange
+  // (retryAnswer/retryCorrected) — kept as separate state so the two buttons
+  // save/disable independently.
+  async function saveRetrySentenceCards() {
+    if (!currentAttempt?.retryCorrected) return;
+    if (!connection) {
+      setError(t("practice-need-llm"));
+      return;
+    }
+    setError("");
+    setSavingRetrySentenceCards(true);
+    try {
+      const added = await saveSentenceCards({
+        connection,
+        targetLanguage: settings.activeLanguage,
+        nativeLanguage: settings.nativeLanguage,
+        original: currentAttempt.retryAnswer,
+        corrected: currentAttempt.retryCorrected,
+        sourceTopicId: activeTopic?.id ?? null,
+      });
+      setRetrySentenceCardsSaved(true);
+      setRetrySentenceCardsSavedCount(added.length);
+    } catch (e) {
+      setError(localizeNetworkError(e, t("practice-save-sentence-failed")));
+    } finally {
+      setSavingRetrySentenceCards(false);
     }
   }
 
@@ -381,8 +521,14 @@ export function PracticeView() {
     return (
       <div class="view-container practice-view">
         <section class="card-panel">
-          <h2>{t("practice-choose-topic-heading")}</h2>
+          <div class="topic-header">
+            <h2>{t("practice-choose-topic-heading")}</h2>
+            {levelBand && (
+              <span class="language-badge practice-level-badge">{t("practice-level-badge", { band: levelBand })}</span>
+            )}
+          </div>
           <p class="hint-text">{t("practice-choose-topic-hint")}</p>
+          <p class="hint-text">{t("practice-level-hint")}</p>
           <div class="field-grid">
             <label>
               {t("practice-topic-request-label")}
@@ -430,13 +576,23 @@ export function PracticeView() {
           <section class="card-panel">
             <h2>{t("practice-past-topics-heading")}</h2>
             <ul class="topic-pick-list">
-              {topics.slice(0, 8).map((t) => (
-                <li key={t.id}>
-                  <button type="button" onClick={() => setActiveTopicId(t.id)}>
-                    {t.title}
-                  </button>
-                </li>
-              ))}
+              {topics.slice(0, 8).map((topic) => {
+                // In-progress topics (some attempts recorded, rounds left)
+                // get a resume badge so continuing is an offer, not a default.
+                const resumeRound = attemptsForTopic(topic.id).length > 0 ? nextRoundFor(topic.id) : null;
+                return (
+                  <li key={topic.id}>
+                    <button type="button" onClick={() => setActiveTopicId(topic.id)}>
+                      {topic.title}
+                      {resumeRound !== null && (
+                        <span class="topic-resume-badge">
+                          {t("practice-topic-resume-badge", { round: roundLabel(resumeRound) })}
+                        </span>
+                      )}
+                    </button>
+                  </li>
+                );
+              })}
             </ul>
           </section>
         )}
@@ -471,9 +627,14 @@ export function PracticeView() {
       <section class="card-panel">
         <div class="topic-header">
           <h2>{activeTopic.title}</h2>
-          {(currentAttempt !== null || round !== null) && (
-            <span class="round-badge">{roundLabel(currentAttempt ? currentAttempt.round : (round as AttemptRound))}</span>
-          )}
+          <span class="topic-header-badges">
+            {(currentAttempt !== null || round !== null) && (
+              <span class="round-badge">{roundLabel(currentAttempt ? currentAttempt.round : (round as AttemptRound))}</span>
+            )}
+            {levelBand && (
+              <span class="language-badge practice-level-badge">{t("practice-level-badge", { band: levelBand })}</span>
+            )}
+          </span>
         </div>
         <p class="topic-prompt">
           {activeTopic.prompt}
@@ -561,17 +722,12 @@ export function PracticeView() {
               reasons={currentAttempt.reasons}
               retryPrompt={currentAttempt.retryPrompt}
               language={feedbackLanguage}
-            />
-
-            <SpellingDrill
-              key={currentAttempt.id}
-              words={misspelledWords(currentAttempt.original, currentAttempt.corrected)}
-              sentences={correctedSentences(currentAttempt.original, currentAttempt.corrected)}
+              showRetryPrompt={false}
             />
 
             {currentAttempt.retryPrompt && (
-              <div class="feedback-field">
-                <h3>{t("practice-retry-heading")}</h3>
+              <div class="retry-block">
+                <RetryPromptField retryPrompt={currentAttempt.retryPrompt} language={feedbackLanguage} />
                 <textarea
                   ref={retryTextareaRef}
                   class="practice-textarea"
@@ -599,28 +755,97 @@ export function PracticeView() {
                   </button>
                 </div>
                 {currentAttempt.retryCorrected && (
-                  <RetryCheckResult
-                    retryAnswer={currentAttempt.retryAnswer}
-                    retryCorrected={currentAttempt.retryCorrected}
-                    retryReasons={currentAttempt.retryReasons}
-                    language={feedbackLanguage}
-                  />
+                  <>
+                    <RetryCheckResult
+                      retryAnswer={currentAttempt.retryAnswer}
+                      retryCorrected={currentAttempt.retryCorrected}
+                      retryReasons={currentAttempt.retryReasons}
+                      language={feedbackLanguage}
+                    />
+                    <SpellingDrill
+                      key={`${currentAttempt.id}:retry`}
+                      words={misspelledWords(currentAttempt.retryAnswer, currentAttempt.retryCorrected)}
+                      sentences={correctedSentences(currentAttempt.retryAnswer, currentAttempt.retryCorrected)}
+                    />
+                    {changedCorrectedSentences(currentAttempt.retryAnswer, currentAttempt.retryCorrected).length > 0 &&
+                      (!retrySentenceCardsSaved ? (
+                        <div class="button-row">
+                          <button type="button" onClick={saveRetrySentenceCards} disabled={savingRetrySentenceCards}>
+                            <Save size={16} />
+                            {savingRetrySentenceCards
+                              ? t("practice-saving-sentence-cards")
+                              : t("practice-save-sentence-cards")}
+                          </button>
+                        </div>
+                      ) : (
+                        <p class={retrySentenceCardsSavedCount > 0 ? "hint-text status-ok" : "hint-text"}>
+                          {retrySentenceCardsSavedCount > 0
+                            ? t("practice-sentence-cards-saved", { count: retrySentenceCardsSavedCount })
+                            : t("practice-sentence-cards-duplicate")}
+                        </p>
+                      ))}
+                  </>
+                )}
+                {autoAddedRetryCards.length > 0 && (
+                  <p class="hint-text status-ok">
+                    {t("practice-auto-cards-added", {
+                      count: autoAddedRetryCards.length,
+                      fronts: autoAddedRetryCards.map((c) => c.front).join(", "),
+                    })}
+                  </p>
                 )}
               </div>
             )}
 
-            {candidates === null ? (
-              <div class="button-row">
-                <button type="button" onClick={extractCards} disabled={extracting}>
-                  {extracting ? t("practice-extracting") : t("practice-extract-cards")}
-                </button>
-              </div>
-            ) : candidates.length > 0 ? (
-              <MistakeCardPicker candidates={candidates} onAdd={addSelectedCards} onClose={() => setCandidates(null)} />
-            ) : (
-              <p class="hint-text">{t("practice-no-cards-found")}</p>
+            {autoAddedCards.length > 0 && (
+              <p class="hint-text status-ok">
+                {t("practice-auto-cards-added", {
+                  count: autoAddedCards.length,
+                  fronts: autoAddedCards.map((c) => c.front).join(", "),
+                })}
+              </p>
             )}
-            {cardsAdded > 0 && <p class="hint-text status-ok">{t("practice-cards-added", { count: cardsAdded })}</p>}
+
+            <SpellingDrill
+              key={currentAttempt.id}
+              words={misspelledWords(currentAttempt.original, currentAttempt.corrected)}
+              sentences={correctedSentences(currentAttempt.original, currentAttempt.corrected)}
+            />
+
+            {changedCorrectedSentences(currentAttempt.original, currentAttempt.corrected).length > 0 &&
+              (!sentenceCardsSaved ? (
+                <div class="button-row">
+                  <button type="button" onClick={saveMainSentenceCards} disabled={savingSentenceCards}>
+                    <Save size={16} />
+                    {savingSentenceCards ? t("practice-saving-sentence-cards") : t("practice-save-sentence-cards")}
+                  </button>
+                </div>
+              ) : (
+                <p class={sentenceCardsSavedCount > 0 ? "hint-text status-ok" : "hint-text"}>
+                  {sentenceCardsSavedCount > 0
+                    ? t("practice-sentence-cards-saved", { count: sentenceCardsSavedCount })
+                    : t("practice-sentence-cards-duplicate")}
+                </p>
+              ))}
+
+            {/* Manual extraction is the fallback for when auto-extraction
+                (above) is off — see lib/autoExtract.ts / settings.autoExtractCards. */}
+            {!settings.autoExtractCards && (
+              <>
+                {candidates === null ? (
+                  <div class="button-row">
+                    <button type="button" onClick={extractCards} disabled={extracting}>
+                      {extracting ? t("practice-extracting") : t("practice-extract-cards")}
+                    </button>
+                  </div>
+                ) : candidates.length > 0 ? (
+                  <MistakeCardPicker candidates={candidates} onAdd={addSelectedCards} onClose={() => setCandidates(null)} />
+                ) : (
+                  <p class="hint-text">{t("practice-no-cards-found")}</p>
+                )}
+                {cardsAdded > 0 && <p class="hint-text status-ok">{t("practice-cards-added", { count: cardsAdded })}</p>}
+              </>
+            )}
 
             {error && <p class="error-text">{error}</p>}
 

@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import {
+  BookOpen,
   ExternalLink,
   History,
   Keyboard,
   Languages,
   Layers,
+  MessagesSquare,
   Moon,
   PenLine,
   Repeat2,
@@ -17,6 +19,8 @@ import { onHashChange, readHash, writeHash } from "./lib/hashRoute";
 import { useTheme } from "./hooks/useTheme";
 import { paneEnterClass, useEnterDirection } from "./hooks/useEnterDirection";
 import { PracticeView } from "./views/PracticeView";
+import { ReadingView } from "./views/ReadingView";
+import { TalkView } from "./views/TalkView";
 import { ReviewView } from "./views/ReviewView";
 import { CardsView } from "./views/CardsView";
 import { HistoryView } from "./views/HistoryView";
@@ -35,6 +39,8 @@ import { useShortcuts } from "./hooks/useShortcuts";
 
 const TABS: { id: MainTab; labelKey: string; icon: typeof PenLine }[] = [
   { id: "practice", labelKey: "app-tab-practice", icon: PenLine },
+  { id: "reading", labelKey: "app-tab-reading", icon: BookOpen },
+  { id: "talk", labelKey: "app-tab-talk", icon: MessagesSquare },
   { id: "review", labelKey: "app-tab-review", icon: Repeat2 },
   { id: "cards", labelKey: "app-tab-cards", icon: Layers },
   { id: "history", labelKey: "app-tab-history", icon: History },
@@ -120,7 +126,7 @@ export function App() {
     setShowOnboarding(false);
   }
 
-  // App-wide keyboard shortcuts: 1-5 switch tabs (and move focus into the
+  // App-wide keyboard shortcuts: 1-7 switch tabs (and move focus into the
   // main pane so arrow/scroll keys land there), "?" toggles the cheat
   // sheet. Lowest priority tier — anything typed into an input, or any
   // modifier combo, is left alone so browser/OS shortcuts and view-level
@@ -129,7 +135,7 @@ export function App() {
   const [showKbdHelp, setShowKbdHelp] = useState(false);
   useShortcuts(SHORTCUT_PRIORITY.app, (e) => {
     if (isEditableTarget(e.target) || e.ctrlKey || e.metaKey || e.altKey) return false;
-    if ("12345".includes(e.key)) {
+    if (/^[1-9]$/.test(e.key)) {
       const next = TAB_ORDER[Number(e.key) - 1];
       if (next) {
         selectTab(next);
@@ -211,6 +217,8 @@ export function App() {
       <main class="app-main" ref={mainRef} tabIndex={-1}>
         <div key={tab} class={paneEnterClass(dir)} style={{ height: "100%" }}>
           {tab === "practice" && <PracticeView />}
+          {tab === "reading" && <ReadingView />}
+          {tab === "talk" && <TalkView />}
           {tab === "review" && <ReviewView />}
           {tab === "cards" && <CardsView />}
           {tab === "history" && <HistoryView />}

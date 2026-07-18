@@ -44,19 +44,30 @@ export function SpellingDrill({ words, sentences = [] }: SpellingDrillProps) {
   const [states, setStates] = useState<ItemState[]>(() => items.map(() => initialState()));
 
   // Keyboard-only drill: on mount, and every time a rep finishes, move focus
-  // to the first not-yet-finished item's input so the learner can type
-  // straight through the whole list without reaching for the mouse. Calling
-  // .focus() on an element that already has focus is a no-op, so re-running
-  // this on every keystroke (via the `states` dependency) is harmless.
+  // to the next unfinished item's input so the learner can type straight
+  // through the whole list without reaching for the mouse. Keyed on the total
+  // rep count, NOT `states` — refiring on plain keystrokes would yank focus
+  // back to the first unfinished item while the learner is typing in a later
+  // one. The search starts at the item whose rep just completed (wrapping
+  // around), so working ahead of an earlier unfinished item never jumps
+  // backwards either.
   const inputRefs = useRef<(HTMLInputElement | HTMLTextAreaElement | null)[]>([]);
+  const lastRepIndexRef = useRef(0);
+  const totalReps = states.reduce((sum, s) => sum + s.correctCount, 0);
   useEffect(() => {
-    const nextIndex = items.findIndex((item, i) => (states[i]?.correctCount ?? 0) < item.required);
-    if (nextIndex !== -1) inputRefs.current[nextIndex]?.focus();
-  }, [states]);
+    for (let step = 0; step < items.length; step++) {
+      const i = (lastRepIndexRef.current + step) % items.length;
+      if ((states[i]?.correctCount ?? 0) < items[i].required) {
+        inputRefs.current[i]?.focus();
+        return;
+      }
+    }
+  }, [totalReps]);
 
   if (items.length === 0) return null;
 
   function handleInput(index: number, correct: string, value: string) {
+    if (value.trim() === correct) lastRepIndexRef.current = index;
     setStates((prev) =>
       prev.map((s, i) => {
         if (i !== index) return s;
@@ -87,7 +98,9 @@ export function SpellingDrill({ words, sentences = [] }: SpellingDrillProps) {
                 {t("practice-spelling-progress", { done: state.correctCount, total: item.required })}
               </span>
             </div>
-            <span class="spelling-attempted">{t("practice-spelling-you-wrote", { word: item.attempted })}</span>
+            {item.attempted !== "" && (
+              <span class="spelling-attempted">{t("practice-spelling-you-wrote", { word: item.attempted })}</span>
+            )}
 
             {finished ? (
               <div class="spelling-done status-ok">
