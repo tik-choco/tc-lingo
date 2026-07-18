@@ -37,13 +37,17 @@ const MAX_REVIEW_WORDS_FOR_TOPIC = 5;
 function RetryCheckResult({
   retryAnswer,
   retryCorrected,
+  retryCorrectedReading,
   retryReasons,
   language,
+  showReadingAids,
 }: {
   retryAnswer: string;
   retryCorrected: string;
+  retryCorrectedReading: string;
   retryReasons: string;
   language: string;
+  showReadingAids: boolean;
 }) {
   const chunks = diffChars(retryAnswer, retryCorrected);
   const speech = useSpeech();
@@ -75,6 +79,7 @@ function RetryCheckResult({
           </span>
         ))}
       </p>
+      {showReadingAids && retryCorrectedReading && <p class="reading-aid">{retryCorrectedReading}</p>}
       {retryReasons && (
         <>
           <h3>{t("practice-feedback-reasons")}</h3>
@@ -355,8 +360,10 @@ export function PracticeView() {
         round,
         original: text,
         corrected: feedback.corrected,
+        correctedReading: feedback.correctedReading,
         reasons: feedback.reasons,
         retryPrompt: feedback.retryPrompt,
+        retryPromptReading: feedback.retryPromptReading,
       });
       setCurrentAttempt(attempt);
       recordOutputSample(settings.activeLanguage, text, feedback.corrected);
@@ -402,8 +409,19 @@ export function PracticeView() {
         retryPrompt: currentAttempt.retryPrompt,
         retryAnswer,
       });
-      updateAttempt(currentAttempt.id, { retryAnswer, retryCorrected: result.corrected, retryReasons: result.reasons });
-      setCurrentAttempt({ ...currentAttempt, retryAnswer, retryCorrected: result.corrected, retryReasons: result.reasons });
+      updateAttempt(currentAttempt.id, {
+        retryAnswer,
+        retryCorrected: result.corrected,
+        retryCorrectedReading: result.correctedReading,
+        retryReasons: result.reasons,
+      });
+      setCurrentAttempt({
+        ...currentAttempt,
+        retryAnswer,
+        retryCorrected: result.corrected,
+        retryCorrectedReading: result.correctedReading,
+        retryReasons: result.reasons,
+      });
       recordOutputSample(settings.activeLanguage, retryAnswer, result.corrected);
       // Same fire-and-forget auto-extraction as submitAttempt, but only when
       // the retry actually needed a correction (a "" corrected means the
@@ -674,8 +692,10 @@ export function PracticeView() {
               <FeedbackPanel
                 original={previousAttempt.original}
                 corrected={previousAttempt.corrected}
+                correctedReading={previousAttempt.correctedReading}
                 reasons={previousAttempt.reasons}
                 retryPrompt={previousAttempt.retryPrompt}
+                retryPromptReading={previousAttempt.retryPromptReading}
                 language={feedbackLanguage}
               />
             )}
@@ -719,15 +739,21 @@ export function PracticeView() {
             <FeedbackPanel
               original={currentAttempt.original}
               corrected={currentAttempt.corrected}
+              correctedReading={currentAttempt.correctedReading}
               reasons={currentAttempt.reasons}
               retryPrompt={currentAttempt.retryPrompt}
+              retryPromptReading={currentAttempt.retryPromptReading}
               language={feedbackLanguage}
               showRetryPrompt={false}
             />
 
             {currentAttempt.retryPrompt && (
               <div class="retry-block">
-                <RetryPromptField retryPrompt={currentAttempt.retryPrompt} language={feedbackLanguage} />
+                <RetryPromptField
+                  retryPrompt={currentAttempt.retryPrompt}
+                  retryPromptReading={currentAttempt.retryPromptReading}
+                  language={feedbackLanguage}
+                />
                 <textarea
                   ref={retryTextareaRef}
                   class="practice-textarea"
@@ -759,8 +785,10 @@ export function PracticeView() {
                     <RetryCheckResult
                       retryAnswer={currentAttempt.retryAnswer}
                       retryCorrected={currentAttempt.retryCorrected}
+                      retryCorrectedReading={currentAttempt.retryCorrectedReading}
                       retryReasons={currentAttempt.retryReasons}
                       language={feedbackLanguage}
+                      showReadingAids={settings.showReadingAids}
                     />
                     <SpellingDrill
                       key={`${currentAttempt.id}:retry`}

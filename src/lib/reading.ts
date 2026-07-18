@@ -6,6 +6,7 @@ import { t } from "../i18n";
 import type { LlmConnection } from "./llmConnection";
 import { chatJson } from "./llm";
 import { levelInstruction } from "./level";
+import { readingAid } from "./languages";
 import { extractJson } from "./parse";
 import type { ReadingPassage } from "../types";
 import { loadJson, newId, saveJson, subscribeStorage } from "./storage";
@@ -17,10 +18,17 @@ const STORAGE_NAME = "passages-v1";
  * moved on from, not accumulated indefinitely like cards. */
 const MAX_PASSAGES = 30;
 
-function isSentence(value: unknown): value is { text: string; translation: string } {
+/** `reading` is optional here to accept passages saved before reading aids
+ * existed — loadPassages back-fills it to "" below, same pattern as
+ * topics.ts's loadAttempts backfilling retryCorrected/retryReasons. */
+function isSentence(value: unknown): value is { text: string; translation: string; reading?: string } {
   if (value === null || typeof value !== "object") return false;
   const r = value as Record<string, unknown>;
-  return typeof r.text === "string" && typeof r.translation === "string";
+  return (
+    typeof r.text === "string" &&
+    typeof r.translation === "string" &&
+    (r.reading === undefined || typeof r.reading === "string")
+  );
 }
 
 function isReadingPassage(value: unknown): value is ReadingPassage {
@@ -45,7 +53,12 @@ function isReadingPassage(value: unknown): value is ReadingPassage {
  * Card.language (see types.ts). */
 export function loadPassages(language?: string): ReadingPassage[] {
   const raw = loadJson<unknown[]>(STORAGE_NAME, []);
-  const passages = Array.isArray(raw) ? raw.filter(isReadingPassage) : [];
+  const passages = Array.isArray(raw)
+    ? raw.filter(isReadingPassage).map((p) => ({
+        ...p,
+        sentences: p.sentences.map((s) => ({ ...s, reading: s.reading ?? "" })),
+      }))
+    : [];
   return language ? passages.filter((p) => p.language === language || p.language === "") : passages;
 }
 
@@ -60,7 +73,7 @@ export function subscribePassages(cb: () => void): () => void {
 export interface NewPassageInput {
   language: string;
   title: string;
-  sentences: { text: string; translation: string }[];
+  sentences: { text: string; translation: string; reading: string }[];
   reviewWords?: string[];
   question?: string;
   questionAnswer?: string;
@@ -88,7 +101,7 @@ export function deletePassage(id: string): void {
 
 interface GeneratedPassage {
   title: string;
-  sentences: { text: string; translation: string }[];
+  sentences: { text: string; translation: string; reading: string }[];
   usedReviewWords: string[];
   question: string;
   questionAnswer: string;
@@ -96,7 +109,9 @@ interface GeneratedPassage {
 
 /** Defensive parse for requestReadingPassage's one-shot JSON response, same
  * style as lib/parse.ts's parse* helpers (own function here per that file's
- * header comment inviting sibling LLM-call modules to do this locally). */
+ * header comment inviting sibling LLM-call modules to do this locally).
+ * Tolerates a missing/non-string "reading" (languages without a reading aid
+ * never ask the LLM for one — see requestReadingPassage). */
 function parseGeneratedPassage(content: string): GeneratedPassage {
   const parsed = extractJson(content) as Record<string, unknown>;
   const title = typeof parsed.title === "string" ? parsed.title : "";
@@ -106,6 +121,7 @@ function parseGeneratedPassage(content: string): GeneratedPassage {
         .map((item) => ({
           text: typeof item.text === "string" ? item.text : "",
           translation: typeof item.translation === "string" ? item.translation : "",
+          reading: typeof item.reading === "string" ? item.reading : "",
         }))
         .filter((s) => s.text)
     : [];
@@ -129,16 +145,25 @@ export async function requestReadingPassage(params: {
   reviewWords: string[];
   recentTitles: string[];
 }): Promise<ReadingPassage> {
+  // Reading aids (e.g. pinyin) are only requested for languages that have
+  // one (see lib/languages.ts readingAid) — omitted from the prompt entirely
+  // otherwise, rather than asking for a field that's always thrown away.
+  const aid = readingAid(params.targetLanguage);
+  const sentenceFieldsDescription = aid
+    ? `"text" (one sentence in ${params.targetLanguage}), "translation" (that sentence's translation in ${params.nativeLanguage}), and "reading" (${aid.llmInstruction} for that sentence)`
+    : `"text" (one sentence in ${params.targetLanguage}) and "translation" (that sentence's translation in ${params.nativeLanguage})`;
   const content = await chatJson(
     params.connection,
-    `You are TC Lingo's comprehensible-input passage generator. Write one short passage in ${params.targetLanguage} for a learner whose native language is ${params.nativeLanguage} and who is slightly below native fluency ("i+1": simple, natural, everyday narrative or opinion piece). The passage should be 6-10 short sentences, natural and easy to follow, not a contrived grammar drill. The learner is due to review these words/phrases (reviewWords): weave in 1-3 of them naturally if they genuinely fit the passage; never force a word in if it doesn't fit — a good, natural passage beats a forced vocabulary match, and it's fine to use none of them. Avoid topics already covered in recentTitles. Also write one short comprehension question in ${params.targetLanguage} about the passage, and its expected answer in ${params.targetLanguage}. Return only JSON with exactly these keys: "title" (a short label in ${params.nativeLanguage}), "sentences" (an array of objects, each with "text" (one sentence in ${params.targetLanguage}) and "translation" (that sentence's translation in ${params.nativeLanguage})), "usedReviewWords" (array of strings: which of the given reviewWords were actually used, possibly empty), "question" (the comprehension question, in ${params.targetLanguage}), "questionAnswer" (its expected answer, in ${params.targetLanguage}).${levelInstruction(params.targetLanguage)}`,
+    `You are TC Lingo's comprehensible-input passage generator. Write one short passage in ${params.targetLanguage} for a learner whose native language is ${params.nativeLanguage} and who is slightly below native fluency ("i+1": simple, natural, everyday narrative or opinion piece). The passage should be 6-10 short sentences, natural and easy to follow, not a contrived grammar drill. The learner is due to review these words/phrases (reviewWords): weave in 1-3 of them naturally if they genuinely fit the passage; never force a word in if it doesn't fit — a good, natural passage beats a forced vocabulary match, and it's fine to use none of them. Avoid topics already covered in recentTitles. Also write one short comprehension question in ${params.targetLanguage} about the passage, and its expected answer in ${params.targetLanguage}. Return only JSON with exactly these keys: "title" (a short label in ${params.nativeLanguage}), "sentences" (an array of objects, each with ${sentenceFieldsDescription}), "usedReviewWords" (array of strings: which of the given reviewWords were actually used, possibly empty), "question" (the comprehension question, in ${params.targetLanguage}), "questionAnswer" (its expected answer, in ${params.targetLanguage}).${levelInstruction(params.targetLanguage)}`,
     { reviewWords: params.reviewWords, recentTitles: params.recentTitles },
   );
   const generated = parseGeneratedPassage(content);
   return addPassage({
     language: params.targetLanguage,
     title: generated.title,
-    sentences: generated.sentences,
+    // When the target language has no reading aid, force "" even if the
+    // model stuck a stray "reading" in anyway — it was never asked for one.
+    sentences: aid ? generated.sentences : generated.sentences.map((s) => ({ ...s, reading: "" })),
     reviewWords: generated.usedReviewWords,
     question: generated.question,
     questionAnswer: generated.questionAnswer,

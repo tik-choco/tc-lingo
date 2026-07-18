@@ -60,12 +60,20 @@ export interface PracticeAttempt {
   createdAt: string;
   original: string;
   corrected: string;
+  /** Always-visible reading aid for `corrected` (e.g. pinyin — see
+   * lib/languages.ts readingAid); "" for languages without one and attempts
+   * saved before reading aids existed. */
+  correctedReading: string;
   reasons: string;
   retryPrompt: string;
+  /** Reading aid for `retryPrompt`; "" when none. */
+  retryPromptReading: string;
   retryAnswer: string;
   /** AI-corrected version of retryAnswer, from a learner-triggered "check my
    * answer" pass over the retry (see PracticeView). "" until checked. */
   retryCorrected: string;
+  /** Reading aid for `retryCorrected`; "" when unchecked / no aid. */
+  retryCorrectedReading: string;
   /** Explanation for retryCorrected, in the learner's native language. */
   retryReasons: string;
 }
@@ -79,7 +87,10 @@ export interface ReadingPassage {
   /** Target language the passage is written in. */
   language: string;
   title: string;
-  sentences: { text: string; translation: string }[];
+  /** `reading` is an always-visible reading aid for the sentence (e.g. pinyin
+   * — see lib/languages.ts readingAid); "" for languages without one and for
+   * passages saved before reading aids existed. */
+  sentences: { text: string; translation: string; reading: string }[];
   /** Due-review card fronts the generator was asked to weave in (spaced
    * re-use, same rationale as requestTopicSuggestion's reviewWords). */
   reviewWords: string[];
@@ -98,8 +109,14 @@ export interface ConversationTurn {
   id: string;
   role: ConversationRole;
   text: string;
+  /** Always-visible reading aid for `text` (e.g. pinyin — see
+   * lib/languages.ts readingAid); "" for languages without one, learner
+   * turns, and turns saved before reading aids existed. */
+  reading: string;
   /** Corrected version of a learner turn; "" when it was already natural. */
   corrected: string;
+  /** Reading aid for `corrected`; "" when no correction / no aid. */
+  correctedReading: string;
   /** Why, in the learner's native language. "" when no correction. */
   reasons: string;
 }
@@ -168,4 +185,8 @@ export interface LingoSettings {
    * extract mistake cards in the background (lib/autoExtract.ts) instead of
    * waiting for the learner to press the manual extract button. */
   autoExtractCards: boolean;
+  /** Whether target-language text shows its always-visible reading aid line
+   * (e.g. pinyin for Chinese — see lib/languages.ts readingAid). Display-only:
+   * readings are still generated and stored while this is off. */
+  showReadingAids: boolean;
 }

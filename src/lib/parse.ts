@@ -19,21 +19,30 @@ export function extractJson(content: string): unknown {
 
 export interface FeedbackResult {
   corrected: string;
+  /** Always-visible reading aid for `corrected` (e.g. pinyin — see
+   * lib/languages.ts readingAid); "" when the target language has no aid. */
+  correctedReading: string;
   reasons: string;
   retryPrompt: string;
+  /** Reading aid for `retryPrompt`; "" when no aid. */
+  retryPromptReading: string;
 }
 
 export function parseFeedback(content: string): FeedbackResult {
   const parsed = extractJson(content) as Record<string, unknown>;
   const corrected = typeof parsed.corrected === "string" ? parsed.corrected : "";
+  const correctedReading = typeof parsed.correctedReading === "string" ? parsed.correctedReading : "";
   const reasons = typeof parsed.reasons === "string" ? parsed.reasons : "";
   const retryPrompt = typeof parsed.retryPrompt === "string" ? parsed.retryPrompt : "";
+  const retryPromptReading = typeof parsed.retryPromptReading === "string" ? parsed.retryPromptReading : "";
   if (!corrected) throw new Error(t("error-missing-correction"));
-  return { corrected, reasons, retryPrompt };
+  return { corrected, correctedReading, reasons, retryPrompt, retryPromptReading };
 }
 
 export interface RetryFeedbackResult {
   corrected: string;
+  /** Reading aid for `corrected`; "" when no aid. */
+  correctedReading: string;
   reasons: string;
 }
 
@@ -42,9 +51,10 @@ export interface RetryFeedbackResult {
 export function parseRetryFeedback(content: string): RetryFeedbackResult {
   const parsed = extractJson(content) as Record<string, unknown>;
   const corrected = typeof parsed.corrected === "string" ? parsed.corrected : "";
+  const correctedReading = typeof parsed.correctedReading === "string" ? parsed.correctedReading : "";
   const reasons = typeof parsed.reasons === "string" ? parsed.reasons : "";
   if (!corrected) throw new Error(t("error-missing-correction"));
-  return { corrected, reasons };
+  return { corrected, correctedReading, reasons };
 }
 
 export interface TopicSuggestion {

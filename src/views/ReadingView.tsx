@@ -296,6 +296,7 @@ export function ReadingView() {
                       </button>
                     )}
                   </div>
+                  {settings.showReadingAids && s.reading && <p class="reading-aid">{s.reading}</p>}
                   {revealed && <p class="reading-sentence-translation">{s.translation}</p>}
                 </div>
               );

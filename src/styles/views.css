@@ -34,6 +34,14 @@
   line-height: 1.6;
 }
 
+/* Always-visible reading line (e.g. pinyin) under target-language text —
+   see lib/languages.ts readingAid. Shared by 読む/会話/練習/履歴. */
+.reading-aid {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+
 .status-ok {
   color: var(--success);
 }
@@ -138,6 +146,62 @@ button:disabled {
 .field-grid textarea:focus,
 .practice-textarea:focus {
   border-color: var(--primary-border);
+}
+
+/* Shared styled <select>. Native selects look inconsistent across platforms
+   (and unstyled next to the token-styled inputs), so every select in the
+   settings surfaces gets the same look: appearance:none drops the platform
+   arrow and a lucide chevron-down data-URI replaces it (stroke matches
+   --text-muted per theme — SVG data URIs can't use CSS variables, hence the
+   hardcoded hex pair below). The dropdown popup itself follows color-scheme
+   (see index.css). Keep `background-color` (not the `background` shorthand)
+   in any later per-select override, or it will wipe the chevron image. */
+.field-grid select,
+.llm-edit-fields select,
+.llm-model-field select,
+.level-row-select {
+  appearance: none;
+  padding: var(--space-2) calc(var(--space-3) + 20px) var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-s);
+  background-color: var(--surface-2);
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%235c6773' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right var(--space-3) center;
+  background-size: 12px;
+  color: var(--text);
+  cursor: pointer;
+  transition: border-color var(--dur-fast) var(--ease), background-color var(--dur-fast) var(--ease);
+}
+
+:root[data-theme="dark"] .field-grid select,
+:root[data-theme="dark"] .llm-edit-fields select,
+:root[data-theme="dark"] .llm-model-field select,
+:root[data-theme="dark"] .level-row-select {
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%239aa7b5' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+}
+
+.field-grid select:hover:not(:disabled),
+.llm-edit-fields select:hover:not(:disabled),
+.llm-model-field select:hover:not(:disabled),
+.level-row-select:hover:not(:disabled) {
+  border-color: var(--border-strong);
+}
+
+.field-grid select:focus,
+.llm-edit-fields select:focus,
+.llm-model-field select:focus,
+.level-row-select:focus {
+  border-color: var(--primary-border);
+}
+
+/* The auto-fetch loading placeholders render as disabled selects. */
+.field-grid select:disabled,
+.llm-edit-fields select:disabled,
+.llm-model-field select:disabled,
+.level-row-select:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
 .model-row {
@@ -672,32 +736,260 @@ button:disabled {
 
 /* ---------------- Settings view ---------------- */
 
-.preset-list {
-  display: flex;
-  flex-wrap: wrap;
+/* Flat provider/model card grids (接続先 / モデル), each cell either a
+   compact display card or, while being added/edited, expanded to the full
+   grid width with its input fields. Ported from tc-pdf-viewer's
+   .model-row-list design, adapted to tc-lingo's tokens. */
+
+.llm-flat-section {
+  margin-bottom: var(--space-4);
+}
+
+.llm-row-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
   gap: var(--space-2);
 }
 
-.preset-item {
+.llm-row {
+  position: relative;
+  display: flex;
   flex-direction: column;
   align-items: flex-start;
   gap: 2px;
+  padding: 10px 52px 10px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-s);
+  background: var(--surface);
+  box-shadow: var(--shadow-1);
+  transition: background var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease),
+    transform var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
 }
 
-.preset-item-active {
+.llm-row:hover {
+  box-shadow: var(--shadow-2);
+  transform: translateY(-1px);
+}
+
+.llm-flat-section-providers .llm-row {
   background: var(--primary-soft);
+}
+
+.llm-flat-section-models .llm-row {
+  background: var(--surface-3);
+}
+
+.llm-flat-section-models .llm-row.llm-row-active {
   border-color: var(--primary-border);
+  background: var(--primary-soft);
+}
+
+.llm-row-main {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.llm-row-label {
+  font-size: 0.82rem;
+  font-weight: 600;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.llm-row-model {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.llm-row-provider {
+  font-size: 0.68rem;
+  color: var(--text-muted);
+  font-style: italic;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.llm-row-badge {
+  background: var(--primary-soft-strong);
+  color: var(--primary);
+  font-size: 0.62rem;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: var(--radius-pill);
+  white-space: nowrap;
+}
+
+.llm-row-icons {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: flex;
+  gap: 2px;
+}
+
+.llm-icon-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  border-radius: 50%;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease);
+}
+
+.llm-icon-button:hover {
+  color: var(--text);
+  background: var(--surface-2);
+}
+
+.llm-row-remove:hover {
+  color: var(--danger-text);
+  background: var(--danger-soft);
+}
+
+.llm-row.llm-row-editing {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-2);
+  padding: 10px;
+  background: var(--surface-2);
+  box-shadow: none;
+  transform: none;
+  cursor: default;
+}
+
+.llm-edit-fields {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+/* Selects in these rows are covered by the shared styled-select block near
+   .field-grid (don't re-add them here with a `background:` shorthand — it
+   would wipe the chevron image). */
+.llm-edit-fields input {
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-s);
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.llm-edit-fields input:focus {
+  border-color: var(--primary-border);
+}
+
+.llm-model-field {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.llm-model-field select,
+.llm-model-field input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.llm-add-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+.llm-form-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border-radius: var(--radius-s);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  cursor: pointer;
+  transition: color var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease);
+}
+
+.llm-form-btn:hover:not(:disabled) {
+  color: var(--text);
+}
+
+.llm-form-btn-primary {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: var(--on-primary);
+}
+
+.llm-form-btn-primary:hover:not(:disabled) {
+  background: var(--primary-hover);
+  border-color: var(--primary-hover);
+  color: var(--on-primary);
+}
+
+.llm-form-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.llm-add-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 64px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-s);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  cursor: pointer;
+  transition: border-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+
+.llm-add-tile:hover:not(:disabled) {
+  border-color: var(--primary);
   color: var(--primary);
 }
 
-.preset-item-label {
-  font-weight: 600;
-  font-size: 0.85rem;
+.llm-add-tile:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  border-color: var(--border-strong);
+  color: var(--text-muted);
 }
 
-.preset-item-model {
-  font-size: 0.75rem;
-  color: var(--text-subtle);
+.llm-form-warning {
+  font-style: italic;
+  margin-top: calc(-1 * var(--space-1));
 }
 
 /* Connection mode segmented toggle (直接API接続 / AI Network). */
@@ -1192,15 +1484,12 @@ button:disabled {
   font-size: 0.9rem;
 }
 
+/* Base look comes from the shared styled-select block (near .field-grid);
+   this only compacts it for the inline level rows. background-color (not the
+   `background` shorthand) so the chevron image survives. */
 .level-row-select {
   flex-shrink: 0;
-  padding: var(--space-1) var(--space-2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-s);
-  background: var(--surface);
-  color: var(--text);
-}
-
-.level-row-select:focus {
-  border-color: var(--primary-border);
+  padding: var(--space-1) calc(var(--space-2) + 18px) var(--space-1) var(--space-2);
+  background-color: var(--surface);
+  background-position: right var(--space-2) center;
 }

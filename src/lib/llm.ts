@@ -13,7 +13,7 @@ import type { LlmConnection } from "./llmConnection";
 import { requestNetworkChat } from "./network";
 import { parseAnswerVerdict, parseCardCandidates, parseFeedback, parseRetryFeedback, parseSentenceCards, parseTopicFanOutPlan, parseTopicSuggestion } from "./parse";
 import type { AnswerVerdict, CardCandidate, FeedbackResult, RetryFeedbackResult, SentenceCardCandidate, TopicFanOutPlan, TopicSuggestion } from "./parse";
-import { readingSpec } from "./languages";
+import { readingAid, readingSpec } from "./languages";
 import { levelInstruction } from "./level";
 
 function chatConfig(target: ResolvedLlmTargetV1) {
@@ -82,9 +82,17 @@ export async function requestFeedback(params: {
   const levelHint = level
     ? `${level} Apply this calibration especially to the "retryPrompt" follow-up question you write, and pitch the depth of your "reasons" explanations to the same level; the corrected text itself must still be fully natural ${params.targetLanguage}.`
     : "";
+  // Always-visible reading aid (e.g. pinyin for Chinese — see
+  // lib/languages.ts readingAid): only ask for the extra reading keys when
+  // the target language actually has one, so the prompt/response stay
+  // unchanged for every other language.
+  const aid = readingAid(params.targetLanguage);
+  const readingKeys = aid
+    ? `, "correctedReading" (${aid.llmInstruction}, for the "corrected" text), "retryPromptReading" (${aid.llmInstruction}, for the "retryPrompt" text)`
+    : "";
   const content = await chatJson(
     params.connection,
-    `You are TC Lingo's writing/speaking coach. The learner is producing output in ${params.targetLanguage}; explanations must be written in ${params.nativeLanguage}. Given a topic prompt and the learner's attempt, correct their text naturally (fix grammar, word choice, and unnatural phrasing while preserving their intended meaning), explain the key reasons for each correction in ${params.nativeLanguage} (concise, bullet-like sentences), and propose one short follow-up question or variation in ${params.targetLanguage} that lets the learner immediately retry using the corrected pattern. Return only JSON with exactly these keys: "corrected" (the corrected ${params.targetLanguage} text), "reasons" (explanation in ${params.nativeLanguage}), "retryPrompt" (a short follow-up prompt in ${params.targetLanguage}). Do not restate the original text.${levelHint}`,
+    `You are TC Lingo's writing/speaking coach. The learner is producing output in ${params.targetLanguage}; explanations must be written in ${params.nativeLanguage}. Given a topic prompt and the learner's attempt, correct their text naturally (fix grammar, word choice, and unnatural phrasing while preserving their intended meaning), explain the key reasons for each correction in ${params.nativeLanguage} (concise, bullet-like sentences), and propose one short follow-up question or variation in ${params.targetLanguage} that lets the learner immediately retry using the corrected pattern. Return only JSON with exactly these keys: "corrected" (the corrected ${params.targetLanguage} text), "reasons" (explanation in ${params.nativeLanguage}), "retryPrompt" (a short follow-up prompt in ${params.targetLanguage})${readingKeys}. Do not restate the original text.${levelHint}`,
     { topicPrompt: params.topicPrompt, learnerText: params.userText },
   );
   return parseFeedback(content);
@@ -102,9 +110,11 @@ export async function requestRetryFeedback(params: {
   retryPrompt: string;
   retryAnswer: string;
 }): Promise<RetryFeedbackResult> {
+  const aid = readingAid(params.targetLanguage);
+  const readingKeys = aid ? `, "correctedReading" (${aid.llmInstruction}, for the "corrected" text)` : "";
   const content = await chatJson(
     params.connection,
-    `You are TC Lingo's writing/speaking coach. The learner is producing output in ${params.targetLanguage}; explanations must be written in ${params.nativeLanguage}. They already got feedback on an initial attempt at the topic prompt, and are now answering a short follow-up question (retryPrompt) meant to let them retry using the corrected pattern. Given the topic prompt, the follow-up question, and the learner's answer to it, correct their answer naturally (fix grammar, word choice, and unnatural phrasing while preserving their intended meaning) and explain the key reasons for each correction in ${params.nativeLanguage} (concise, bullet-like sentences). Return only JSON with exactly these keys: "corrected" (the corrected ${params.targetLanguage} text), "reasons" (explanation in ${params.nativeLanguage}). Do not restate the original answer.${levelInstruction(params.targetLanguage)}`,
+    `You are TC Lingo's writing/speaking coach. The learner is producing output in ${params.targetLanguage}; explanations must be written in ${params.nativeLanguage}. They already got feedback on an initial attempt at the topic prompt, and are now answering a short follow-up question (retryPrompt) meant to let them retry using the corrected pattern. Given the topic prompt, the follow-up question, and the learner's answer to it, correct their answer naturally (fix grammar, word choice, and unnatural phrasing while preserving their intended meaning) and explain the key reasons for each correction in ${params.nativeLanguage} (concise, bullet-like sentences). Return only JSON with exactly these keys: "corrected" (the corrected ${params.targetLanguage} text), "reasons" (explanation in ${params.nativeLanguage})${readingKeys}. Do not restate the original answer.${levelInstruction(params.targetLanguage)}`,
     { topicPrompt: params.topicPrompt, retryPrompt: params.retryPrompt, retryAnswer: params.retryAnswer },
   );
   return parseRetryFeedback(content);

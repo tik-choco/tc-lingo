@@ -12,6 +12,7 @@ import { loadJson, newId, saveJson, subscribeStorage } from "./storage";
 import { chatJson } from "./llm";
 import type { LlmConnection } from "./llmConnection";
 import { levelInstruction } from "./level";
+import { readingAid } from "./languages";
 import { extractJson } from "./parse";
 import { t } from "../i18n";
 
@@ -22,6 +23,10 @@ function isConversationRole(value: unknown): value is ConversationRole {
   return value === "assistant" || value === "learner";
 }
 
+/** `reading`/`correctedReading` are optional here to accept turns saved
+ * before reading aids existed — loadConversations back-fills them to ""
+ * below, same pattern as topics.ts's loadAttempts backfilling
+ * retryCorrected/retryReasons. */
 function isConversationTurn(value: unknown): value is ConversationTurn {
   if (value === null || typeof value !== "object") return false;
   const r = value as Record<string, unknown>;
@@ -29,7 +34,9 @@ function isConversationTurn(value: unknown): value is ConversationTurn {
     typeof r.id === "string" &&
     isConversationRole(r.role) &&
     typeof r.text === "string" &&
+    (r.reading === undefined || typeof r.reading === "string") &&
     typeof r.corrected === "string" &&
+    (r.correctedReading === undefined || typeof r.correctedReading === "string") &&
     typeof r.reasons === "string"
   );
 }
@@ -55,7 +62,12 @@ function isConversationSession(value: unknown): value is ConversationSession {
  * individually malformed turn) are dropped rather than throwing. */
 export function loadConversations(language?: string): ConversationSession[] {
   const raw = loadJson<unknown[]>(STORAGE_NAME, []);
-  const sessions = Array.isArray(raw) ? raw.filter(isConversationSession) : [];
+  const sessions = Array.isArray(raw)
+    ? raw.filter(isConversationSession).map((s) => ({
+        ...s,
+        turns: s.turns.map((turn) => ({ ...turn, reading: turn.reading ?? "", correctedReading: turn.correctedReading ?? "" })),
+      }))
+    : [];
   return language ? sessions.filter((s) => s.language === language || s.language === "") : sessions;
 }
 
@@ -105,12 +117,21 @@ export function deleteConversation(id: string): void {
 
 /** Builds one turn with a fresh id — callers append it to a session's
  * `turns` and persist via updateConversation/addConversation. */
-export function newTurn(input: { role: ConversationRole; text: string; corrected?: string; reasons?: string }): ConversationTurn {
+export function newTurn(input: {
+  role: ConversationRole;
+  text: string;
+  reading?: string;
+  corrected?: string;
+  correctedReading?: string;
+  reasons?: string;
+}): ConversationTurn {
   return {
     id: newId(),
     role: input.role,
     text: input.text,
+    reading: input.reading ?? "",
     corrected: input.corrected ?? "",
+    correctedReading: input.correctedReading ?? "",
     reasons: input.reasons ?? "",
   };
 }
@@ -119,6 +140,9 @@ export interface ConversationStartResult {
   title: string;
   scenario: string;
   opening: string;
+  /** Always-visible reading aid for `opening` (e.g. pinyin — see
+   * lib/languages.ts readingAid); "" for languages without one. */
+  openingReading: string;
 }
 
 function parseConversationStart(content: string): ConversationStartResult {
@@ -126,8 +150,9 @@ function parseConversationStart(content: string): ConversationStartResult {
   const title = typeof parsed.title === "string" ? parsed.title : "";
   const scenario = typeof parsed.scenario === "string" ? parsed.scenario : "";
   const opening = typeof parsed.opening === "string" ? parsed.opening : "";
+  const openingReading = typeof parsed.openingReading === "string" ? parsed.openingReading : "";
   if (!title || !opening) throw new Error(t("talk-error-missing-start"));
-  return { title, scenario, opening };
+  return { title, scenario, opening, openingReading };
 }
 
 /** Kicks off a fresh 会話 session: the AI invents one concrete everyday
@@ -142,9 +167,20 @@ export async function requestConversationStart(params: {
   /** Recent session titles, so the AI avoids repeating the same scenario. */
   recentTitles: string[];
 }): Promise<ConversationStartResult> {
+  // Always-visible reading aid (e.g. pinyin for Chinese — see
+  // lib/languages.ts readingAid): only asked for when the target language
+  // has one, so the prompt never mentions it for languages without a
+  // hard-to-sound-out script.
+  const aid = readingAid(params.targetLanguage);
+  const keys = [
+    `"title" (a short scenario label in ${params.nativeLanguage})`,
+    `"scenario" (a one-sentence scenario instruction in ${params.nativeLanguage}, describing the setting/role you will play, for you to keep following in later turns)`,
+    `"opening" (your opening line in ${params.targetLanguage})`,
+  ];
+  if (aid) keys.push(`"openingReading" (the reading of "opening", as ${aid.llmInstruction})`);
   const content = await chatJson(
     params.connection,
-    `You are TC Lingo's conversation partner for a learner of ${params.targetLanguage} (native language: ${params.nativeLanguage}). Invent one concrete, everyday scenario for a short dialogue (for example: ordering at a café, asking for directions, small talk about the weekend) — avoid repeating any scenario in recentTitles. Write an opening line in ${params.targetLanguage} that invites the learner to reply, using simple, natural language, 1-2 short sentences. Return only JSON with exactly these keys: "title" (a short scenario label in ${params.nativeLanguage}), "scenario" (a one-sentence scenario instruction in ${params.nativeLanguage}, describing the setting/role you will play, for you to keep following in later turns), "opening" (your opening line in ${params.targetLanguage}).${levelInstruction(params.targetLanguage)}`,
+    `You are TC Lingo's conversation partner for a learner of ${params.targetLanguage} (native language: ${params.nativeLanguage}). Invent one concrete, everyday scenario for a short dialogue (for example: ordering at a café, asking for directions, small talk about the weekend) — avoid repeating any scenario in recentTitles. Write an opening line in ${params.targetLanguage} that invites the learner to reply, using simple, natural language, 1-2 short sentences. Return only JSON with exactly these keys: ${keys.join(", ")}.${levelInstruction(params.targetLanguage)}`,
     { recentTitles: params.recentTitles },
   );
   return parseConversationStart(content);
@@ -152,17 +188,25 @@ export async function requestConversationStart(params: {
 
 export interface ConversationReplyResult {
   reply: string;
+  /** Always-visible reading aid for `reply`; "" when the target language
+   * has none. */
+  replyReading: string;
   corrected: string;
+  /** Always-visible reading aid for `corrected`; "" when the target
+   * language has none, or when there is nothing to correct. */
+  correctedReading: string;
   reasons: string;
 }
 
 function parseConversationReply(content: string): ConversationReplyResult {
   const parsed = extractJson(content) as Record<string, unknown>;
   const reply = typeof parsed.reply === "string" ? parsed.reply : "";
+  const replyReading = typeof parsed.replyReading === "string" ? parsed.replyReading : "";
   const corrected = typeof parsed.corrected === "string" ? parsed.corrected : "";
+  const correctedReading = typeof parsed.correctedReading === "string" ? parsed.correctedReading : "";
   const reasons = typeof parsed.reasons === "string" ? parsed.reasons : "";
   if (!reply) throw new Error(t("talk-error-missing-reply"));
-  return { reply, corrected, reasons };
+  return { reply, replyReading, corrected, correctedReading, reasons };
 }
 
 /** Continues an in-progress 会話 session: the AI replies in character (per
@@ -179,9 +223,17 @@ export async function requestConversationReply(params: {
   turns: ConversationTurn[];
   learnerText: string;
 }): Promise<ConversationReplyResult> {
+  // See requestConversationStart's comment: only mention the reading-aid
+  // keys at all when the target language has one.
+  const aid = readingAid(params.targetLanguage);
+  const keys = [`"reply" (your next line in ${params.targetLanguage})`];
+  if (aid) keys.push(`"replyReading" (the reading of "reply", as ${aid.llmInstruction})`);
+  keys.push(`"corrected" (corrected ${params.targetLanguage} text, or "" if nothing to correct)`);
+  if (aid) keys.push(`"correctedReading" (the reading of "corrected", as ${aid.llmInstruction}, or "" if "corrected" is "")`);
+  keys.push(`"reasons" (explanation in ${params.nativeLanguage}, or "" if nothing to correct)`);
   const content = await chatJson(
     params.connection,
-    `You are TC Lingo's conversation partner for a learner of ${params.targetLanguage} (native language: ${params.nativeLanguage}), continuing a scripted-scenario dialogue. Follow the scenario instruction (scenario) and continue the conversation naturally in ${params.targetLanguage} — simple, natural language, 1-2 short sentences, always ending in a way that invites the learner to keep talking (a question or a prompt). Separately, correct the learner's latest message (learnerText): if it has grammar, word-choice, or naturalness issues, return the corrected version in ${params.targetLanguage} plus concise reasons in ${params.nativeLanguage}; if it is already natural, return empty strings for both corrected and reasons. Return only JSON with exactly these keys: "reply" (your next line in ${params.targetLanguage}), "corrected" (corrected ${params.targetLanguage} text, or "" if nothing to correct), "reasons" (explanation in ${params.nativeLanguage}, or "" if nothing to correct).${levelInstruction(params.targetLanguage)}`,
+    `You are TC Lingo's conversation partner for a learner of ${params.targetLanguage} (native language: ${params.nativeLanguage}), continuing a scripted-scenario dialogue. Follow the scenario instruction (scenario) and continue the conversation naturally in ${params.targetLanguage} — simple, natural language, 1-2 short sentences, always ending in a way that invites the learner to keep talking (a question or a prompt). Separately, correct the learner's latest message (learnerText): if it has grammar, word-choice, or naturalness issues, return the corrected version in ${params.targetLanguage} plus concise reasons in ${params.nativeLanguage}; if it is already natural, return empty strings for both corrected and reasons. Return only JSON with exactly these keys: ${keys.join(", ")}.${levelInstruction(params.targetLanguage)}`,
     {
       scenario: params.scenario,
       turns: params.turns.map((turn) => ({ role: turn.role, text: turn.text })),

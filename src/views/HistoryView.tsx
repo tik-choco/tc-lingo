@@ -147,6 +147,7 @@ export function HistoryView() {
                       <FeedbackPanel
                         original={attempt.original}
                         corrected={attempt.corrected}
+                        correctedReading={attempt.correctedReading}
                         reasons={attempt.reasons}
                         retryPrompt=""
                         language={topic.language || settings.activeLanguage}
@@ -190,6 +191,9 @@ export function HistoryView() {
                               </button>
                             )}
                           </p>
+                          {settings.showReadingAids && attempt.retryPromptReading && (
+                            <p class="reading-aid">{attempt.retryPromptReading}</p>
+                          )}
                           <h4>{t("history-retry-answer-heading")}</h4>
                           {attempt.retryAnswer ? (
                             <p class="feedback-original">{attempt.retryAnswer}</p>
@@ -235,6 +239,9 @@ export function HistoryView() {
                                 )}
                               </div>
                               <DiffLine before={attempt.retryAnswer} after={attempt.retryCorrected} />
+                              {settings.showReadingAids && attempt.retryCorrectedReading && (
+                                <p class="reading-aid">{attempt.retryCorrectedReading}</p>
+                              )}
                               {attempt.retryReasons && (
                                 <>
                                   <h4>{t("practice-feedback-reasons")}</h4>

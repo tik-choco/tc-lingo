@@ -3,26 +3,52 @@
 // callers own the retry-answer input and any follow-up actions. `language`
 // is only used to drive the read-aloud button on the corrected text (see
 // hooks/useSpeech.ts) — the panel is otherwise language-agnostic.
+import { useEffect, useState } from "preact/hooks";
 import { Loader2, Square, Volume2 } from "lucide-preact";
 import { diffChars } from "../lib/diff";
 import { GrammarExplain } from "./GrammarExplain";
 import { useSpeech } from "../hooks/useSpeech";
+import { loadSettings, subscribeSettings } from "../lib/settings";
 import { t } from "../i18n";
 
 export interface FeedbackPanelProps {
   original: string;
   corrected: string;
+  /** Always-visible reading aid for `corrected` (e.g. pinyin — see
+   * lib/languages.ts readingAid); "" for languages without one. Optional so
+   * existing callers that don't pass it (predating the feature) keep working. */
+  correctedReading?: string;
   reasons: string;
   retryPrompt: string;
+  /** Reading aid for `retryPrompt`; "" when none. */
+  retryPromptReading?: string;
   language: string;
   showRetryPrompt?: boolean;
 }
 
-export function RetryPromptField({ retryPrompt, language }: { retryPrompt: string; language: string }) {
+/** Gate for the always-visible reading-aid lines below — display-only, see
+ * settings.showReadingAids (the reading text itself is always generated and
+ * stored regardless of this toggle). */
+function useShowReadingAids(): boolean {
+  const [show, setShow] = useState(() => loadSettings().showReadingAids);
+  useEffect(() => subscribeSettings(() => setShow(loadSettings().showReadingAids)), []);
+  return show;
+}
+
+export function RetryPromptField({
+  retryPrompt,
+  retryPromptReading,
+  language,
+}: {
+  retryPrompt: string;
+  retryPromptReading?: string;
+  language: string;
+}) {
   const speech = useSpeech();
   const speakId = "feedback-retry-prompt";
   const speaking = speech.speakingId === speakId;
   const loading = speech.loadingId === speakId;
+  const showReadingAids = useShowReadingAids();
 
   return (
     <div class="feedback-field">
@@ -43,17 +69,28 @@ export function RetryPromptField({ retryPrompt, language }: { retryPrompt: strin
         )}
       </div>
       <p class="feedback-retry-prompt">{retryPrompt}</p>
+      {showReadingAids && retryPromptReading && <p class="reading-aid">{retryPromptReading}</p>}
       {speech.speechError && <p class="speak-error">{speech.speechError}</p>}
     </div>
   );
 }
 
-export function FeedbackPanel({ original, corrected, reasons, retryPrompt, language, showRetryPrompt }: FeedbackPanelProps) {
+export function FeedbackPanel({
+  original,
+  corrected,
+  correctedReading,
+  reasons,
+  retryPrompt,
+  retryPromptReading,
+  language,
+  showRetryPrompt,
+}: FeedbackPanelProps) {
   const chunks = diffChars(original, corrected);
   const speech = useSpeech();
   const speakId = "feedback-corrected";
   const speaking = speech.speakingId === speakId;
   const loading = speech.loadingId === speakId;
+  const showReadingAids = useShowReadingAids();
 
   return (
     <div class="feedback-panel">
@@ -85,13 +122,16 @@ export function FeedbackPanel({ original, corrected, reasons, retryPrompt, langu
             </span>
           ))}
         </p>
+        {showReadingAids && correctedReading && <p class="reading-aid">{correctedReading}</p>}
         <GrammarExplain sentence={corrected} targetLanguage={language} />
       </div>
       <div class="feedback-field">
         <h3>{t("practice-feedback-reasons")}</h3>
         <p class="feedback-reasons">{reasons}</p>
       </div>
-      {retryPrompt && showRetryPrompt !== false && <RetryPromptField retryPrompt={retryPrompt} language={language} />}
+      {retryPrompt && showRetryPrompt !== false && (
+        <RetryPromptField retryPrompt={retryPrompt} retryPromptReading={retryPromptReading} language={language} />
+      )}
       {speech.speechError && <p class="speak-error">{speech.speechError}</p>}
     </div>
   );

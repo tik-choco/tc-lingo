@@ -62,23 +62,41 @@ type SentenceCardsSaveState = { kind: "saving" } | { kind: "saved"; count: numbe
  * A separate, opt-in "type to practice" toggle (own local state, collapsed
  * by default so the log doesn't balloon) reuses PracticeView's SpellingDrill
  * with lib/spelling.ts's misspelledWords()/correctedSentences() — hidden
- * entirely when there's nothing worth typing. */
+ * entirely when there's nothing worth typing. `speech`/`language`/`turnId`
+ * add a read-aloud button for the corrected text (same pattern as
+ * FeedbackPanel's corrected field); `speech` is passed down from TalkBubble
+ * rather than a fresh useSpeech() call here, since it's the single shared
+ * controller for the whole log (see the comment above TalkBubble).
+ * `correctedReading`/`showReadingAids` render the always-visible reading aid
+ * (e.g. pinyin — see lib/languages.ts readingAid) under the corrected text,
+ * gated by settings.showReadingAids the same way TalkBubble gates the
+ * assistant line's reading. */
 function TalkCorrection({
   original,
   corrected,
+  correctedReading,
   reasons,
   autoAdded,
   sentenceCardsState,
   onSaveSentenceCards,
   canSaveSentenceCards,
+  speech,
+  language,
+  turnId,
+  showReadingAids,
 }: {
   original: string;
   corrected: string;
+  correctedReading: string;
   reasons: string;
   autoAdded?: Card[];
   sentenceCardsState?: SentenceCardsSaveState;
   onSaveSentenceCards: () => void;
   canSaveSentenceCards: boolean;
+  speech: ReturnType<typeof useSpeech>;
+  language: string;
+  turnId: string;
+  showReadingAids: boolean;
 }) {
   const [expanded, setExpanded] = useState(true);
   const [typingPractice, setTypingPractice] = useState(false);
@@ -91,6 +109,9 @@ function TalkCorrection({
   const practiceWords = misspelledWords(original, corrected);
   const practiceSentences = correctedSentences(original, corrected);
   const hasTypingPractice = practiceWords.length + practiceSentences.length > 0;
+  const speakId = `${turnId}-corrected`;
+  const speaking = speech.speakingId === speakId;
+  const loading = speech.loadingId === speakId;
   return (
     <div class="talk-correction">
       <button type="button" class="link-button talk-correction-toggle" onClick={() => setExpanded((v) => !v)}>
@@ -98,6 +119,21 @@ function TalkCorrection({
       </button>
       {expanded && (
         <div class="talk-correction-body">
+          {speech.supported && (
+            <div class="talk-correction-speak-row">
+              <button
+                type="button"
+                class="speak-button"
+                onClick={() => speech.speak(corrected, language, speakId)}
+                disabled={loading}
+                aria-pressed={speaking}
+                aria-label={speaking ? t("talk-speak-corrected-stop") : t("talk-speak-corrected")}
+                title={speaking ? t("talk-speak-corrected-stop") : t("talk-speak-corrected")}
+              >
+                {loading ? <Loader2 size={14} class="speak-button-spin" /> : speaking ? <Square size={14} /> : <Volume2 size={14} />}
+              </button>
+            </div>
+          )}
           <p class="feedback-diff">
             {chunks.map((chunk, i) => (
               <span key={i} class={chunk.op === "same" ? undefined : `diff-${chunk.op}`}>
@@ -105,6 +141,7 @@ function TalkCorrection({
               </span>
             ))}
           </p>
+          {showReadingAids && correctedReading && <p class="reading-aid">{correctedReading}</p>}
           {reasons && <p class="talk-correction-reasons">{reasons}</p>}
         </div>
       )}
@@ -169,6 +206,7 @@ function TalkBubble({
   sentenceCardsState,
   onSaveSentenceCards,
   canSaveSentenceCards,
+  showReadingAids,
 }: {
   turn: ConversationTurn;
   language: string;
@@ -177,12 +215,14 @@ function TalkBubble({
   sentenceCardsState?: SentenceCardsSaveState;
   onSaveSentenceCards: () => void;
   canSaveSentenceCards: boolean;
+  showReadingAids: boolean;
 }) {
   const speaking = speech.speakingId === turn.id;
   const loading = speech.loadingId === turn.id;
   return (
     <div class={`talk-bubble talk-bubble-${turn.role}`}>
       <p class="talk-bubble-text">{turn.text}</p>
+      {turn.role === "assistant" && showReadingAids && turn.reading && <p class="reading-aid">{turn.reading}</p>}
       {turn.role === "assistant" && speech.supported && (
         <div class="talk-bubble-actions">
           <button
@@ -202,11 +242,16 @@ function TalkBubble({
         <TalkCorrection
           original={turn.text}
           corrected={turn.corrected}
+          correctedReading={turn.correctedReading}
           reasons={turn.reasons}
           autoAdded={autoAdded}
           sentenceCardsState={sentenceCardsState}
           onSaveSentenceCards={onSaveSentenceCards}
           canSaveSentenceCards={canSaveSentenceCards}
+          speech={speech}
+          language={language}
+          turnId={turn.id}
+          showReadingAids={showReadingAids}
         />
       )}
     </div>
@@ -297,7 +342,7 @@ export function TalkView() {
         nativeLanguage: settings.nativeLanguage,
         recentTitles: sessions.slice(0, 10).map((s) => s.title),
       });
-      const opening = newTurn({ role: "assistant", text: result.opening });
+      const opening = newTurn({ role: "assistant", text: result.opening, reading: result.openingReading });
       const session = addConversation({
         language: settings.activeLanguage,
         title: result.title,
@@ -331,8 +376,14 @@ export function TalkView() {
         turns: activeSession.turns,
         learnerText,
       });
-      const learnerTurn = newTurn({ role: "learner", text: learnerText, corrected: result.corrected, reasons: result.reasons });
-      const assistantTurn = newTurn({ role: "assistant", text: result.reply });
+      const learnerTurn = newTurn({
+        role: "learner",
+        text: learnerText,
+        corrected: result.corrected,
+        correctedReading: result.correctedReading,
+        reasons: result.reasons,
+      });
+      const assistantTurn = newTurn({ role: "assistant", text: result.reply, reading: result.replyReading });
       updateConversation(activeSession.id, { turns: [...activeSession.turns, learnerTurn, assistantTurn] });
       setText("");
 
@@ -496,6 +547,7 @@ export function TalkView() {
               sentenceCardsState={sentenceCardsByTurn[turn.id]}
               onSaveSentenceCards={() => saveTurnSentenceCards(turn)}
               canSaveSentenceCards={!!connection}
+              showReadingAids={settings.showReadingAids}
             />
           ))}
           {sending && <p class="talk-typing-indicator">{t("talk-typing")}</p>}

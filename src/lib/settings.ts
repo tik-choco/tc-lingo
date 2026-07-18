@@ -58,10 +58,39 @@ function defaultSettings(): LingoSettings {
     connectionMode: "api",
     ttsEngine: "browser",
     autoExtractCards: true,
+    showReadingAids: true,
   };
 }
 
 function isLingoSettings(value: unknown): value is LingoSettings {
+  if (value === null || typeof value !== "object") return false;
+  const r = value as Record<string, unknown>;
+  return (
+    Array.isArray(r.targetLanguages) &&
+    r.targetLanguages.every((l) => typeof l === "string") &&
+    typeof r.activeLanguage === "string" &&
+    typeof r.nativeLanguage === "string" &&
+    typeof r.presetId === "string" &&
+    (r.connectionMode === "api" || r.connectionMode === "network") &&
+    (r.ttsEngine === "browser" || r.ttsEngine === "api" || r.ttsEngine === "network") &&
+    typeof r.autoExtractCards === "boolean" &&
+    typeof r.showReadingAids === "boolean"
+  );
+}
+
+/** Pre-reading-aid shape (same fields as `LingoSettings` minus
+ * `showReadingAids`). Migrated in-place on load — the missing flag defaults
+ * to true (reading aids shown) — so existing installs pick the feature up
+ * without a reset. */
+function isPreReadingAidsSettings(value: unknown): value is {
+  targetLanguages: string[];
+  activeLanguage: string;
+  nativeLanguage: string;
+  presetId: string;
+  connectionMode: LlmConnectionMode;
+  ttsEngine: TtsEngine;
+  autoExtractCards: boolean;
+} {
   if (value === null || typeof value !== "object") return false;
   const r = value as Record<string, unknown>;
   return (
@@ -162,8 +191,19 @@ export function loadSettings(): LingoSettings {
     if (!raw.targetLanguages.includes(raw.activeLanguage)) return { ...raw, activeLanguage: raw.targetLanguages[0] };
     return raw;
   }
+  if (isPreReadingAidsSettings(raw)) {
+    const migrated: LingoSettings = { ...raw, showReadingAids: true };
+    if (migrated.targetLanguages.length === 0) {
+      const fallback = defaultSettings().targetLanguages[0];
+      return { ...migrated, targetLanguages: [fallback], activeLanguage: fallback };
+    }
+    if (!migrated.targetLanguages.includes(migrated.activeLanguage)) {
+      return { ...migrated, activeLanguage: migrated.targetLanguages[0] };
+    }
+    return migrated;
+  }
   if (isPreAutoExtractSettings(raw)) {
-    const migrated: LingoSettings = { ...raw, autoExtractCards: true };
+    const migrated: LingoSettings = { ...raw, autoExtractCards: true, showReadingAids: true };
     if (migrated.targetLanguages.length === 0) {
       const fallback = defaultSettings().targetLanguages[0];
       return { ...migrated, targetLanguages: [fallback], activeLanguage: fallback };
@@ -174,7 +214,7 @@ export function loadSettings(): LingoSettings {
     return migrated;
   }
   if (isPreTtsEngineSettings(raw)) {
-    const migrated: LingoSettings = { ...raw, ttsEngine: "browser", autoExtractCards: true };
+    const migrated: LingoSettings = { ...raw, ttsEngine: "browser", autoExtractCards: true, showReadingAids: true };
     if (migrated.targetLanguages.length === 0) {
       const fallback = defaultSettings().targetLanguages[0];
       return { ...migrated, targetLanguages: [fallback], activeLanguage: fallback };
@@ -185,7 +225,7 @@ export function loadSettings(): LingoSettings {
     return migrated;
   }
   if (isPreConnectionModeSettings(raw)) {
-    const migrated: LingoSettings = { ...raw, connectionMode: "api", ttsEngine: "browser", autoExtractCards: true };
+    const migrated: LingoSettings = { ...raw, connectionMode: "api", ttsEngine: "browser", autoExtractCards: true, showReadingAids: true };
     if (migrated.targetLanguages.length === 0) {
       const fallback = defaultSettings().targetLanguages[0];
       return { ...migrated, targetLanguages: [fallback], activeLanguage: fallback };
@@ -204,6 +244,7 @@ export function loadSettings(): LingoSettings {
       connectionMode: "api",
       ttsEngine: "browser",
       autoExtractCards: true,
+      showReadingAids: true,
     };
   }
   return defaultSettings();
@@ -271,6 +312,16 @@ export function setTtsEngine(engine: TtsEngine): LingoSettings {
 export function setAutoExtractCards(enabled: boolean): LingoSettings {
   const current = loadSettings();
   const next: LingoSettings = { ...current, autoExtractCards: enabled };
+  saveSettings(next);
+  return next;
+}
+
+/** Toggles the always-visible reading-aid line (e.g. pinyin — see
+ * lib/languages.ts readingAid). Display-only: readings keep being generated
+ * and stored while this is off. */
+export function setShowReadingAids(enabled: boolean): LingoSettings {
+  const current = loadSettings();
+  const next: LingoSettings = { ...current, showReadingAids: enabled };
   saveSettings(next);
   return next;
 }

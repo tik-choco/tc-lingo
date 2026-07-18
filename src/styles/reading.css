@@ -136,3 +136,10 @@
   color: var(--text-muted);
   font-size: 0.9rem;
 }
+
+/* Reading-aid line (e.g. pinyin — see lib/languages.ts readingAid, shared
+   .reading-aid class in views.css) sits directly under the sentence text,
+   tight against it rather than at the shared class's default <p> spacing. */
+.reading-sentence .reading-aid {
+  margin: 0;
+}

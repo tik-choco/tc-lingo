@@ -265,6 +265,36 @@ const readingSpecDefs: Record<string, ReadingSpecDef> = {
   // aside, which gets its own IPA entry above).
 };
 
+/** Always-visible reading-aid spec: for languages written in a script a
+ * learner can't be assumed to sound out (currently Chinese → pinyin), every
+ * piece of generated target-language text carries a reading line that the
+ * views keep permanently visible (gated by settings.showReadingAids). This is
+ * distinct from readingSpec above, which describes the *card form's* reading
+ * field for every language — a reading aid means whole sentences get
+ * annotated wherever they appear (読む/会話/練習/履歴). Adding a language is
+ * one entry here: all reading-aid prompts and views go through readingAid().
+ */
+export interface ReadingAid {
+  /** English fragment for LLM prompts describing how to write the reading
+   * for a full sentence of this language. */
+  llmInstruction: string;
+}
+
+const readingAidDefs: Record<string, ReadingAid> = {
+  "Chinese (Simplified)": {
+    llmInstruction: 'full Hanyu Pinyin with tone marks for the whole text, e.g. "nǐ hǎo, wǒ jiào Wáng Míng"',
+  },
+  "Chinese (Traditional)": {
+    llmInstruction: 'full Hanyu Pinyin with tone marks for the whole text, e.g. "nǐ hǎo, wǒ jiào Wáng Míng"',
+  },
+};
+
+/** Reading-aid spec for a target language, or null for languages whose text
+ * renders bare (most of them — currently only Chinese has an aid). */
+export function readingAid(language: string): ReadingAid | null {
+  return readingAidDefs[language] ?? null;
+}
+
 // Canonical language name (as in languageOptions) → BCP-47 tag, for
 // SpeechSynthesisUtterance.lang (hooks/useSpeech.ts). Mirrors i18n/index.ts's
 // documentLangCodes plus the four built-in UI languages.

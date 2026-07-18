@@ -30,10 +30,13 @@ function isAttempt(value: unknown): value is PracticeAttempt {
     typeof r.createdAt === "string" &&
     typeof r.original === "string" &&
     typeof r.corrected === "string" &&
+    (r.correctedReading === undefined || typeof r.correctedReading === "string") &&
     typeof r.reasons === "string" &&
     typeof r.retryPrompt === "string" &&
+    (r.retryPromptReading === undefined || typeof r.retryPromptReading === "string") &&
     typeof r.retryAnswer === "string" &&
     (r.retryCorrected === undefined || typeof r.retryCorrected === "string") &&
+    (r.retryCorrectedReading === undefined || typeof r.retryCorrectedReading === "string") &&
     (r.retryReasons === undefined || typeof r.retryReasons === "string")
   );
 }
@@ -52,11 +55,21 @@ function saveTopics(topics: Topic[]): void {
 
 /** `retryCorrected`/`retryReasons` predate the retry-check feature on some
  * saved attempts — backfilled to "" (unchecked) rather than dropped, same
- * pattern as cards.ts's `language` backfill. */
+ * pattern as cards.ts's `language` backfill. `correctedReading`/
+ * `retryPromptReading`/`retryCorrectedReading` predate the always-visible
+ * reading-aid feature (lib/languages.ts readingAid) — backfilled to "" the
+ * same way. */
 export function loadAttempts(): PracticeAttempt[] {
   const raw = loadJson<unknown[]>(ATTEMPTS_NAME, []);
   return Array.isArray(raw)
-    ? raw.filter(isAttempt).map((a) => ({ ...a, retryCorrected: a.retryCorrected ?? "", retryReasons: a.retryReasons ?? "" }))
+    ? raw.filter(isAttempt).map((a) => ({
+        ...a,
+        correctedReading: a.correctedReading ?? "",
+        retryPromptReading: a.retryPromptReading ?? "",
+        retryCorrected: a.retryCorrected ?? "",
+        retryCorrectedReading: a.retryCorrectedReading ?? "",
+        retryReasons: a.retryReasons ?? "",
+      }))
     : [];
 }
 
@@ -109,10 +122,13 @@ export interface NewAttemptInput {
   round: AttemptRound;
   original: string;
   corrected?: string;
+  correctedReading?: string;
   reasons?: string;
   retryPrompt?: string;
+  retryPromptReading?: string;
   retryAnswer?: string;
   retryCorrected?: string;
+  retryCorrectedReading?: string;
   retryReasons?: string;
 }
 
@@ -124,10 +140,13 @@ export function addAttempt(input: NewAttemptInput): PracticeAttempt {
     createdAt: new Date().toISOString(),
     original: input.original,
     corrected: input.corrected ?? "",
+    correctedReading: input.correctedReading ?? "",
     reasons: input.reasons ?? "",
     retryPrompt: input.retryPrompt ?? "",
+    retryPromptReading: input.retryPromptReading ?? "",
     retryAnswer: input.retryAnswer ?? "",
     retryCorrected: input.retryCorrected ?? "",
+    retryCorrectedReading: input.retryCorrectedReading ?? "",
     retryReasons: input.retryReasons ?? "",
   };
   saveAttempts([...loadAttempts(), attempt]);
