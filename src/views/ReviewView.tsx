@@ -23,6 +23,7 @@ import { loadSettings, subscribeSettings } from "../lib/settings";
 import { languageDisplayName } from "../lib/languages";
 import { judgeReviewAnswer } from "../lib/llm";
 import { useLlmConnection } from "../hooks/useLlmConnection";
+import { connectionForTask } from "../lib/llmConnection";
 import { t } from "../i18n";
 import { isEditableTarget, SHORTCUT_PRIORITY } from "../lib/keyboard";
 import { useShortcuts } from "../hooks/useShortcuts";
@@ -86,11 +87,12 @@ export function ReviewView() {
     let judgement = judgeAnswer(typedAnswer, current.front);
     let llmAccepted = false;
     let llmNote = "";
-    if (judgement === "wrong" && typedAnswer.trim() && connection) {
+    const reviewConn = connection ? connectionForTask("review") : null;
+    if (judgement === "wrong" && typedAnswer.trim() && reviewConn) {
       setChecking(true);
       try {
         const verdict = await judgeReviewAnswer({
-          connection,
+          connection: reviewConn,
           targetLanguage: cardLanguage,
           nativeLanguage: settings.nativeLanguage,
           card: {

@@ -161,13 +161,52 @@ export interface LanguageLevelRecord {
  * lib/llmConnection.ts for how this is resolved into an actual connection. */
 export type LlmConnectionMode = "api" | "network";
 
+/** How hard the model should "think" on a request — sent to the upstream API
+ * as `reasoning_effort` on every LLM call, including the "none" case (it is a
+ * value the caller chose, not the absence of one). See
+ * lib/llmConnection.ts's `connectionForTask`, which resolves the effective
+ * value per task (`LingoSettings.taskReasoningEfforts`, falling back to
+ * `defaultReasoningEffort`). Same union as tc-translate's `ReasoningEffort` —
+ * see tc-docs/drafts/llm-settings-common-v1.md §2.3. */
+export type ReasoningEffort = "none" | "minimal" | "low" | "medium" | "high";
+
 /** Which engine "read this aloud" (hooks/useSpeech.ts) should use: the
  * browser's built-in Web Speech API, an OpenAI-compatible `/audio/speech`
  * endpoint (the shared llm config's `tts` entry, see lib/llmConfig.ts's
  * resolveVoice), or the same endpoint reached over the AI Network room
  * (lib/network.ts's requestNetworkTts). All three degrade to "browser" when
- * unconfigured/unreachable — see useSpeech for the fallback chain. */
+ * unconfigured/unreachable — see useSpeech for the fallback chain. Unlike the
+ * other fields on this type, this is never stored in `LingoSettings` — it is
+ * always DERIVED from the shared llm config by `lib/voice.ts`'s
+ * `deriveVoiceEngine` (see tc-docs/drafts/llm-settings-common-v1.md §4.1). */
 export type TtsEngine = "browser" | "api" | "network";
+
+/** Which app task an LLM call is for, so a per-task preset override
+ * (`LingoSettings.taskPresetIds`) can pick a different shared preset (and
+ * therefore a different model/provider) than the default for that one task —
+ * e.g. a cheaper/faster model for "cards" extraction, a stronger one for
+ * "practice" correction. "practice" is requestFeedback/requestRetryFeedback
+ * (練習の添削), "topic" is requestTopicSuggestion/planTopicFanOut (トピック提案),
+ * "cards" is requestMistakeCards/requestTranslationCards/
+ * requestSentenceCardInfo/autoExtract (カード抽出), "review" is
+ * judgeReviewAnswer (復習の解答判定), "reading" is lib/reading.ts's passage
+ * generation (読解教材の生成), "conversation" is lib/conversation.ts (会話),
+ * "grammar" is lib/grammar.ts (文法解説), and "ui-translation" is
+ * lib/uiTranslation.ts's runtime UI-string translation (UI文言のLLM翻訳). See
+ * lib/llmConnection.ts's `connectionForTask` for how the preset id (and the
+ * paired `taskReasoningEfforts` entry) resolve into an actual connection —
+ * a task preset that itself resolves to a `mist-network://` pseudo-provider
+ * routes over the AI Network room even when `connectionMode` is "api" (see
+ * tc-docs/drafts/llm-settings-common-v1.md §2.3/§6). */
+export type LlmTask =
+  | "practice"
+  | "topic"
+  | "cards"
+  | "review"
+  | "reading"
+  | "conversation"
+  | "grammar"
+  | "ui-translation";
 
 /** Supports studying more than one language at once: `targetLanguages` is
  * the full set the learner is juggling, `activeLanguage` (always a member of
@@ -178,9 +217,7 @@ export interface LingoSettings {
   targetLanguages: string[];
   activeLanguage: string;
   nativeLanguage: string;
-  presetId: string;
   connectionMode: LlmConnectionMode;
-  ttsEngine: TtsEngine;
   /** Whether corrections (practice feedback, talk replies) automatically
    * extract mistake cards in the background (lib/autoExtract.ts) instead of
    * waiting for the learner to press the manual extract button. */
@@ -189,4 +226,32 @@ export interface LingoSettings {
    * (e.g. pinyin for Chinese — see lib/languages.ts readingAid). Display-only:
    * readings are still generated and stored while this is off. */
   showReadingAids: boolean;
+  /** Whether this app participates in the AI Network room as a *provider*
+   * (serving llm_request/tts_request traffic from other peers), independent
+   * of `connectionMode` (a device can consume via direct API while also
+   * serving others, or vice versa). See hooks/useNetworkProvider.ts. */
+  networkProviderEnabled: boolean;
+  /** Ids (into the shared llm config's `presets`) of the presets this app
+   * shares when acting as an AI Network provider. Presets backed by a
+   * `mist-network://` pseudo-provider are excluded even if listed here (no
+   * re-sharing — see hooks/useNetworkProvider.ts's `resolveSharedTargets`). */
+  networkProviderPresetIds: string[];
+  /** Per-task preset override: which shared llm config preset
+   * (lib/llmConfig.ts) an LLM task should use instead of the shared
+   * `defaultPresetId`. Missing key or "" for a task means "follow the
+   * default preset" (see lib/llmConfig.ts's `resolvePreset` fallback). A
+   * task preset that itself resolves to a `mist-network://` pseudo-provider
+   * routes that task over the AI Network room even when `connectionMode` is
+   * "api" — see lib/llmConnection.ts's `connectionForTask`. */
+  taskPresetIds: Partial<Record<LlmTask, string>>;
+  /** Per-task `reasoning_effort` override, sent on every request for that
+   * task (including "none" — it is always sent, never omitted). Missing key
+   * for a task means "follow `defaultReasoningEffort`". Only meaningful for
+   * "api"-resolved connections — an AI Network room's provider picks its own
+   * reasoning effort regardless. See lib/llmConnection.ts's
+   * `connectionForTask`. */
+  taskReasoningEfforts: Partial<Record<LlmTask, ReasoningEffort>>;
+  /** `reasoning_effort` used for any task without its own
+   * `taskReasoningEfforts` entry. */
+  defaultReasoningEffort: ReasoningEffort;
 }

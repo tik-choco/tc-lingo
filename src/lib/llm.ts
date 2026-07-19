@@ -5,7 +5,7 @@
 // lib/llmConfig.ts and lib/settings.ts) or the P2P AI Network room
 // (mistllm-wire v1, see lib/network.ts / lib/llmConnection.ts). Callers pass
 // a resolved `LlmConnection`; this module just branches on its `kind`.
-import { streamChatCompletion } from "@tik-choco/mistai";
+import { MistaiError, streamChatCompletion } from "@tik-choco/mistai";
 import type { ChatMessage } from "@tik-choco/mistai";
 import { t } from "../i18n";
 import type { ResolvedLlmTargetV1 } from "./llmConfig";
@@ -36,13 +36,15 @@ export async function chatJson(connection: LlmConnection, systemPrompt: string, 
   ];
   const content =
     connection.kind === "network"
-      ? // Don't force this client's own (API-mode) model onto the request:
-        // the room's provider falls back to its own configured model
-        // whenever no model is specified, so omitting it here makes the
-        // network connection automatically use whatever model the connected
-        // peer has set up, instead of demanding a model name it may not
-        // offer. Same rationale as tc-translate's lib/llm.ts.
-        await requestNetworkChat(connection.roomId, messages, undefined)
+      ? // `connection.model` is only ever set by lib/llmConnection.ts's
+        // connectionForTask, for a task whose resolved preset itself points
+        // at a mist-network:// pseudo-provider (an AI-Network-imported
+        // model) - in that case the room's provider needs the advertised
+        // name to route to the right upstream preset. Otherwise (the plain
+        // "use the AI Network" global toggle) it's omitted, so the room's
+        // provider falls back to its own configured default model instead of
+        // being asked for a model name it may not offer.
+        await requestNetworkChat(connection.roomId, messages, connection.model)
       : await streamChatCompletion(chatConfig(connection.target), messages);
   if (!content.trim()) throw new Error(t("error-empty-response"));
   return content;
@@ -65,6 +67,38 @@ export async function testConnection(target: { baseUrl: string; apiKey: string; 
 export async function testNetworkConnection(roomId: string): Promise<void> {
   const content = await requestNetworkChat(roomId, [{ role: "user", content: 'Connection test. Reply with only "OK".' }], undefined);
   if (!content.trim()) throw new Error(t("error-empty-test-response"));
+}
+
+/**
+ * Streaming chat round-trip against one specific resolved shared-config
+ * preset (see lib/llmConfig.ts's `resolvePreset`), used by
+ * hooks/useNetworkProvider.ts's `callLlm` to forward an incoming AI Network
+ * llm_request to whichever shared preset the requested (advertised) name
+ * matched — as opposed to `chatJson`'s `connectionForTask`-resolved
+ * connection, which is this app's own outgoing calls. `reasoning_effort` is
+ * always sent (falls back to "none", never omitted — see types.ts's
+ * `ReasoningEffort`), same as `chatConfig` above; unlike an outgoing call's
+ * connection, a forwarded request has no per-task override to apply, so the
+ * preset's own `reasoningEffort` (if any) is used as-is.
+ */
+export async function requestResolvedChatCompletionStreaming(
+  target: ResolvedLlmTargetV1,
+  messages: ChatMessage[],
+  onDelta: (delta: string) => void,
+): Promise<string> {
+  const full = await streamChatCompletion(
+    {
+      baseUrl: target.baseUrl.trim().replace(/\/+$/, ""),
+      apiKey: target.apiKey,
+      model: target.model.trim(),
+      temperature: target.temperature,
+      reasoningEffort: target.reasoningEffort ?? "none",
+    },
+    messages,
+    onDelta,
+  );
+  if (!full.trim()) throw new MistaiError("UPSTREAM_BAD_RESPONSE", "The provider returned an empty response.");
+  return full;
 }
 
 export async function requestFeedback(params: {

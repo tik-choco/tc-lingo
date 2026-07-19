@@ -4,6 +4,16 @@
 // MistaiError codes (the library's messages are English by default) — unlike
 // tc-translate (always Japanese), tc-lingo's UI language is a runtime
 // setting, so the catalog choice follows it.
+//
+// createMistNode now goes through the shared MistNode facade
+// (lib/mistNodeShared.ts, ported from tc-translate - see
+// tc-docs/drafts/llm-settings-common-v1.md §4.7): mistlib-wasm only allows a
+// single active MistNode per page, and this app now has THREE network stacks
+// that each construct their own mistai `Network` - this ConsumerClient, the
+// AI Network provider hook (hooks/useNetworkProvider.ts), and the oai tunnel
+// client below - so the facade is required, not just an optimization.
+// NODE_ID_STORAGE_KEY is the one nodeId every stack shares (all three are one
+// peer on the wire).
 
 import {
   ConsumerClient,
@@ -17,14 +27,18 @@ import {
   type MistNodeLike,
   type MistaiMessages,
 } from "@tik-choco/mistai";
-import { MistNode } from "../vendor/mistlib/wrappers/web/index.js";
+import { createSharedMistNode } from "./mistNodeShared";
+import { OaiTunnelClient } from "./p2p/tunnel";
 import { getUiLanguage } from "../i18n";
 
-// Kept distinct per app so installs never collide on the same origin.
+// Kept distinct per app so installs never collide on the same origin. Also
+// the ONE nodeId every network stack in this app derives from (see the
+// shared MistNode facade note above) - do not introduce a second storage key
+// for the provider hook or the oai tunnel client.
 export const NODE_ID_STORAGE_KEY = "tc-lingo-mistllm-node-id-v1";
 
 export function createMistNode(nodeId: string): MistNodeLike {
-  return new MistNode(nodeId);
+  return createSharedMistNode(nodeId);
 }
 
 export const networkClient = new ConsumerClient({
@@ -66,6 +80,25 @@ export function requestNetworkTts(
   params: { text: string; model?: string; voice?: string },
 ): Promise<Blob> {
   return networkClient.requestTts(roomId, params);
+}
+
+// Same node identity as networkClient: every stack shares the page's single
+// MistNode (see createMistNode above), so the tunnel is just another handle
+// on it - same peer id on the wire, own provider table and oai_* correlation.
+// Ported from tc-translate's lib/network.ts (see
+// tc-docs/drafts/llm-settings-common-v1.md §4.6) - no call site uses this yet
+// in this app, kept for wire/API parity with tc-translate.
+export const oaiTunnelClient = new OaiTunnelClient({
+  createNode: createMistNode,
+  nodeIdStorageKey: NODE_ID_STORAGE_KEY,
+});
+
+/** Proxies an OpenAI-compatible request through an 'oai'-capable room provider; body/response are UTF-8 text. */
+export function requestNetworkOpenAi(
+  roomId: string,
+  req: { path: string; method?: "GET" | "POST"; contentType?: string; body?: string },
+): Promise<{ status: number; contentType: string; body: string }> {
+  return oaiTunnelClient.request(roomId, req);
 }
 
 // ---------------------------------------------------------------------------

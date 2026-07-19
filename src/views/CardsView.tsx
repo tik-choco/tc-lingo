@@ -9,6 +9,7 @@ import { MistakeCardPicker } from "../components/MistakeCardPicker";
 import { getUiLanguage, t } from "../i18n";
 import { useSpeech } from "../hooks/useSpeech";
 import { useLlmConnection } from "../hooks/useLlmConnection";
+import { connectionForTask } from "../lib/llmConnection";
 import { localizeNetworkError } from "../lib/network";
 import { requestTranslationCards } from "../lib/llm";
 import type { CardCandidate } from "../lib/parse";
@@ -95,13 +96,15 @@ function InboxItemRow({
 
   async function extractWithAi() {
     if (!connection || resolution.kind !== "ok") return;
+    const conn = connectionForTask("cards");
+    if (!conn) return;
     setExtracting(true);
     setError("");
     try {
       const payload = resolution.payload;
       const natural = payload.translations.find((tr) => tr.tone === "Natural") ?? payload.translations[0];
       const found = await requestTranslationCards({
-        connection,
+        connection: conn,
         targetLanguage: item.targetLanguage,
         nativeLanguage,
         sourceText: payload.sourceText,

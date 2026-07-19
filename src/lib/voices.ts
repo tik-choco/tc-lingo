@@ -10,6 +10,14 @@
 // {baseUrl}/voices. fetchVoices tries both, tolerating a `{ voices: [...] }`,
 // `{ data: [...] }`, or plain array response shape, with entries being either
 // plain strings or `{ id | name | voice }` objects.
+//
+// Guarded against `mist-network://` pseudo-provider base URLs (see
+// lib/networkModels.ts's isNetworkProviderBaseUrl) — those aren't real HTTP
+// endpoints, so callers should never reach this with one, but fetchVoices
+// throws its own clear error instead of attempting (and failing) a real
+// fetch() against a non-URL, per
+// tc-docs/drafts/llm-settings-common-v1.md §5.3's porting checklist.
+import { isNetworkProviderBaseUrl } from "./networkModels";
 
 /** OpenAI's documented voice set, used as a UI fallback when an endpoint can't list voices. */
 export const OPENAI_TTS_VOICES: string[] = [
@@ -83,6 +91,9 @@ async function tryVoicesEndpoint(url: string, apiKey: string): Promise<string[] 
  * endpoint works — callers should fall back to OPENAI_TTS_VOICES.
  */
 export async function fetchVoices(config: { baseUrl: string; apiKey: string }): Promise<string[]> {
+  if (isNetworkProviderBaseUrl(config.baseUrl)) {
+    throw new Error("AI Network presets don't expose an HTTP voice list.");
+  }
   const base = config.baseUrl.replace(/\/+$/, "");
   const candidates = [`${base}/audio/voices`, `${base}/voices`];
 

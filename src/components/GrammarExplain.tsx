@@ -10,6 +10,7 @@ import { BookOpenCheck, ChevronUp, Loader2 } from "lucide-preact";
 import type { GrammarPoint } from "../lib/grammar";
 import { requestGrammarExplanation } from "../lib/grammar";
 import { useLlmConnection } from "../hooks/useLlmConnection";
+import { connectionForTask } from "../lib/llmConnection";
 import { loadSettings } from "../lib/settings";
 import { localizeNetworkError } from "../lib/network";
 import { t } from "../i18n";
@@ -45,12 +46,14 @@ export function GrammarExplain({ sentence, targetLanguage }: GrammarExplainProps
 
   async function fetchExplanation() {
     if (!connection) return;
+    const conn = connectionForTask("grammar");
+    if (!conn) return;
     setState("loading");
     setError("");
     try {
       const nativeLanguage = loadSettings().nativeLanguage;
       const result = await requestGrammarExplanation({
-        connection,
+        connection: conn,
         targetLanguage,
         nativeLanguage,
         sentence: sentence.trim(),

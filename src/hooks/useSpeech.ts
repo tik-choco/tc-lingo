@@ -1,11 +1,14 @@
 // "Read this aloud" for any piece of learner-facing text (a card's front, an
 // example sentence, a topic prompt, ...). Ported from tc-translate's
 // hooks/useSpeech.ts, adapted to tc-lingo's shape: views here are
-// self-contained (no props — see CLAUDE.md), so this hook takes no
-// arguments and instead reads settings.ttsEngine (lib/settings.ts) and the
-// shared llm config's `tts`/`network.roomId` (lib/llmConfig.ts) itself, once
-// per speak()/speakSequence() call, so a mid-session settings change always
-// takes effect on the next play without needing a re-mount.
+// self-contained (no props — see CLAUDE.md), so this hook takes no arguments
+// and instead reads the shared llm config's `tts`/`network.roomId`
+// (lib/llmConfig.ts) itself, once per speak()/speakSequence() call, so a
+// mid-session settings change always takes effect on the next play without
+// needing a re-mount. The engine itself is never stored locally — it is
+// always DERIVED from the shared config by lib/voice.ts's
+// `deriveVoiceEngine` (see tc-docs/drafts/llm-settings-common-v1.md §4.1),
+// same as tc-translate.
 //
 // Three engines, one id-keyed toggle API:
 //   - "browser": the Web Speech API (speechSynthesis) directly.
@@ -13,7 +16,11 @@
 //     resolveVoice(config, "tts") and fetched by lib/tts.ts's
 //     synthesizeSpeechApi.
 //   - "network": the same kind of endpoint, reached over the AI Network room
-//     via lib/network.ts's requestNetworkTts.
+//     via lib/network.ts's requestNetworkTts. A configured model of
+//     `NETWORK_VOICE_AUTO_MODEL` ("network-auto" — the AI Network tab's
+//     "let the room decide" option) is stripped from the wire request by
+//     lib/networkModels.ts's `networkVoiceModelParam`, so the room's
+//     provider falls back to its own configured TTS model.
 // "api"/"network" both fall back to the browser voice: silently if they were
 // simply unconfigured (no resolved voice / no room id), or with
 // `speechError` set to a localized notice if a configured attempt actually
@@ -36,8 +43,10 @@ import { useEffect, useRef, useState } from "preact/hooks";
 import { emptyLlmConfig, loadLlmConfig, resolveVoice } from "../lib/llmConfig";
 import { languageBcp47Tag } from "../lib/languages";
 import { localizeNetworkError, requestNetworkTts } from "../lib/network";
-import { loadSettings, subscribeSettings } from "../lib/settings";
+import { networkVoiceModelParam } from "../lib/networkModels";
+import { subscribeSettings } from "../lib/settings";
 import { synthesizeSpeechApi } from "../lib/tts";
+import { deriveVoiceEngine } from "../lib/voice";
 import { t } from "../i18n";
 
 export interface SpeechController {
@@ -72,7 +81,7 @@ function browserSpeechSupported(): boolean {
 
 /** Whether *some* playback path is currently usable — the browser voice, or
  * a configured API/Network TTS target — independent of which engine
- * `settings.ttsEngine` currently selects (any of the three can be reached
+ * `deriveVoiceEngine` currently derives (any of the three can be reached
  * via the browser fallback). */
 function resolveSupported(): boolean {
   if (browserSpeechSupported()) return true;
@@ -330,15 +339,16 @@ export function useSpeech(): SpeechController {
 
     stop();
 
-    const settings = loadSettings();
     const config = loadLlmConfig() ?? emptyLlmConfig();
+    const engine = deriveVoiceEngine(config, "tts");
     const lang = languageBcp47Tag(language);
 
-    if (settings.ttsEngine === "network") {
+    if (engine === "network") {
       const roomId = config.network.roomId;
       if (roomId.trim()) {
         void playFromSource(
-          () => requestNetworkTts(roomId, { text, model: config.tts?.model, voice: config.tts?.voice }),
+          () =>
+            requestNetworkTts(roomId, { text, model: networkVoiceModelParam(config.tts?.model ?? ""), voice: config.tts?.voice }),
           text,
           lang,
           id,
@@ -350,7 +360,7 @@ export function useSpeech(): SpeechController {
       return;
     }
 
-    if (settings.ttsEngine === "api") {
+    if (engine === "api") {
       const target = resolveVoice(config, "tts");
       if (target) {
         void playFromSource(() => synthesizeSpeechApi(text, target), text, lang, id);
@@ -379,15 +389,16 @@ export function useSpeech(): SpeechController {
 
     stop();
 
-    const settings = loadSettings();
     const config = loadLlmConfig() ?? emptyLlmConfig();
+    const engine = deriveVoiceEngine(config, "tts");
     const lang = languageBcp47Tag(language);
 
-    if (settings.ttsEngine === "network") {
+    if (engine === "network") {
       const roomId = config.network.roomId;
       if (roomId.trim()) {
         void playSequenceFromSource(
-          (text) => requestNetworkTts(roomId, { text, model: config.tts?.model, voice: config.tts?.voice }),
+          (text) =>
+            requestNetworkTts(roomId, { text, model: networkVoiceModelParam(config.tts?.model ?? ""), voice: config.tts?.voice }),
           items,
           lang,
           id,
@@ -399,7 +410,7 @@ export function useSpeech(): SpeechController {
       return;
     }
 
-    if (settings.ttsEngine === "api") {
+    if (engine === "api") {
       const target = resolveVoice(config, "tts");
       if (target) {
         void playSequenceFromSource((text) => synthesizeSpeechApi(text, target), items, lang, id);

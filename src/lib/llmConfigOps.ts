@@ -8,35 +8,39 @@
 // a provider ("接続先") or preset ("モデル"), or deleting one, mirroring
 // tc-pdf-viewer's SettingsPanel service layer (updateLlmProvider/
 // removeLlmProvider/etc.) for the same shared config shape.
-import type { LingoSettings } from "../types";
-import {
-  emptyLlmConfig,
-  ensurePreset,
-  ensureProvider,
-  loadLlmConfig,
-  normalizeBaseUrl,
-  saveLlmConfig,
-} from "./llmConfig";
+import { emptyLlmConfig, ensurePreset, ensureProvider, loadLlmConfig, normalizeBaseUrl, saveLlmConfig } from "./llmConfig";
 import type { SharedLlmConfigV1 } from "./llmConfig";
-import { loadSettings, saveSettings } from "./settings";
 
 /**
  * After any provider/preset removal: if `defaultPresetId` no longer points
  * at an existing preset, reassign it to the first remaining preset (or ""
- * if none remain). If the app-local `settings.presetId` (see settings.ts)
- * no longer points at an existing preset either, reset it to "" and persist
- * — this also notifies `subscribeSettings` listeners so the settings view
- * refreshes. Mutates `config` in place; does not itself call saveLlmConfig.
+ * if none remain). This app's per-task preset overrides
+ * (`LingoSettings.taskPresetIds`, see lib/settings.ts) need no equivalent
+ * cleanup: `resolvePreset` (lib/llmConfig.ts) already falls back to the
+ * default preset whenever a stored id doesn't resolve, so a dangling
+ * `taskPresetIds` entry degrades gracefully on its own. Mutates `config` in
+ * place; does not itself call saveLlmConfig.
  */
 function cleanupDanglingReferences(config: SharedLlmConfigV1): void {
   if (config.defaultPresetId && !config.presets.some((p) => p.id === config.defaultPresetId)) {
     config.defaultPresetId = config.presets[0]?.id ?? "";
   }
+}
 
-  const settings: LingoSettings = loadSettings();
-  if (settings.presetId && !config.presets.some((p) => p.id === settings.presetId)) {
-    saveSettings({ ...settings, presetId: "" });
+/**
+ * Sets the shared config's default preset id directly (used by the Tasks
+ * tab's 既定 row select) — unlike `addPreset`'s "becomes the default only if
+ * none is set yet" behavior, this always overwrites. A value that isn't ""
+ * and doesn't match an existing preset is ignored (e.g. a stale id from a
+ * preset removed in another tab between render and this call).
+ */
+export function setDefaultPresetId(id: string): SharedLlmConfigV1 {
+  const config = loadLlmConfig() ?? emptyLlmConfig();
+  if (id === "" || config.presets.some((p) => p.id === id)) {
+    config.defaultPresetId = id;
+    saveLlmConfig(config);
   }
+  return config;
 }
 
 /** Finds-or-creates a provider (see `ensureProvider`) and persists the config. */

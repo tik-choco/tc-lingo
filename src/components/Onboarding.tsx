@@ -147,7 +147,6 @@ export function Onboarding(props: { onClose: () => void }) {
     const presetId = ensurePreset(current, { providerId, model: llm.model });
     if (!current.defaultPresetId) current.defaultPresetId = presetId;
     saveLlmConfig(current);
-    saveSettings({ ...loadSettings(), presetId });
   }
 
   function handleLlmNext() {

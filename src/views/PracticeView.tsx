@@ -12,6 +12,7 @@ import { autoExtractMistakeCards } from "../lib/autoExtract";
 import { effectiveBand, levelInstruction, recordOutputSample, subscribeLevels } from "../lib/level";
 import { loadSettings, subscribeSettings } from "../lib/settings";
 import { useLlmConnection } from "../hooks/useLlmConnection";
+import { connectionForTask } from "../lib/llmConnection";
 import { useSpeech } from "../hooks/useSpeech";
 import { planTopicFanOut, requestFeedback, requestMistakeCards, requestRetryFeedback, requestTopicSuggestion } from "../lib/llm";
 import { localizeNetworkError } from "../lib/network";
@@ -259,11 +260,13 @@ export function PracticeView() {
       setError(t("practice-need-llm"));
       return;
     }
+    const conn = connectionForTask("topic");
+    if (!conn) return;
     setError("");
     setGeneratingTopic(true);
     try {
       const suggestion = await requestTopicSuggestion({
-        connection,
+        connection: conn,
         targetLanguage: settings.activeLanguage,
         nativeLanguage: settings.nativeLanguage,
         recentTitles: topics.slice(0, 10).map((topic) => topic.title),
@@ -287,11 +290,13 @@ export function PracticeView() {
       setError(t("practice-need-llm"));
       return;
     }
+    const conn = connectionForTask("topic");
+    if (!conn) return;
     setError("");
     setGeneratingAllTopics(true);
     try {
       const plan = await planTopicFanOut({
-        connection,
+        connection: conn,
         nativeLanguage: settings.nativeLanguage,
         candidateLanguages: settings.targetLanguages,
         recentTitlesByLanguage: Object.fromEntries(
@@ -302,7 +307,7 @@ export function PracticeView() {
       const created = await Promise.all(
         plan.targets.map(async (lang) => {
           const suggestion = await requestTopicSuggestion({
-            connection,
+            connection: conn,
             targetLanguage: lang,
             nativeLanguage: settings.nativeLanguage,
             recentTitles: loadTopics(lang).slice(0, 10).map((t) => t.title),
@@ -344,12 +349,16 @@ export function PracticeView() {
       setError(t("practice-need-llm"));
       return;
     }
+    const practiceConn = connectionForTask("practice");
+    if (!practiceConn) return;
+    const cardsConn = connectionForTask("cards");
+    if (!cardsConn) return;
     setError("");
     setAutoAddedCards([]);
     setSubmitting(true);
     try {
       const feedback: FeedbackResult = await requestFeedback({
-        connection,
+        connection: practiceConn,
         targetLanguage: settings.activeLanguage,
         nativeLanguage: settings.nativeLanguage,
         topicPrompt: activeTopic.prompt,
@@ -370,7 +379,7 @@ export function PracticeView() {
       // Fire-and-forget: never blocks feedback rendering. Gates on
       // settings.autoExtractCards itself, so it's safe to always call.
       autoExtractMistakeCards({
-        connection,
+        connection: cardsConn,
         targetLanguage: settings.activeLanguage,
         nativeLanguage: settings.nativeLanguage,
         original: text,
@@ -397,12 +406,16 @@ export function PracticeView() {
       setError(t("practice-need-llm"));
       return;
     }
+    const practiceConn = connectionForTask("practice");
+    if (!practiceConn) return;
+    const cardsConn = connectionForTask("cards");
+    if (!cardsConn) return;
     setError("");
     setAutoAddedRetryCards([]);
     setCheckingRetry(true);
     try {
       const result = await requestRetryFeedback({
-        connection,
+        connection: practiceConn,
         targetLanguage: settings.activeLanguage,
         nativeLanguage: settings.nativeLanguage,
         topicPrompt: activeTopic?.prompt ?? "",
@@ -428,7 +441,7 @@ export function PracticeView() {
       // retry answer was already natural — nothing to extract).
       if (result.corrected.trim()) {
         autoExtractMistakeCards({
-          connection,
+          connection: cardsConn,
           targetLanguage: settings.activeLanguage,
           nativeLanguage: settings.nativeLanguage,
           original: retryAnswer,
@@ -456,11 +469,13 @@ export function PracticeView() {
       setError(t("practice-need-llm"));
       return;
     }
+    const conn = connectionForTask("cards");
+    if (!conn) return;
     setError("");
     setSavingSentenceCards(true);
     try {
       const added = await saveSentenceCards({
-        connection,
+        connection: conn,
         targetLanguage: settings.activeLanguage,
         nativeLanguage: settings.nativeLanguage,
         original: currentAttempt.original,
@@ -485,11 +500,13 @@ export function PracticeView() {
       setError(t("practice-need-llm"));
       return;
     }
+    const conn = connectionForTask("cards");
+    if (!conn) return;
     setError("");
     setSavingRetrySentenceCards(true);
     try {
       const added = await saveSentenceCards({
-        connection,
+        connection: conn,
         targetLanguage: settings.activeLanguage,
         nativeLanguage: settings.nativeLanguage,
         original: currentAttempt.retryAnswer,
@@ -507,11 +524,13 @@ export function PracticeView() {
 
   async function extractCards() {
     if (!currentAttempt || !connection) return;
+    const conn = connectionForTask("cards");
+    if (!conn) return;
     setError("");
     setExtracting(true);
     try {
       const found = await requestMistakeCards({
-        connection,
+        connection: conn,
         targetLanguage: settings.activeLanguage,
         nativeLanguage: settings.nativeLanguage,
         original: currentAttempt.original,

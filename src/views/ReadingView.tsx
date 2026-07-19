@@ -10,6 +10,7 @@ import { addCard, dueCards } from "../lib/cards";
 import { effectiveBand, subscribeLevels } from "../lib/level";
 import { loadSettings, subscribeSettings } from "../lib/settings";
 import { useLlmConnection } from "../hooks/useLlmConnection";
+import { connectionForTask } from "../lib/llmConnection";
 import { useSpeech } from "../hooks/useSpeech";
 import { requestTranslationCards } from "../lib/llm";
 import { localizeNetworkError } from "../lib/network";
@@ -74,11 +75,13 @@ export function ReadingView() {
       setError(t("reading-need-llm"));
       return;
     }
+    const conn = connectionForTask("reading");
+    if (!conn) return;
     setError("");
     setGenerating(true);
     try {
       const passage = await requestReadingPassage({
-        connection,
+        connection: conn,
         targetLanguage: settings.activeLanguage,
         nativeLanguage: settings.nativeLanguage,
         reviewWords: dueCards(new Date(), settings.activeLanguage)
@@ -110,11 +113,13 @@ export function ReadingView() {
 
   async function extractCards() {
     if (!openPassage || !connection) return;
+    const conn = connectionForTask("cards");
+    if (!conn) return;
     setError("");
     setExtracting(true);
     try {
       const found = await requestTranslationCards({
-        connection,
+        connection: conn,
         targetLanguage: openPassage.language || settings.activeLanguage,
         nativeLanguage: settings.nativeLanguage,
         sourceText: openPassage.sentences.map((s) => s.translation).join(" "),

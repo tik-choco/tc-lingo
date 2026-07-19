@@ -29,6 +29,7 @@ import { autoExtractMistakeCards } from "../lib/autoExtract";
 import { effectiveBand, recordOutputSample, subscribeLevels } from "../lib/level";
 import { loadSettings, subscribeSettings } from "../lib/settings";
 import { useLlmConnection } from "../hooks/useLlmConnection";
+import { connectionForTask } from "../lib/llmConnection";
 import { useSpeech } from "../hooks/useSpeech";
 import { requestMistakeCards } from "../lib/llm";
 import { localizeNetworkError } from "../lib/network";
@@ -333,11 +334,13 @@ export function TalkView() {
       setStartError(t("talk-need-llm"));
       return;
     }
+    const conn = connectionForTask("conversation");
+    if (!conn) return;
     setStartError("");
     setStarting(true);
     try {
       const result = await requestConversationStart({
-        connection,
+        connection: conn,
         targetLanguage: settings.activeLanguage,
         nativeLanguage: settings.nativeLanguage,
         recentTitles: sessions.slice(0, 10).map((s) => s.title),
@@ -364,12 +367,16 @@ export function TalkView() {
       setSendError(t("talk-need-llm"));
       return;
     }
+    const conversationConn = connectionForTask("conversation");
+    if (!conversationConn) return;
+    const cardsConn = connectionForTask("cards");
+    if (!cardsConn) return;
     setSendError("");
     setSending(true);
     const learnerText = text;
     try {
       const result = await requestConversationReply({
-        connection,
+        connection: conversationConn,
         targetLanguage: sessionLanguage,
         nativeLanguage: settings.nativeLanguage,
         scenario: activeSession.scenario,
@@ -397,7 +404,7 @@ export function TalkView() {
       // notice is attached to this learner turn's correction block.
       if (result.corrected.trim()) {
         autoExtractMistakeCards({
-          connection,
+          connection: cardsConn,
           targetLanguage: sessionLanguage,
           nativeLanguage: settings.nativeLanguage,
           original: learnerText,
@@ -421,10 +428,12 @@ export function TalkView() {
    * regardless of settings.autoExtractCards. */
   async function saveTurnSentenceCards(turn: ConversationTurn) {
     if (!connection || !turn.corrected) return;
+    const conn = connectionForTask("cards");
+    if (!conn) return;
     setSentenceCardsByTurn((prev) => ({ ...prev, [turn.id]: { kind: "saving" } }));
     try {
       const added = await saveSentenceCards({
-        connection,
+        connection: conn,
         targetLanguage: sessionLanguage,
         nativeLanguage: settings.nativeLanguage,
         original: turn.text,
@@ -449,11 +458,13 @@ export function TalkView() {
 
   async function extractCards() {
     if (!activeSession || !connection || correctedTurns.length === 0) return;
+    const conn = connectionForTask("cards");
+    if (!conn) return;
     setExtractError("");
     setExtracting(true);
     try {
       const found = await requestMistakeCards({
-        connection,
+        connection: conn,
         targetLanguage: sessionLanguage,
         nativeLanguage: settings.nativeLanguage,
         original: correctedTurns.map((turn) => turn.text).join("\n"),

@@ -159,7 +159,8 @@ button:disabled {
 .field-grid select,
 .llm-edit-fields select,
 .llm-model-field select,
-.level-row-select {
+.level-row-select,
+.task-model-field select {
   appearance: none;
   padding: var(--space-2) calc(var(--space-3) + 20px) var(--space-2) var(--space-3);
   border: 1px solid var(--border);
@@ -177,21 +178,24 @@ button:disabled {
 :root[data-theme="dark"] .field-grid select,
 :root[data-theme="dark"] .llm-edit-fields select,
 :root[data-theme="dark"] .llm-model-field select,
-:root[data-theme="dark"] .level-row-select {
+:root[data-theme="dark"] .level-row-select,
+:root[data-theme="dark"] .task-model-field select {
   background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%239aa7b5' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
 }
 
 .field-grid select:hover:not(:disabled),
 .llm-edit-fields select:hover:not(:disabled),
 .llm-model-field select:hover:not(:disabled),
-.level-row-select:hover:not(:disabled) {
+.level-row-select:hover:not(:disabled),
+.task-model-field select:hover:not(:disabled) {
   border-color: var(--border-strong);
 }
 
 .field-grid select:focus,
 .llm-edit-fields select:focus,
 .llm-model-field select:focus,
-.level-row-select:focus {
+.level-row-select:focus,
+.task-model-field select:focus {
   border-color: var(--primary-border);
 }
 
@@ -199,7 +203,8 @@ button:disabled {
 .field-grid select:disabled,
 .llm-edit-fields select:disabled,
 .llm-model-field select:disabled,
-.level-row-select:disabled {
+.level-row-select:disabled,
+.task-model-field select:disabled {
   opacity: 0.55;
   cursor: not-allowed;
 }
@@ -1437,8 +1442,15 @@ button:disabled {
   font-weight: 700;
 }
 
-.toggle-row {
+/* `.field-grid label` (0,1,1) beats a bare `.toggle-row` (0,1,0) and forces
+   flex-direction: column, so `.toggle-row` is always used as
+   `<label class="toggle-row">` inside `.field-grid` — re-declare it qualified
+   as `.field-grid label.toggle-row` (0,2,1) to win, and restate row direction
+   explicitly since the unqualified rule alone can't override the column set above. */
+.toggle-row,
+.field-grid label.toggle-row {
   display: flex;
+  flex-direction: row;
   align-items: center;
   gap: var(--space-2);
   font-size: 0.95rem;
@@ -1492,4 +1504,212 @@ button:disabled {
   padding: var(--space-1) calc(var(--space-2) + 18px) var(--space-1) var(--space-2);
   background-color: var(--surface);
   background-position: right var(--space-2) center;
+}
+
+/* ---------------- Settings view: tab bar (全般/AI接続/AI Network/タスク) ----------------
+   Modeled on tc-translate's .settings-tab-bar/.settings-tab (its
+   src/components/SettingsModal.tsx), re-themed to this app's tokens. */
+
+.settings-tab-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  padding: 2px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  align-self: flex-start;
+}
+
+.settings-tab {
+  border: none;
+  background: transparent;
+  border-radius: var(--radius-pill);
+  padding: var(--space-2) var(--space-4);
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.settings-tab:hover:not(:disabled) {
+  background: var(--surface-3);
+  color: var(--text);
+}
+
+.settings-tab.active {
+  background: var(--primary);
+  color: var(--on-primary);
+}
+
+.settings-tab.active:hover:not(:disabled) {
+  background: var(--primary-hover);
+  color: var(--on-primary);
+}
+
+.settings-tab-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+/* ---------------- Settings view: タスク tab rows ----------------
+   One row per LLM task (既定 + LLM_TASKS + TTS): a short label (with a hover
+   tooltip carrying the fuller description, see the [data-tip] rule below)
+   plus a 2-column field group (preset select + reasoning_effort select, or
+   the TTS model/voice pair). Modeled on tc-translate's .task-model-item. */
+
+.task-model-item {
+  display: grid;
+  grid-template-columns: 90px minmax(0, 1fr);
+  align-items: start;
+  gap: var(--space-3);
+  padding-bottom: var(--space-3);
+  margin-bottom: var(--space-3);
+  border-bottom: 1px solid var(--border);
+}
+
+.task-model-item:last-of-type {
+  margin-bottom: 0;
+  padding-bottom: 0;
+  border-bottom: none;
+}
+
+.task-model-item > span {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  min-width: 0;
+  padding-top: var(--space-2);
+}
+
+/* Hover tooltip carrying the one-sentence task description — see
+   tc-docs/drafts/llm-settings-common-v1.md §3.2: labels stay short, detail
+   moves to this tooltip instead of an always-visible hint paragraph. */
+.task-model-item > span[data-tip] {
+  position: relative;
+  cursor: help;
+  text-decoration: underline dotted;
+  text-underline-offset: 2px;
+  width: fit-content;
+}
+
+.task-model-item > span[data-tip]:hover::after {
+  content: attr(data-tip);
+  position: absolute;
+  left: 0;
+  top: calc(100% + 4px);
+  z-index: 10;
+  width: max-content;
+  max-width: 240px;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-s);
+  background: var(--surface-3);
+  color: var(--text);
+  font-size: 0.75rem;
+  line-height: 1.5;
+  box-shadow: var(--shadow-2);
+}
+
+.task-model-fields {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.task-model-field {
+  min-width: 0;
+}
+
+.task-model-field select {
+  width: 100%;
+  min-width: 0;
+}
+
+/* ---------------- Settings view: AI接続 tab — Network-derived rows ----------------
+   Highlights a provider/preset card mirrored in from the AI Network room
+   (mist-network:// pseudo-provider — see lib/networkModels.ts) against the
+   regular .llm-flat-section-providers/-models tints. */
+.llm-row.llm-row-network {
+  border: 1px dashed var(--primary);
+  background: var(--primary-soft);
+}
+
+.llm-row-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+/* ---------------- Settings view: AI Network tab — share-models checklist ----------------
+   Checkbox list of presets advertised to the room when acting as a
+   provider — a plain checklist rather than the card grid above. */
+
+.network-share-models {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.network-share-models > label {
+  margin-bottom: 0;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.network-share-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-top: var(--space-1);
+}
+
+.network-share-item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  column-gap: var(--space-3);
+  row-gap: 1px;
+  align-items: center;
+  min-width: 0;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-s);
+  background: var(--surface);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
+}
+
+.network-share-item:hover {
+  background: var(--surface-2);
+}
+
+.network-share-item:has(input:checked) {
+  background: var(--primary-soft);
+  border-color: var(--primary-border);
+}
+
+.network-share-item input[type="checkbox"] {
+  grid-row: 1 / 3;
+  margin: 0;
+}
+
+.network-share-item-label {
+  min-width: 0;
+  color: var(--text);
+  font-size: 0.85rem;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.network-share-item-model {
+  min-width: 0;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
