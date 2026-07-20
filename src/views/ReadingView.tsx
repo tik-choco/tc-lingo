@@ -157,79 +157,9 @@ export function ReadingView() {
     activeSentenceRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
   }, [readingAllActive, speech.speakingIndex]);
 
-  return (
-    <div class="view-container reading-view">
-      <section class="card-panel">
-        <div class="topic-header">
-          <h2>{t("reading-generate-heading")}</h2>
-        </div>
-        {!connection ? (
-          <p class="hint-text">{t("reading-need-llm")}</p>
-        ) : (
-          <>
-            <div class="field-grid">
-              <label>
-                {t("reading-topic-request-label")}
-                <input
-                  type="text"
-                  value={topicRequest}
-                  onInput={(e) => setTopicRequest((e.target as HTMLInputElement).value)}
-                  placeholder={t("reading-topic-request-placeholder")}
-                />
-              </label>
-            </div>
-            <div class="button-row">
-              <button type="button" class="primary-button" onClick={generate} disabled={generating}>
-                <Sparkles size={16} />
-                {generating ? t("reading-generating") : t("reading-generate-button")}
-              </button>
-              {levelBand && (
-                <span class="language-badge reading-level-badge">{t("reading-level-badge", { band: levelBand })}</span>
-              )}
-            </div>
-          </>
-        )}
-        {connection && <p class="hint-text">{t("reading-level-hint")}</p>}
-        {error && <p class="error-text">{error}</p>}
-      </section>
-
-      <section class="card-panel">
-        <h2>{t("reading-list-heading")}</h2>
-        {passages.length === 0 ? (
-          <p class="hint-text">{t("reading-empty-hint")}</p>
-        ) : (
-          <ul class="reading-passage-list">
-            {passages.map((p) => (
-              <li key={p.id} class={`reading-passage-item${openPassageId === p.id ? " reading-passage-item-active" : ""}`}>
-                <button type="button" class="reading-passage-open" onClick={() => setOpenPassageId(p.id)}>
-                  <span class="reading-passage-title">{p.title}</span>
-                  <span class="reading-passage-date hint-text">{t("reading-created-date", { date: formatDate(p.createdAt) })}</span>
-                  {p.reviewWords.length > 0 && (
-                    <span class="reading-passage-chips">
-                      {p.reviewWords.map((w) => (
-                        <span key={w} class="language-badge">
-                          {w}
-                        </span>
-                      ))}
-                    </span>
-                  )}
-                </button>
-                <button
-                  type="button"
-                  class="icon-button"
-                  title={t("reading-delete-passage")}
-                  aria-label={t("reading-delete-passage")}
-                  onClick={() => handleDelete(p.id)}
-                >
-                  ×
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
-      {openPassage && (
+  if (openPassage) {
+    return (
+      <div class="view-container reading-view">
         <section class="card-panel reading-pane">
           <div class="topic-header">
             <h2>{openPassage.title}</h2>
@@ -387,7 +317,81 @@ export function ReadingView() {
 
           {error && <p class="error-text">{error}</p>}
         </section>
-      )}
+      </div>
+    );
+  }
+
+  return (
+    <div class="view-container reading-view">
+      <section class="card-panel">
+        <div class="topic-header">
+          <h2>{t("reading-generate-heading")}</h2>
+        </div>
+        {!connection ? (
+          <p class="hint-text">{t("reading-need-llm")}</p>
+        ) : (
+          <>
+            <div class="field-grid">
+              <label>
+                {t("reading-topic-request-label")}
+                <input
+                  type="text"
+                  value={topicRequest}
+                  onInput={(e) => setTopicRequest((e.target as HTMLInputElement).value)}
+                  placeholder={t("reading-topic-request-placeholder")}
+                />
+              </label>
+            </div>
+            <div class="button-row">
+              <button type="button" class="primary-button" onClick={generate} disabled={generating}>
+                <Sparkles size={16} />
+                {generating ? t("reading-generating") : t("reading-generate-button")}
+              </button>
+              {levelBand && (
+                <span class="language-badge reading-level-badge">{t("reading-level-badge", { band: levelBand })}</span>
+              )}
+            </div>
+          </>
+        )}
+        {connection && <p class="hint-text">{t("reading-level-hint")}</p>}
+        {error && <p class="error-text">{error}</p>}
+      </section>
+
+      <section class="card-panel">
+        <h2>{t("reading-list-heading")}</h2>
+        {passages.length === 0 ? (
+          <p class="hint-text">{t("reading-empty-hint")}</p>
+        ) : (
+          <ul class="reading-passage-list">
+            {passages.map((p) => (
+              <li key={p.id} class={`reading-passage-item${openPassageId === p.id ? " reading-passage-item-active" : ""}`}>
+                <button type="button" class="reading-passage-open" onClick={() => setOpenPassageId(p.id)}>
+                  <span class="reading-passage-title">{p.title}</span>
+                  <span class="reading-passage-date hint-text">{t("reading-created-date", { date: formatDate(p.createdAt) })}</span>
+                  {p.reviewWords.length > 0 && (
+                    <span class="reading-passage-chips">
+                      {p.reviewWords.map((w) => (
+                        <span key={w} class="language-badge">
+                          {w}
+                        </span>
+                      ))}
+                    </span>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  class="icon-button"
+                  title={t("reading-delete-passage")}
+                  aria-label={t("reading-delete-passage")}
+                  onClick={() => handleDelete(p.id)}
+                >
+                  ×
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
     </div>
   );
 }
