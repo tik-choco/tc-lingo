@@ -120,6 +120,22 @@
   justify-content: flex-start;
 }
 
+/* Toggle-on-demand translation under an assistant bubble (same idea as
+   ReadingView's per-sentence translation toggle). */
+.talk-bubble-translation-row {
+  margin-top: var(--space-1);
+}
+
+.talk-bubble-translation-toggle {
+  font-size: 0.78rem;
+}
+
+.talk-bubble-translation {
+  margin-top: var(--space-1);
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
 /* Inline, expanded-by-default correction under a learner bubble that had
    something to fix (still per-turn collapsible) — keeps the log readable as
    a conversation instead of turning every learner line into a full feedback
@@ -199,6 +215,21 @@
   gap: var(--space-2);
   border-top: 1px solid var(--border);
   padding-top: var(--space-3);
+}
+
+/* Inline "edit + resend" form, replacing a learner bubble's text while its
+   last exchange is being retyped (see TalkView's editableTurnId). */
+.talk-edit-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.talk-edit-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: 0.78rem;
 }
 
 .talk-extract {

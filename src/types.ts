@@ -125,10 +125,18 @@ export interface ConversationTurn {
    * lib/languages.ts readingAid); "" for languages without one, learner
    * turns, and turns saved before reading aids existed. */
   reading: string;
+  /** Native-language translation of `text`, revealed on demand (same idea as
+   * ReadingPassage's per-sentence translation); "" for learner turns and
+   * turns saved before this feature existed. */
+  translation: string;
   /** Corrected version of a learner turn; "" when it was already natural. */
   corrected: string;
   /** Reading aid for `corrected`; "" when no correction / no aid. */
   correctedReading: string;
+  /** Native-language translation of `corrected`, revealed on demand (same
+   * idea as `translation`); "" when no correction, or turns saved before
+   * this feature existed. */
+  correctedTranslation: string;
   /** Why, in the learner's native language. "" when no correction. */
   reasons: string;
 }

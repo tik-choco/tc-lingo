@@ -170,6 +170,7 @@ export async function requestReadingPassage(params: {
   nativeLanguage: string;
   reviewWords: string[];
   recentTitles: string[];
+  topicRequest?: string;
 }): Promise<ReadingPassage> {
   // Reading aids (e.g. pinyin) are only requested for languages that have
   // one (see lib/languages.ts readingAid) — omitted from the prompt entirely
@@ -178,10 +179,16 @@ export async function requestReadingPassage(params: {
   const sentenceFieldsDescription = aid
     ? `"text" (one sentence in ${params.targetLanguage}), "translation" (that sentence's translation in ${params.nativeLanguage}), and "reading" (${aid.llmInstruction} for that sentence)`
     : `"text" (one sentence in ${params.targetLanguage}) and "translation" (that sentence's translation in ${params.nativeLanguage})`;
+  // Same optional free-text steer as requestTopicSuggestion's topicRequest —
+  // takes priority over recentTitles avoidance when given.
+  const topicRequestInstruction =
+    params.topicRequest && params.topicRequest.trim()
+      ? ` The learner described what kind of topic they want (topicRequest): "${params.topicRequest.trim()}". Follow this request when choosing the passage's topic — it takes priority over avoiding recentTitles — but the passage must still be natural and easy to follow.`
+      : "";
   const content = await chatJson(
     params.connection,
-    `You are TC Lingo's comprehensible-input passage generator. Write one short passage in ${params.targetLanguage} for a learner whose native language is ${params.nativeLanguage} and who is slightly below native fluency ("i+1": simple, natural, everyday narrative or opinion piece). The passage should be 6-10 short sentences, natural and easy to follow, not a contrived grammar drill. The learner is due to review these words/phrases (reviewWords): weave in 1-3 of them naturally if they genuinely fit the passage; never force a word in if it doesn't fit — a good, natural passage beats a forced vocabulary match, and it's fine to use none of them. Avoid topics already covered in recentTitles. Also write one short comprehension question in ${params.targetLanguage} about the passage, and its expected answer in ${params.targetLanguage}. Return only JSON with exactly these keys: "title" (a short label in ${params.nativeLanguage}), "sentences" (an array of objects, each with ${sentenceFieldsDescription}), "usedReviewWords" (array of strings: which of the given reviewWords were actually used, possibly empty), "question" (the comprehension question, in ${params.targetLanguage}), "questionAnswer" (its expected answer, in ${params.targetLanguage}).${levelInstruction(params.targetLanguage)}`,
-    { reviewWords: params.reviewWords, recentTitles: params.recentTitles },
+    `You are TC Lingo's comprehensible-input passage generator. Write one short passage in ${params.targetLanguage} for a learner whose native language is ${params.nativeLanguage} and who is slightly below native fluency ("i+1": simple, natural, everyday narrative or opinion piece). The passage should be 6-10 short sentences, natural and easy to follow, not a contrived grammar drill. The learner is due to review these words/phrases (reviewWords): weave in 1-3 of them naturally if they genuinely fit the passage; never force a word in if it doesn't fit — a good, natural passage beats a forced vocabulary match, and it's fine to use none of them. Avoid topics already covered in recentTitles.${topicRequestInstruction} Also write one short comprehension question in ${params.targetLanguage} about the passage, and its expected answer in ${params.targetLanguage}. Return only JSON with exactly these keys: "title" (a short label in ${params.nativeLanguage}), "sentences" (an array of objects, each with ${sentenceFieldsDescription}), "usedReviewWords" (array of strings: which of the given reviewWords were actually used, possibly empty), "question" (the comprehension question, in ${params.targetLanguage}), "questionAnswer" (its expected answer, in ${params.targetLanguage}).${levelInstruction(params.targetLanguage)}`,
+    { reviewWords: params.reviewWords, recentTitles: params.recentTitles, topicRequest: params.topicRequest ?? "" },
   );
   const generated = parseGeneratedPassage(content);
   return addPassage({

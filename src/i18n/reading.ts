@@ -6,6 +6,8 @@ import type { MessageBundle } from "./types";
 export const readingMessages = {
   en: {
     "reading-generate-heading": "New passage",
+    "reading-topic-request-label": "What kind of topic would you like? (optional)",
+    "reading-topic-request-placeholder": "e.g. travel, food, expressions used at work",
     "reading-generate-button": "Generate a new passage",
     "reading-generating": "Generating…",
     "reading-need-llm": "Please add an LLM connection in the Settings tab.",
@@ -42,6 +44,8 @@ export const readingMessages = {
   },
   ja: {
     "reading-generate-heading": "新しい文章",
+    "reading-topic-request-label": "どんなトピックがいい？（任意）",
+    "reading-topic-request-placeholder": "例: 旅行の話、食べ物、仕事で使う表現 など",
     "reading-generate-button": "新しい文章を生成",
     "reading-generating": "生成中…",
     "reading-need-llm": "設定タブでLLM接続を追加してください。",
@@ -78,6 +82,8 @@ export const readingMessages = {
   },
   "zh-CN": {
     "reading-generate-heading": "新文章",
+    "reading-topic-request-label": "想要什么样的主题？（可选）",
+    "reading-topic-request-placeholder": "例如：旅行、美食、工作中常用的表达",
     "reading-generate-button": "生成新文章",
     "reading-generating": "生成中…",
     "reading-need-llm": "请在设置标签页中添加LLM连接。",
@@ -114,6 +120,8 @@ export const readingMessages = {
   },
   "zh-TW": {
     "reading-generate-heading": "新文章",
+    "reading-topic-request-label": "想要什麼樣的主題？（選填）",
+    "reading-topic-request-placeholder": "例如：旅行、美食、工作中常用的表達",
     "reading-generate-button": "生成新文章",
     "reading-generating": "生成中…",
     "reading-need-llm": "請在設定標籤頁中新增LLM連線。",

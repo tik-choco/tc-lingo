@@ -69,6 +69,7 @@ export function ReadingView() {
 
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState("");
+  const [topicRequest, setTopicRequest] = useState("");
 
   async function generate() {
     if (!connection) {
@@ -88,6 +89,7 @@ export function ReadingView() {
           .slice(0, MAX_REVIEW_WORDS)
           .map((c) => c.front),
         recentTitles: passages.slice(0, 10).map((p) => p.title),
+        topicRequest: topicRequest.trim() || undefined,
       });
       setOpenPassageId(passage.id);
     } catch (e) {
@@ -164,15 +166,28 @@ export function ReadingView() {
         {!connection ? (
           <p class="hint-text">{t("reading-need-llm")}</p>
         ) : (
-          <div class="button-row">
-            <button type="button" class="primary-button" onClick={generate} disabled={generating}>
-              <Sparkles size={16} />
-              {generating ? t("reading-generating") : t("reading-generate-button")}
-            </button>
-            {levelBand && (
-              <span class="language-badge reading-level-badge">{t("reading-level-badge", { band: levelBand })}</span>
-            )}
-          </div>
+          <>
+            <div class="field-grid">
+              <label>
+                {t("reading-topic-request-label")}
+                <input
+                  type="text"
+                  value={topicRequest}
+                  onInput={(e) => setTopicRequest((e.target as HTMLInputElement).value)}
+                  placeholder={t("reading-topic-request-placeholder")}
+                />
+              </label>
+            </div>
+            <div class="button-row">
+              <button type="button" class="primary-button" onClick={generate} disabled={generating}>
+                <Sparkles size={16} />
+                {generating ? t("reading-generating") : t("reading-generate-button")}
+              </button>
+              {levelBand && (
+                <span class="language-badge reading-level-badge">{t("reading-level-badge", { band: levelBand })}</span>
+              )}
+            </div>
+          </>
         )}
         {connection && <p class="hint-text">{t("reading-level-hint")}</p>}
         {error && <p class="error-text">{error}</p>}

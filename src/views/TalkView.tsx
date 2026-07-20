@@ -10,10 +10,15 @@
 // lib/level.ts's per-language proficiency estimate. Ending a session offers
 // turning any corrected learner lines into review cards via the same
 // MistakeCardPicker flow as PracticeView — shown only when auto-extraction
-// is off, since it would otherwise duplicate the background flow.
+// is off, since it would otherwise duplicate the background flow. The most
+// recent learner+assistant exchange (only) can be edited in place — the
+// learner retypes their line, the old pair is dropped, and a fresh
+// requestConversationReply call replaces it, so the log always reads as one
+// coherent conversation rather than gaining visible "redo" branches.
 import { useEffect, useRef, useState } from "preact/hooks";
-import { Loader2, MessageCircle, Send, Square, Trash2, Volume2 } from "lucide-preact";
+import { Loader2, MessageCircle, Pencil, Send, Square, Trash2, Volume2 } from "lucide-preact";
 import type { Card, ConversationSession, ConversationTurn } from "../types";
+import type { ConversationReplyResult } from "../lib/conversation";
 import {
   addConversation,
   deleteConversation,
@@ -24,6 +29,7 @@ import {
   subscribeConversations,
   updateConversation,
 } from "../lib/conversation";
+import type { LlmConnection } from "../lib/llmConnection";
 import { addCard } from "../lib/cards";
 import { autoExtractMistakeCards } from "../lib/autoExtract";
 import { effectiveBand, recordOutputSample, subscribeLevels } from "../lib/level";
@@ -76,6 +82,7 @@ function TalkCorrection({
   original,
   corrected,
   correctedReading,
+  correctedTranslation,
   reasons,
   autoAdded,
   sentenceCardsState,
@@ -85,10 +92,13 @@ function TalkCorrection({
   language,
   turnId,
   showReadingAids,
+  translationRevealed,
+  onToggleTranslation,
 }: {
   original: string;
   corrected: string;
   correctedReading: string;
+  correctedTranslation: string;
   reasons: string;
   autoAdded?: Card[];
   sentenceCardsState?: SentenceCardsSaveState;
@@ -98,6 +108,8 @@ function TalkCorrection({
   language: string;
   turnId: string;
   showReadingAids: boolean;
+  translationRevealed: boolean;
+  onToggleTranslation: () => void;
 }) {
   const [expanded, setExpanded] = useState(true);
   const [typingPractice, setTypingPractice] = useState(false);
@@ -143,6 +155,19 @@ function TalkCorrection({
             ))}
           </p>
           {showReadingAids && correctedReading && <p class="reading-aid">{correctedReading}</p>}
+          {correctedTranslation && (
+            <div class="talk-bubble-translation-row">
+              <button
+                type="button"
+                class="link-button talk-bubble-translation-toggle"
+                aria-expanded={translationRevealed}
+                onClick={onToggleTranslation}
+              >
+                {translationRevealed ? t("talk-translation-hide") : t("talk-translation-show")}
+              </button>
+              {translationRevealed && <p class="talk-bubble-translation">{correctedTranslation}</p>}
+            </div>
+          )}
           {reasons && <p class="talk-correction-reasons">{reasons}</p>}
         </div>
       )}
@@ -208,6 +233,17 @@ function TalkBubble({
   onSaveSentenceCards,
   canSaveSentenceCards,
   showReadingAids,
+  translationRevealed,
+  onToggleTranslation,
+  canEdit,
+  editing,
+  editText,
+  onEditTextChange,
+  onStartEdit,
+  onCancelEdit,
+  onSubmitEdit,
+  editSubmitting,
+  editError,
 }: {
   turn: ConversationTurn;
   language: string;
@@ -217,13 +253,64 @@ function TalkBubble({
   onSaveSentenceCards: () => void;
   canSaveSentenceCards: boolean;
   showReadingAids: boolean;
+  translationRevealed: boolean;
+  onToggleTranslation: () => void;
+  canEdit: boolean;
+  editing: boolean;
+  editText: string;
+  onEditTextChange: (value: string) => void;
+  onStartEdit: () => void;
+  onCancelEdit: () => void;
+  onSubmitEdit: (event: Event) => void;
+  editSubmitting: boolean;
+  editError: string;
 }) {
   const speaking = speech.speakingId === turn.id;
   const loading = speech.loadingId === turn.id;
   return (
     <div class={`talk-bubble talk-bubble-${turn.role}`}>
-      <p class="talk-bubble-text">{turn.text}</p>
+      {editing ? (
+        <form class="talk-edit-form" onSubmit={onSubmitEdit}>
+          <textarea
+            class="practice-textarea"
+            value={editText}
+            onInput={(e) => onEditTextChange((e.target as HTMLTextAreaElement).value)}
+            onKeyDown={(e) => {
+              if ((e.ctrlKey || e.metaKey) && e.key === "Enter" && !editSubmitting && editText.trim()) {
+                e.preventDefault();
+                onSubmitEdit(e);
+              }
+            }}
+            rows={3}
+          />
+          <div class="button-row">
+            <button type="submit" class="primary-button" disabled={editSubmitting || !editText.trim()}>
+              <Send size={16} />
+              {editSubmitting ? t("talk-sending") : t("talk-edit-resend")}
+            </button>
+            <button type="button" onClick={onCancelEdit} disabled={editSubmitting}>
+              {t("talk-edit-cancel")}
+            </button>
+          </div>
+          {editError && <p class="error-text">{editError}</p>}
+        </form>
+      ) : (
+        <p class="talk-bubble-text">{turn.text}</p>
+      )}
       {turn.role === "assistant" && showReadingAids && turn.reading && <p class="reading-aid">{turn.reading}</p>}
+      {turn.role === "assistant" && turn.translation && (
+        <div class="talk-bubble-translation-row">
+          <button
+            type="button"
+            class="link-button talk-bubble-translation-toggle"
+            aria-expanded={translationRevealed}
+            onClick={onToggleTranslation}
+          >
+            {translationRevealed ? t("talk-translation-hide") : t("talk-translation-show")}
+          </button>
+          {translationRevealed && <p class="talk-bubble-translation">{turn.translation}</p>}
+        </div>
+      )}
       {turn.role === "assistant" && speech.supported && (
         <div class="talk-bubble-actions">
           <button
@@ -239,11 +326,19 @@ function TalkBubble({
           </button>
         </div>
       )}
-      {turn.role === "learner" && turn.corrected && (
+      {turn.role === "learner" && canEdit && !editing && (
+        <div class="talk-bubble-actions">
+          <button type="button" class="link-button talk-edit-toggle" onClick={onStartEdit}>
+            <Pencil size={14} /> {t("talk-edit-button")}
+          </button>
+        </div>
+      )}
+      {turn.role === "learner" && turn.corrected && !editing && (
         <TalkCorrection
           original={turn.text}
           corrected={turn.corrected}
           correctedReading={turn.correctedReading}
+          correctedTranslation={turn.correctedTranslation}
           reasons={turn.reasons}
           autoAdded={autoAdded}
           sentenceCardsState={sentenceCardsState}
@@ -253,6 +348,8 @@ function TalkBubble({
           language={language}
           turnId={turn.id}
           showReadingAids={showReadingAids}
+          translationRevealed={translationRevealed}
+          onToggleTranslation={onToggleTranslation}
         />
       )}
     </div>
@@ -283,10 +380,20 @@ export function TalkView() {
 
   const [starting, setStarting] = useState(false);
   const [startError, setStartError] = useState("");
+  const [topicRequest, setTopicRequest] = useState("");
 
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState("");
+
+  // "Edit + resend" state for the last learner+assistant exchange (see
+  // editableTurnId / submitEdit below) — independent of the composer's
+  // text/sending/sendError above, since the two forms are mutually exclusive
+  // (the composer is hidden while an edit is in progress).
+  const [editingTurnId, setEditingTurnId] = useState<string | null>(null);
+  const [editText, setEditText] = useState("");
+  const [editSubmitting, setEditSubmitting] = useState(false);
+  const [editError, setEditError] = useState("");
 
   const [candidates, setCandidates] = useState<CardCandidate[] | null>(null);
   const [extracting, setExtracting] = useState(false);
@@ -304,6 +411,18 @@ export function TalkView() {
   // independent of the background auto-extraction above.
   const [sentenceCardsByTurn, setSentenceCardsByTurn] = useState<Record<string, SentenceCardsSaveState>>({});
 
+  // Which assistant turns currently have their translation revealed (same
+  // toggle-per-line idea as ReadingView's revealedSentences), keyed by turn id.
+  const [revealedTranslations, setRevealedTranslations] = useState<Set<string>>(new Set());
+  function toggleTranslation(turnId: string) {
+    setRevealedTranslations((prev) => {
+      const next = new Set(prev);
+      if (next.has(turnId)) next.delete(turnId);
+      else next.add(turnId);
+      return next;
+    });
+  }
+
   const composerRef = useRef<HTMLTextAreaElement>(null);
   useEffect(() => {
     if (activeSession && !activeSession.endedAt) composerRef.current?.focus();
@@ -317,6 +436,11 @@ export function TalkView() {
     setCardsAdded(0);
     setAutoAddedByTurn({});
     setSentenceCardsByTurn({});
+    setRevealedTranslations(new Set());
+    setEditingTurnId(null);
+    setEditText("");
+    setEditSubmitting(false);
+    setEditError("");
   }
 
   function openSession(id: string) {
@@ -344,8 +468,14 @@ export function TalkView() {
         targetLanguage: settings.activeLanguage,
         nativeLanguage: settings.nativeLanguage,
         recentTitles: sessions.slice(0, 10).map((s) => s.title),
+        topicRequest: topicRequest.trim() || undefined,
       });
-      const opening = newTurn({ role: "assistant", text: result.opening, reading: result.openingReading });
+      const opening = newTurn({
+        role: "assistant",
+        text: result.opening,
+        reading: result.openingReading,
+        translation: result.openingTranslation,
+      });
       const session = addConversation({
         language: settings.activeLanguage,
         title: result.title,
@@ -358,6 +488,55 @@ export function TalkView() {
     } finally {
       setStarting(false);
     }
+  }
+
+  /** Builds the learner+assistant turn pair from a requestConversationReply
+   * result, feeds lib/level.ts's proficiency estimate, and fires the
+   * background mistake-card auto-extraction — shared by sendMessage
+   * (appends to the log) and submitEdit (replaces the last exchange). */
+  function buildReplyTurns(
+    result: ConversationReplyResult,
+    learnerText: string,
+    cardsConn: LlmConnection,
+  ): [ConversationTurn, ConversationTurn] {
+    const learnerTurn = newTurn({
+      role: "learner",
+      text: learnerText,
+      corrected: result.corrected,
+      correctedReading: result.correctedReading,
+      correctedTranslation: result.correctedTranslation,
+      reasons: result.reasons,
+    });
+    const assistantTurn = newTurn({
+      role: "assistant",
+      text: result.reply,
+      reading: result.replyReading,
+      translation: result.replyTranslation,
+    });
+
+    // Feed the per-language proficiency estimate (lib/level.ts) — a
+    // flawless turn (corrected === "") is a positive signal too.
+    recordOutputSample(sessionLanguage, learnerText, result.corrected);
+
+    // Fire-and-forget background mistake-card extraction (lib/autoExtract.ts):
+    // never awaited, so it can't block the chat flow or the typing
+    // indicator. Gates on settings.autoExtractCards itself; the resolved
+    // notice is attached to this learner turn's correction block.
+    if (result.corrected.trim()) {
+      autoExtractMistakeCards({
+        connection: cardsConn,
+        targetLanguage: sessionLanguage,
+        nativeLanguage: settings.nativeLanguage,
+        original: learnerText,
+        corrected: result.corrected,
+        reasons: result.reasons,
+        sourceTopicId: null,
+      }).then((added) => {
+        if (added.length > 0) setAutoAddedByTurn((prev) => ({ ...prev, [learnerTurn.id]: added }));
+      });
+    }
+
+    return [learnerTurn, assistantTurn];
   }
 
   async function sendMessage(event: Event) {
@@ -383,42 +562,67 @@ export function TalkView() {
         turns: activeSession.turns,
         learnerText,
       });
-      const learnerTurn = newTurn({
-        role: "learner",
-        text: learnerText,
-        corrected: result.corrected,
-        correctedReading: result.correctedReading,
-        reasons: result.reasons,
-      });
-      const assistantTurn = newTurn({ role: "assistant", text: result.reply, reading: result.replyReading });
+      const [learnerTurn, assistantTurn] = buildReplyTurns(result, learnerText, cardsConn);
       updateConversation(activeSession.id, { turns: [...activeSession.turns, learnerTurn, assistantTurn] });
       setText("");
-
-      // Feed the per-language proficiency estimate (lib/level.ts) — a
-      // flawless turn (corrected === "") is a positive signal too.
-      recordOutputSample(sessionLanguage, learnerText, result.corrected);
-
-      // Fire-and-forget background mistake-card extraction (lib/autoExtract.ts):
-      // never awaited, so it can't block the chat flow or the typing
-      // indicator. Gates on settings.autoExtractCards itself; the resolved
-      // notice is attached to this learner turn's correction block.
-      if (result.corrected.trim()) {
-        autoExtractMistakeCards({
-          connection: cardsConn,
-          targetLanguage: sessionLanguage,
-          nativeLanguage: settings.nativeLanguage,
-          original: learnerText,
-          corrected: result.corrected,
-          reasons: result.reasons,
-          sourceTopicId: null,
-        }).then((added) => {
-          if (added.length > 0) setAutoAddedByTurn((prev) => ({ ...prev, [learnerTurn.id]: added }));
-        });
-      }
     } catch (e) {
       setSendError(localizeNetworkError(e, t("talk-send-failed")));
     } finally {
       setSending(false);
+    }
+  }
+
+  function startEdit(turn: ConversationTurn) {
+    setEditingTurnId(turn.id);
+    setEditText(turn.text);
+    setEditError("");
+  }
+
+  function cancelEdit() {
+    setEditingTurnId(null);
+    setEditText("");
+    setEditError("");
+  }
+
+  /** Replaces the last learner+assistant exchange in place: drops that pair
+   * from the log, then re-runs requestConversationReply against the history
+   * before it with the retyped text, same as a fresh sendMessage but
+   * overwriting instead of appending. Only ever offered for the most recent
+   * exchange (see editableTurnId) so earlier turns can't drift out of sync
+   * with what the AI partner said next. */
+  async function submitEdit(event: Event) {
+    event.preventDefault();
+    if (!activeSession || activeSession.endedAt || editingTurnId === null || !editText.trim()) return;
+    const editIndex = activeSession.turns.findIndex((turn) => turn.id === editingTurnId);
+    if (editIndex === -1) return;
+    const historyTurns = activeSession.turns.slice(0, editIndex);
+    if (!connection) {
+      setEditError(t("talk-need-llm"));
+      return;
+    }
+    const conversationConn = connectionForTask("conversation");
+    if (!conversationConn) return;
+    const cardsConn = connectionForTask("cards");
+    if (!cardsConn) return;
+    setEditError("");
+    setEditSubmitting(true);
+    const learnerText = editText;
+    try {
+      const result = await requestConversationReply({
+        connection: conversationConn,
+        targetLanguage: sessionLanguage,
+        nativeLanguage: settings.nativeLanguage,
+        scenario: activeSession.scenario,
+        turns: historyTurns,
+        learnerText,
+      });
+      const [learnerTurn, assistantTurn] = buildReplyTurns(result, learnerText, cardsConn);
+      updateConversation(activeSession.id, { turns: [...historyTurns, learnerTurn, assistantTurn] });
+      cancelEdit();
+    } catch (e) {
+      setEditError(localizeNetworkError(e, t("talk-send-failed")));
+    } finally {
+      setEditSubmitting(false);
     }
   }
 
@@ -455,6 +659,16 @@ export function TalkView() {
   }
 
   const correctedTurns = activeSession ? activeSession.turns.filter((turn) => turn.role === "learner" && turn.corrected) : [];
+
+  // The one learner turn (if any) eligible for "edit + resend": the last
+  // exchange in an active (not-ended) session. Editing an earlier turn would
+  // desync it from what the AI partner already said in reply, so it's never
+  // offered.
+  const lastTwoTurns = activeSession ? activeSession.turns.slice(-2) : [];
+  const editableTurnId =
+    activeSession && !activeSession.endedAt && lastTwoTurns.length === 2 && lastTwoTurns[0].role === "learner" && lastTwoTurns[1].role === "assistant"
+      ? lastTwoTurns[0].id
+      : null;
 
   async function extractCards() {
     if (!activeSession || !connection || correctedTurns.length === 0) return;
@@ -494,6 +708,17 @@ export function TalkView() {
         <section class="card-panel">
           <h2>{t("talk-start-heading")}</h2>
           <p class="hint-text">{t("talk-start-hint")}</p>
+          <div class="field-grid">
+            <label>
+              {t("talk-topic-request-label")}
+              <input
+                type="text"
+                value={topicRequest}
+                onInput={(e) => setTopicRequest((e.target as HTMLInputElement).value)}
+                placeholder={t("talk-topic-request-placeholder")}
+              />
+            </label>
+          </div>
           <div class="button-row">
             <button type="button" class="primary-button" onClick={startConversation} disabled={starting}>
               <MessageCircle size={16} />
@@ -559,13 +784,24 @@ export function TalkView() {
               onSaveSentenceCards={() => saveTurnSentenceCards(turn)}
               canSaveSentenceCards={!!connection}
               showReadingAids={settings.showReadingAids}
+              translationRevealed={revealedTranslations.has(turn.id)}
+              onToggleTranslation={() => toggleTranslation(turn.id)}
+              canEdit={turn.id === editableTurnId}
+              editing={editingTurnId === turn.id}
+              editText={editText}
+              onEditTextChange={setEditText}
+              onStartEdit={() => startEdit(turn)}
+              onCancelEdit={cancelEdit}
+              onSubmitEdit={submitEdit}
+              editSubmitting={editSubmitting}
+              editError={editError}
             />
           ))}
           {sending && <p class="talk-typing-indicator">{t("talk-typing")}</p>}
         </div>
         {speech.speechError && <p class="speak-error">{speech.speechError}</p>}
 
-        {!activeSession.endedAt && (
+        {!activeSession.endedAt && editingTurnId === null && (
           <form class="talk-composer" onSubmit={sendMessage}>
             <textarea
               ref={composerRef}
