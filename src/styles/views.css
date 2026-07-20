@@ -1552,6 +1552,90 @@ button:disabled {
   gap: var(--space-4);
 }
 
+/* ---------------- Settings view: 同期 tab (components/SyncPanel.tsx) ----------------
+   Device-to-device sync: QR/URL invite card, phase status lines, and the
+   post-sync per-store summary list. */
+
+.sync-status {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+.sync-spin {
+  animation: sync-spin 1s linear infinite;
+}
+
+@keyframes sync-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* QrCode renders a fixed black-on-white SVG (scanners need that exact
+   contrast regardless of app theme), so it gets its own always-white,
+   padded card — otherwise it would sit directly on a dark surface in dark
+   theme and lose contrast at the edges. This is a deliberate exception to
+   the token-only rule: there's no theme-varying token for "always white". */
+.sync-qr-card {
+  align-self: flex-start;
+  padding: var(--space-4);
+  background: #ffffff;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-m);
+}
+
+.sync-url-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.sync-url-row input {
+  flex: 1;
+  min-width: 0;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-s);
+  background: var(--surface-2);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 0.85rem;
+}
+
+.sync-summary-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.sync-summary-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-s);
+  background: var(--surface-2);
+}
+
+.sync-summary-store {
+  font-weight: 600;
+}
+
+.sync-summary-counts {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
 /* ---------------- Settings view: タスク tab rows ----------------
    One row per LLM task (既定 + LLM_TASKS + TTS): a short label (with a hover
    tooltip carrying the fuller description, see the [data-tip] rule below)

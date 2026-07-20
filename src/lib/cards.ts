@@ -2,10 +2,14 @@
 import type { Card, CardSource, ReviewGrade } from "../types";
 import { initialSrsFields, scheduleReview, isDue } from "./srs";
 import { loadJson, newId, saveJson, subscribeStorage } from "./storage";
+import { recordTombstone } from "./sync/tombstones";
 
 const STORAGE_NAME = "cards-v1";
 
-function isCard(value: unknown): value is Card {
+/** Exported so lib/sync/snapshot.ts can validate remote cards with the exact
+ * same rules used to load local ones. `updatedAt` is optional here to accept
+ * cards saved before the sync feature existed — see sanitizeCards. */
+export function isCard(value: unknown): value is Card {
   if (value === null || typeof value !== "object") return false;
   const r = value as Record<string, unknown>;
   return (
@@ -24,17 +28,25 @@ function isCard(value: unknown): value is Card {
     typeof r.intervalDays === "number" &&
     typeof r.easeFactor === "number" &&
     typeof r.reps === "number" &&
-    typeof r.lapses === "number"
+    typeof r.lapses === "number" &&
+    (r.updatedAt === undefined || typeof r.updatedAt === "string")
   );
 }
 
-export function loadCards(): Card[] {
-  const raw = loadJson<unknown[]>(STORAGE_NAME, []);
+/** Filters + backfills a raw array into valid Cards: `language` predates
+ * multi-language support on some saved cards (backfilled to "", shown
+ * regardless of the active language filter, rather than dropping the card);
+ * `updatedAt` predates the sync feature (backfilled to `createdAt` — a
+ * stable, deterministic timestamp, not `now`, so a pre-sync card doesn't
+ * spuriously look newer than it is). Exported so lib/sync/snapshot.ts can
+ * apply identical sanitization to a remote snapshot's cards. */
+export function sanitizeCards(raw: unknown): Card[] {
   if (!Array.isArray(raw)) return [];
-  // `language` predates multi-language support on some saved cards; treat
-  // missing as "" (shown regardless of the active language filter) rather
-  // than dropping the card.
-  return raw.filter(isCard).map((c) => ({ ...c, language: c.language ?? "" }));
+  return raw.filter(isCard).map((c) => ({ ...c, language: c.language ?? "", updatedAt: c.updatedAt ?? c.createdAt }));
+}
+
+export function loadCards(): Card[] {
+  return sanitizeCards(loadJson<unknown[]>(STORAGE_NAME, []));
 }
 
 function saveCards(cards: Card[]): void {
@@ -60,6 +72,7 @@ export interface NewCardInput {
 }
 
 export function addCard(input: NewCardInput): Card {
+  const now = new Date().toISOString();
   const card: Card = {
     id: newId(),
     front: input.front.trim(),
@@ -71,7 +84,8 @@ export function addCard(input: NewCardInput): Card {
     source: input.source ?? "manual",
     sourceTopicId: input.sourceTopicId ?? null,
     language: input.language ?? "",
-    createdAt: new Date().toISOString(),
+    createdAt: now,
+    updatedAt: now,
     ...initialSrsFields(),
   };
   saveCards([...loadCards(), card]);
@@ -79,6 +93,7 @@ export function addCard(input: NewCardInput): Card {
 }
 
 export function updateCard(id: string, patch: Partial<NewCardInput>): void {
+  const now = new Date().toISOString();
   const cards = loadCards().map((c) =>
     c.id === id
       ? {
@@ -89,6 +104,7 @@ export function updateCard(id: string, patch: Partial<NewCardInput>): void {
           ...(patch.exampleSentence !== undefined ? { exampleSentence: patch.exampleSentence.trim() } : {}),
           ...(patch.context !== undefined ? { context: patch.context.trim() } : {}),
           ...(patch.cloze !== undefined ? { cloze: patch.cloze.trim() } : {}),
+          updatedAt: now,
         }
       : c,
   );
@@ -97,10 +113,13 @@ export function updateCard(id: string, patch: Partial<NewCardInput>): void {
 
 export function deleteCard(id: string): void {
   saveCards(loadCards().filter((c) => c.id !== id));
+  recordTombstone("cards", id);
 }
 
 export function gradeCard(id: string, grade: ReviewGrade, now: Date = new Date()): void {
-  const cards = loadCards().map((c) => (c.id === id ? { ...c, ...scheduleReview(c, grade, now) } : c));
+  const cards = loadCards().map((c) =>
+    c.id === id ? { ...c, ...scheduleReview(c, grade, now), updatedAt: now.toISOString() } : c,
+  );
   saveCards(cards);
 }
 
@@ -110,4 +129,12 @@ export function dueCards(now: Date = new Date(), language?: string): Card[] {
   return loadCards()
     .filter((c) => isDue(c, now) && (!language || c.language === language || c.language === ""))
     .sort((a, b) => new Date(a.dueAt).getTime() - new Date(b.dueAt).getTime());
+}
+
+/** Bulk-replaces the entire card store with `cards` (one save, one change
+ * event) — persistence only, no id lookup/merge. Only lib/sync/snapshot.ts
+ * should call this; every other write path goes through addCard/updateCard/
+ * deleteCard/gradeCard above so `updatedAt`/tombstones stay correct. */
+export function replaceCardsForSync(cards: Card[]): void {
+  saveCards(cards);
 }

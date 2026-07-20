@@ -42,6 +42,8 @@ import { LanguageSelect } from "../components/LanguageSelect";
 import { requestOnboarding } from "../lib/onboarding";
 import { useNetworkConsumerStatusWithTimestamp } from "../hooks/useNetworkConsumerStatus";
 import { useSpeech } from "../hooks/useSpeech";
+import { getSyncState } from "../lib/sync/session";
+import { SyncPanel } from "../components/SyncPanel";
 import { t } from "../i18n";
 
 // Mirrors level.ts's private MIN_SAMPLES — how many output samples the
@@ -122,17 +124,23 @@ function getHostLabel(baseUrl: string): string {
   }
 }
 
-type SettingsTab = "general" | "connection" | "network" | "tasks";
+type SettingsTab = "general" | "connection" | "network" | "tasks" | "sync";
 
 const TABS: Array<{ id: SettingsTab; labelKey: string }> = [
   { id: "general", labelKey: "settings-tab-general" },
   { id: "connection", labelKey: "settings-tab-connection" },
   { id: "network", labelKey: "settings-tab-network" },
   { id: "tasks", labelKey: "settings-tab-tasks" },
+  { id: "sync", labelKey: "settings-tab-sync" },
 ];
 
 export function SettingsView() {
-  const [activeTab, setActiveTab] = useState<SettingsTab>("general");
+  // A `#/sync/<roomId>` deep link (or a sync session already underway from
+  // before a reload) should land directly on the 同期 tab instead of 全般.
+  const [activeTab, setActiveTab] = useState<SettingsTab>(() => {
+    const syncState = getSyncState();
+    return syncState.pendingJoinRoomId || syncState.phase !== "idle" ? "sync" : "general";
+  });
   const [settings, setSettings] = useState(loadSettings);
   useEffect(() => subscribeSettings(() => setSettings(loadSettings())), []);
   const [levelRecords, setLevelRecords] = useState(loadLevels);
@@ -1309,6 +1317,12 @@ export function SettingsView() {
             {!speech.supported ? <p class="hint-text">{t("settings-tts-test-unsupported")}</p> : null}
             {speech.speechError ? <p class="error-text">{speech.speechError}</p> : null}
           </section>
+        </div>
+      )}
+
+      {activeTab === "sync" && (
+        <div class="settings-tab-panel" role="tabpanel">
+          <SyncPanel />
         </div>
       )}
     </div>

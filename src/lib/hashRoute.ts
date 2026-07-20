@@ -3,11 +3,15 @@
 // into useState / useEffect however it likes. Same pattern as tc-books.
 //
 // Recognized shapes: #/practice  #/reading  #/talk  #/review  #/cards
-// #/history  #/settings
+// #/history  #/settings  #/sync/<roomId> (device-to-device sync invite link —
+// resolves to the settings tab with syncRoomId set; see lib/sync/types.ts)
 import type { MainTab } from "../types";
 
 export interface HashState {
   tab: MainTab | null;
+  /** Set only for a `#/sync/<roomId>` deep link — always paired with
+   * `tab: "settings"`. See lib/sync/session.ts's requestSyncJoin. */
+  syncRoomId?: string;
 }
 
 const EMPTY_STATE: HashState = { tab: null };
@@ -32,6 +36,10 @@ export function parseHash(hash: string): HashState {
   const parts = body.slice(1).split("/").filter((p) => p.length > 0);
   if (parts.length === 0) return EMPTY_STATE;
   const [tabPart] = parts;
+  if (tabPart === "sync") {
+    const roomId = parts.slice(1).join("/");
+    return roomId ? { tab: "settings", syncRoomId: roomId } : EMPTY_STATE;
+  }
   return isMainTab(tabPart) ? { tab: tabPart } : EMPTY_STATE;
 }
 

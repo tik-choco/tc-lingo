@@ -33,6 +33,9 @@ export interface Card {
   easeFactor: number;
   reps: number;
   lapses: number;
+  /** ISO timestamp, bumped on every mutation to this card; exists for the
+   * device-to-device sync feature's LWW merge — see lib/sync/types.ts. */
+  updatedAt: string;
 }
 
 export type ReviewGrade = "again" | "hard" | "good" | "easy";
@@ -47,6 +50,9 @@ export interface Topic {
    * for topics saved before multi-language support existed. */
   language: string;
   createdAt: string;
+  /** ISO timestamp, bumped on every mutation to this topic; exists for the
+   * device-to-device sync feature's LWW merge — see lib/sync/types.ts. */
+  updatedAt: string;
 }
 
 /** round 1 = 初回, 2 = 同日の改善版, 3 = 翌日以降の再挑戦。 */
@@ -76,6 +82,9 @@ export interface PracticeAttempt {
   retryCorrectedReading: string;
   /** Explanation for retryCorrected, in the learner's native language. */
   retryReasons: string;
+  /** ISO timestamp, bumped on every mutation to this attempt; exists for the
+   * device-to-device sync feature's LWW merge — see lib/sync/types.ts. */
+  updatedAt: string;
 }
 
 /** One AI-generated comprehensible-input passage (読む tab). Sentences stay
@@ -99,6 +108,9 @@ export interface ReadingPassage {
   question: string;
   questionAnswer: string;
   createdAt: string;
+  /** ISO timestamp, bumped on every mutation to this passage; exists for the
+   * device-to-device sync feature's LWW merge — see lib/sync/types.ts. */
+  updatedAt: string;
 }
 
 export type ConversationRole = "assistant" | "learner";
@@ -134,6 +146,9 @@ export interface ConversationSession {
   createdAt: string;
   /** Set when the learner ends the session; "" while still active. */
   endedAt: string;
+  /** ISO timestamp, bumped on every mutation to this session; exists for the
+   * device-to-device sync feature's LWW merge — see lib/sync/types.ts. */
+  updatedAt: string;
 }
 
 export type CefrBand = "A1" | "A2" | "B1" | "B2" | "C1" | "C2";

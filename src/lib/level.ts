@@ -30,7 +30,12 @@ function isCefrBand(value: unknown): value is CefrBand {
   return typeof value === "string" && (CEFR_BANDS as string[]).includes(value);
 }
 
-function isLevelRecord(value: unknown): value is LanguageLevelRecord {
+/** Exported so lib/sync/snapshot.ts can validate remote level records with
+ * the exact same rules used to load local ones. Unlike the other domain
+ * types, LanguageLevelRecord has always had a required `updatedAt` (no
+ * backfill needed here — see recordOutputSample/setLevelOverride, which set
+ * it on every write already). */
+export function isLevelRecord(value: unknown): value is LanguageLevelRecord {
   if (value === null || typeof value !== "object") return false;
   const r = value as Record<string, unknown>;
   return (
@@ -136,6 +141,18 @@ export function setLevelOverride(language: string, band: CefrBand | ""): void {
   } else {
     records.push({ language: lang, score: 0, samples: 0, override: band, updatedAt: new Date().toISOString() });
   }
+  saveLevels(records);
+}
+
+/** Bulk-replaces the entire level store with `records` (one save, one change
+ * event) — persistence only, no id lookup/merge. Only lib/sync/snapshot.ts
+ * should call this; every other write path goes through
+ * recordOutputSample/setLevelOverride above so `updatedAt` stays correct.
+ * There is no delete path for level records (no UI action removes one, and
+ * removing a target language via lib/settings.ts's removeTargetLanguage
+ * leaves its level record in place — see lib/sync/tombstones.ts's header for
+ * why "levels" therefore never needs a tombstone). */
+export function replaceLevelsForSync(records: LanguageLevelRecord[]): void {
   saveLevels(records);
 }
 

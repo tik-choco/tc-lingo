@@ -3,11 +3,15 @@
 // core differentiator this app is built around — see CLAUDE.md.
 import type { AttemptRound, PracticeAttempt, Topic } from "../types";
 import { loadJson, newId, saveJson, subscribeStorage } from "./storage";
+import { recordTombstone } from "./sync/tombstones";
 
 const TOPICS_NAME = "topics-v1";
 const ATTEMPTS_NAME = "attempts-v1";
 
-function isTopic(value: unknown): value is Topic {
+/** Exported so lib/sync/snapshot.ts can validate remote topics with the
+ * exact same rules used to load local ones. `updatedAt` is optional here to
+ * accept topics saved before the sync feature existed — see sanitizeTopics. */
+export function isTopic(value: unknown): value is Topic {
   if (value === null || typeof value !== "object") return false;
   const r = value as Record<string, unknown>;
   return (
@@ -16,11 +20,13 @@ function isTopic(value: unknown): value is Topic {
     typeof r.prompt === "string" &&
     typeof r.custom === "boolean" &&
     (r.language === undefined || typeof r.language === "string") &&
-    typeof r.createdAt === "string"
+    typeof r.createdAt === "string" &&
+    (r.updatedAt === undefined || typeof r.updatedAt === "string")
   );
 }
 
-function isAttempt(value: unknown): value is PracticeAttempt {
+/** Same optional-`updatedAt` convention as isTopic — see sanitizeAttempts. */
+export function isAttempt(value: unknown): value is PracticeAttempt {
   if (value === null || typeof value !== "object") return false;
   const r = value as Record<string, unknown>;
   return (
@@ -37,20 +43,19 @@ function isAttempt(value: unknown): value is PracticeAttempt {
     typeof r.retryAnswer === "string" &&
     (r.retryCorrected === undefined || typeof r.retryCorrected === "string") &&
     (r.retryCorrectedReading === undefined || typeof r.retryCorrectedReading === "string") &&
-    (r.retryReasons === undefined || typeof r.retryReasons === "string")
+    (r.retryReasons === undefined || typeof r.retryReasons === "string") &&
+    (r.updatedAt === undefined || typeof r.updatedAt === "string")
   );
 }
 
-/** `language`, when given, also matches topics saved with "" (unassigned,
- * predating multi-language support) so they aren't orphaned out of view. */
-export function loadTopics(language?: string): Topic[] {
-  const raw = loadJson<unknown[]>(TOPICS_NAME, []);
-  const topics = Array.isArray(raw) ? raw.filter(isTopic).map((t) => ({ ...t, language: t.language ?? "" })) : [];
-  return language ? topics.filter((t) => t.language === language || t.language === "") : topics;
-}
-
-function saveTopics(topics: Topic[]): void {
-  saveJson(TOPICS_NAME, topics);
+/** Filters + backfills a raw array into valid Topics: `language` predates
+ * multi-language support (backfilled to ""); `updatedAt` predates the sync
+ * feature (backfilled to `createdAt`, same rationale as cards.ts's
+ * sanitizeCards). Exported so lib/sync/snapshot.ts can apply identical
+ * sanitization to a remote snapshot's topics. */
+export function sanitizeTopics(raw: unknown): Topic[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.filter(isTopic).map((t) => ({ ...t, language: t.language ?? "", updatedAt: t.updatedAt ?? t.createdAt }));
 }
 
 /** `retryCorrected`/`retryReasons` predate the retry-check feature on some
@@ -58,19 +63,36 @@ function saveTopics(topics: Topic[]): void {
  * pattern as cards.ts's `language` backfill. `correctedReading`/
  * `retryPromptReading`/`retryCorrectedReading` predate the always-visible
  * reading-aid feature (lib/languages.ts readingAid) — backfilled to "" the
- * same way. */
+ * same way. `updatedAt` predates the sync feature — backfilled to
+ * `createdAt`, same rationale as cards.ts's sanitizeCards. Exported so
+ * lib/sync/snapshot.ts can apply identical sanitization to a remote
+ * snapshot's attempts. */
+export function sanitizeAttempts(raw: unknown): PracticeAttempt[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.filter(isAttempt).map((a) => ({
+    ...a,
+    correctedReading: a.correctedReading ?? "",
+    retryPromptReading: a.retryPromptReading ?? "",
+    retryCorrected: a.retryCorrected ?? "",
+    retryCorrectedReading: a.retryCorrectedReading ?? "",
+    retryReasons: a.retryReasons ?? "",
+    updatedAt: a.updatedAt ?? a.createdAt,
+  }));
+}
+
+/** `language`, when given, also matches topics saved with "" (unassigned,
+ * predating multi-language support) so they aren't orphaned out of view. */
+export function loadTopics(language?: string): Topic[] {
+  const topics = sanitizeTopics(loadJson<unknown[]>(TOPICS_NAME, []));
+  return language ? topics.filter((t) => t.language === language || t.language === "") : topics;
+}
+
+function saveTopics(topics: Topic[]): void {
+  saveJson(TOPICS_NAME, topics);
+}
+
 export function loadAttempts(): PracticeAttempt[] {
-  const raw = loadJson<unknown[]>(ATTEMPTS_NAME, []);
-  return Array.isArray(raw)
-    ? raw.filter(isAttempt).map((a) => ({
-        ...a,
-        correctedReading: a.correctedReading ?? "",
-        retryPromptReading: a.retryPromptReading ?? "",
-        retryCorrected: a.retryCorrected ?? "",
-        retryCorrectedReading: a.retryCorrectedReading ?? "",
-        retryReasons: a.retryReasons ?? "",
-      }))
-    : [];
+  return sanitizeAttempts(loadJson<unknown[]>(ATTEMPTS_NAME, []));
 }
 
 function saveAttempts(attempts: PracticeAttempt[]): void {
@@ -82,21 +104,31 @@ export function subscribeTopics(cb: () => void): () => void {
 }
 
 export function addTopic(input: { title: string; prompt: string; custom: boolean; language?: string }): Topic {
+  const now = new Date().toISOString();
   const topic: Topic = {
     id: newId(),
     title: input.title.trim(),
     prompt: input.prompt.trim(),
     custom: input.custom,
     language: input.language ?? "",
-    createdAt: new Date().toISOString(),
+    createdAt: now,
+    updatedAt: now,
   };
   saveTopics([topic, ...loadTopics()]);
   return topic;
 }
 
 export function deleteTopic(id: string): void {
+  const orphanedAttemptIds = loadAttempts()
+    .filter((a) => a.topicId === id)
+    .map((a) => a.id);
   saveTopics(loadTopics().filter((t) => t.id !== id));
   saveAttempts(loadAttempts().filter((a) => a.topicId !== id));
+  recordTombstone("topics", id);
+  // The topic's attempts are deleted alongside it (see saveAttempts filter
+  // above) — record a tombstone for each so a peer that still has one of
+  // them removes it too instead of resurrecting it on the next sync.
+  for (const attemptId of orphanedAttemptIds) recordTombstone("attempts", attemptId);
 }
 
 export function attemptsForTopic(topicId: string): PracticeAttempt[] {
@@ -133,11 +165,12 @@ export interface NewAttemptInput {
 }
 
 export function addAttempt(input: NewAttemptInput): PracticeAttempt {
+  const now = new Date().toISOString();
   const attempt: PracticeAttempt = {
     id: newId(),
     topicId: input.topicId,
     round: input.round,
-    createdAt: new Date().toISOString(),
+    createdAt: now,
     original: input.original,
     corrected: input.corrected ?? "",
     correctedReading: input.correctedReading ?? "",
@@ -148,12 +181,30 @@ export function addAttempt(input: NewAttemptInput): PracticeAttempt {
     retryCorrected: input.retryCorrected ?? "",
     retryCorrectedReading: input.retryCorrectedReading ?? "",
     retryReasons: input.retryReasons ?? "",
+    updatedAt: now,
   };
   saveAttempts([...loadAttempts(), attempt]);
   return attempt;
 }
 
 export function updateAttempt(id: string, patch: Partial<Omit<NewAttemptInput, "topicId" | "round">>): void {
-  const attempts = loadAttempts().map((a) => (a.id === id ? { ...a, ...patch } : a));
+  const now = new Date().toISOString();
+  const attempts = loadAttempts().map((a) => (a.id === id ? { ...a, ...patch, updatedAt: now } : a));
+  saveAttempts(attempts);
+}
+
+/** Bulk-replaces the entire topic store with `topics` (one save, one change
+ * event) — persistence only, no id lookup/merge. Only lib/sync/snapshot.ts
+ * should call this; every other write path goes through addTopic/deleteTopic
+ * above so `updatedAt`/tombstones stay correct. */
+export function replaceTopicsForSync(topics: Topic[]): void {
+  saveTopics(topics);
+}
+
+/** Bulk-replaces the entire attempt store with `attempts` (one save, one
+ * change event) — persistence only, no id lookup/merge. Only
+ * lib/sync/snapshot.ts should call this; every other write path goes through
+ * addAttempt/updateAttempt above so `updatedAt`/tombstones stay correct. */
+export function replaceAttemptsForSync(attempts: PracticeAttempt[]): void {
   saveAttempts(attempts);
 }

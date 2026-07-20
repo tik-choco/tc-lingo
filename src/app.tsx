@@ -17,6 +17,8 @@ import {
 import type { MainTab } from "./types";
 import { familyAppUrl } from "./lib/familyApps";
 import { onHashChange, readHash, writeHash } from "./lib/hashRoute";
+import type { HashState } from "./lib/hashRoute";
+import { requestSyncJoin } from "./lib/sync/session";
 import { useTheme } from "./hooks/useTheme";
 import { paneEnterClass, useEnterDirection } from "./hooks/useEnterDirection";
 import { PracticeView } from "./views/PracticeView";
@@ -44,6 +46,19 @@ import { useNetworkModelSync } from "./hooks/useNetworkModelSync";
 import { isEditableTarget, SHORTCUT_PRIORITY } from "./lib/keyboard";
 import { useShortcuts } from "./hooks/useShortcuts";
 
+// `#/sync/<roomId>` deep link (opened e.g. by scanning the sync QR code):
+// stage the join for 設定 > 同期 to confirm, and rewrite the hash immediately
+// so a refresh doesn't re-trigger the prompt. Called synchronously — both
+// where `tab` is first computed (so SettingsView's own initial-tab check,
+// which reads getSyncState() at mount, sees pendingJoinRoomId already set —
+// a useEffect would run too late, after SettingsView's first render) and
+// from the hashchange handler for a same-session navigation.
+function handleSyncDeepLink(state: HashState) {
+  if (!state.syncRoomId) return;
+  requestSyncJoin(state.syncRoomId);
+  writeHash("settings");
+}
+
 const TABS: { id: MainTab; labelKey: string; icon: typeof PenLine }[] = [
   { id: "practice", labelKey: "app-tab-practice", icon: PenLine },
   { id: "reading", labelKey: "app-tab-reading", icon: BookOpen },
@@ -58,7 +73,11 @@ const TAB_ORDER = TABS.map((t) => t.id);
 
 export function App() {
   const { theme, toggleTheme } = useTheme();
-  const [tab, setTab] = useState<MainTab>(() => readHash().tab ?? "practice");
+  const [tab, setTab] = useState<MainTab>(() => {
+    const state = readHash();
+    handleSyncDeepLink(state);
+    return state.tab ?? "practice";
+  });
   const [settings, setSettings] = useState(loadSettings);
   useEffect(() => subscribeSettings(() => setSettings(loadSettings())), []);
   const dir = useEnterDirection(TAB_ORDER, tab);
@@ -126,6 +145,7 @@ export function App() {
     () =>
       onHashChange((state) => {
         if (state.tab) setTab(state.tab);
+        handleSyncDeepLink(state);
       }),
     [],
   );

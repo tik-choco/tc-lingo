@@ -10,6 +10,7 @@ import { readingAid } from "./languages";
 import { extractJson } from "./parse";
 import type { ReadingPassage } from "../types";
 import { loadJson, newId, saveJson, subscribeStorage } from "./storage";
+import { recordTombstone } from "./sync/tombstones";
 
 const STORAGE_NAME = "passages-v1";
 
@@ -31,7 +32,11 @@ function isSentence(value: unknown): value is { text: string; translation: strin
   );
 }
 
-function isReadingPassage(value: unknown): value is ReadingPassage {
+/** Exported so lib/sync/snapshot.ts can validate remote passages with the
+ * exact same rules used to load local ones. `updatedAt` is optional here to
+ * accept passages saved before the sync feature existed — see
+ * sanitizePassages. */
+export function isReadingPassage(value: unknown): value is ReadingPassage {
   if (value === null || typeof value !== "object") return false;
   const r = value as Record<string, unknown>;
   return (
@@ -44,21 +49,30 @@ function isReadingPassage(value: unknown): value is ReadingPassage {
     r.reviewWords.every((w) => typeof w === "string") &&
     typeof r.question === "string" &&
     typeof r.questionAnswer === "string" &&
-    typeof r.createdAt === "string"
+    typeof r.createdAt === "string" &&
+    (r.updatedAt === undefined || typeof r.updatedAt === "string")
   );
+}
+
+/** Filters + backfills a raw array into valid ReadingPassages: per-sentence
+ * `reading` predates the reading-aid feature (backfilled to ""); `updatedAt`
+ * predates the sync feature (backfilled to `createdAt`, same rationale as
+ * cards.ts's sanitizeCards). Exported so lib/sync/snapshot.ts can apply
+ * identical sanitization to a remote snapshot's passages. */
+export function sanitizePassages(raw: unknown): ReadingPassage[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.filter(isReadingPassage).map((p) => ({
+    ...p,
+    sentences: p.sentences.map((s) => ({ ...s, reading: s.reading ?? "" })),
+    updatedAt: p.updatedAt ?? p.createdAt,
+  }));
 }
 
 /** `language`, when given, also matches passages saved with "" (unassigned)
  * so they aren't orphaned out of every filtered view — same convention as
  * Card.language (see types.ts). */
 export function loadPassages(language?: string): ReadingPassage[] {
-  const raw = loadJson<unknown[]>(STORAGE_NAME, []);
-  const passages = Array.isArray(raw)
-    ? raw.filter(isReadingPassage).map((p) => ({
-        ...p,
-        sentences: p.sentences.map((s) => ({ ...s, reading: s.reading ?? "" })),
-      }))
-    : [];
+  const passages = sanitizePassages(loadJson<unknown[]>(STORAGE_NAME, []));
   return language ? passages.filter((p) => p.language === language || p.language === "") : passages;
 }
 
@@ -81,6 +95,7 @@ export interface NewPassageInput {
 
 /** Newest-first; capped at MAX_PASSAGES so the list doesn't grow forever. */
 export function addPassage(input: NewPassageInput): ReadingPassage {
+  const now = new Date().toISOString();
   const passage: ReadingPassage = {
     id: newId(),
     language: input.language,
@@ -89,7 +104,8 @@ export function addPassage(input: NewPassageInput): ReadingPassage {
     reviewWords: input.reviewWords ?? [],
     question: input.question ?? "",
     questionAnswer: input.questionAnswer ?? "",
-    createdAt: new Date().toISOString(),
+    createdAt: now,
+    updatedAt: now,
   };
   savePassages([passage, ...loadPassages()].slice(0, MAX_PASSAGES));
   return passage;
@@ -97,6 +113,16 @@ export function addPassage(input: NewPassageInput): ReadingPassage {
 
 export function deletePassage(id: string): void {
   savePassages(loadPassages().filter((p) => p.id !== id));
+  recordTombstone("passages", id);
+}
+
+/** Bulk-replaces the entire passage store with `passages` (one save, one
+ * change event) — persistence only, no id lookup/merge and no MAX_PASSAGES
+ * capping (that's addPassage's business logic, not the raw save path). Only
+ * lib/sync/snapshot.ts should call this; every other write path goes through
+ * addPassage/deletePassage above so `updatedAt`/tombstones stay correct. */
+export function replacePassagesForSync(passages: ReadingPassage[]): void {
+  savePassages(passages);
 }
 
 interface GeneratedPassage {

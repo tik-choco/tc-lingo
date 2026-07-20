@@ -9,6 +9,7 @@
 // modules' bounded lists).
 import type { ConversationRole, ConversationSession, ConversationTurn } from "../types";
 import { loadJson, newId, saveJson, subscribeStorage } from "./storage";
+import { recordTombstone } from "./sync/tombstones";
 import { chatJson } from "./llm";
 import type { LlmConnection } from "./llmConnection";
 import { levelInstruction } from "./level";
@@ -41,7 +42,11 @@ function isConversationTurn(value: unknown): value is ConversationTurn {
   );
 }
 
-function isConversationSession(value: unknown): value is ConversationSession {
+/** Exported so lib/sync/snapshot.ts can validate remote sessions with the
+ * exact same rules used to load local ones. `updatedAt` is optional here to
+ * accept sessions saved before the sync feature existed — see
+ * sanitizeConversations. */
+export function isConversationSession(value: unknown): value is ConversationSession {
   if (value === null || typeof value !== "object") return false;
   const r = value as Record<string, unknown>;
   return (
@@ -52,22 +57,32 @@ function isConversationSession(value: unknown): value is ConversationSession {
     Array.isArray(r.turns) &&
     r.turns.every(isConversationTurn) &&
     typeof r.createdAt === "string" &&
-    typeof r.endedAt === "string"
+    typeof r.endedAt === "string" &&
+    (r.updatedAt === undefined || typeof r.updatedAt === "string")
   );
+}
+
+/** Filters + backfills a raw array into valid ConversationSessions: per-turn
+ * `reading`/`correctedReading` predate the reading-aid feature (backfilled
+ * to ""); `updatedAt` predates the sync feature (backfilled to `createdAt`,
+ * same rationale as cards.ts's sanitizeCards). Malformed entries (and any
+ * individually malformed turn) are dropped rather than throwing. Exported so
+ * lib/sync/snapshot.ts can apply identical sanitization to a remote
+ * snapshot's sessions. */
+export function sanitizeConversations(raw: unknown): ConversationSession[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.filter(isConversationSession).map((s) => ({
+    ...s,
+    turns: s.turns.map((turn) => ({ ...turn, reading: turn.reading ?? "", correctedReading: turn.correctedReading ?? "" })),
+    updatedAt: s.updatedAt ?? s.createdAt,
+  }));
 }
 
 /** `language`, when given, also matches sessions saved with "" (unassigned,
  * predating multi-language support) so they aren't orphaned out of view —
- * same convention as cards.ts/topics.ts. Malformed entries (and any
- * individually malformed turn) are dropped rather than throwing. */
+ * same convention as cards.ts/topics.ts. */
 export function loadConversations(language?: string): ConversationSession[] {
-  const raw = loadJson<unknown[]>(STORAGE_NAME, []);
-  const sessions = Array.isArray(raw)
-    ? raw.filter(isConversationSession).map((s) => ({
-        ...s,
-        turns: s.turns.map((turn) => ({ ...turn, reading: turn.reading ?? "", correctedReading: turn.correctedReading ?? "" })),
-      }))
-    : [];
+  const sessions = sanitizeConversations(loadJson<unknown[]>(STORAGE_NAME, []));
   return language ? sessions.filter((s) => s.language === language || s.language === "") : sessions;
 }
 
@@ -89,14 +104,16 @@ export interface NewConversationInput {
 }
 
 export function addConversation(input: NewConversationInput): ConversationSession {
+  const now = new Date().toISOString();
   const session: ConversationSession = {
     id: newId(),
     language: input.language,
     title: input.title.trim(),
     scenario: input.scenario.trim(),
     turns: input.turns ?? [],
-    createdAt: new Date().toISOString(),
+    createdAt: now,
     endedAt: "",
+    updatedAt: now,
   };
   // Newest first, capped at MAX_SESSIONS — oldest sessions fall off instead
   // of growing localStorage unboundedly.
@@ -105,14 +122,27 @@ export function addConversation(input: NewConversationInput): ConversationSessio
 }
 
 /** Replaces the session with the given id by shallow-merging `patch` — same
- * "replace by id" shape as topics.ts's updateAttempt. */
+ * "replace by id" shape as topics.ts's updateAttempt. Bumps `updatedAt`
+ * (turn appends, ending a session, etc. all go through this one function). */
 export function updateConversation(id: string, patch: Partial<Omit<ConversationSession, "id">>): void {
-  const sessions = loadConversations().map((s) => (s.id === id ? { ...s, ...patch } : s));
+  const now = new Date().toISOString();
+  const sessions = loadConversations().map((s) => (s.id === id ? { ...s, ...patch, updatedAt: now } : s));
   saveConversations(sessions);
 }
 
 export function deleteConversation(id: string): void {
   saveConversations(loadConversations().filter((s) => s.id !== id));
+  recordTombstone("conversations", id);
+}
+
+/** Bulk-replaces the entire session store with `sessions` (one save, one
+ * change event) — persistence only, no id lookup/merge and no MAX_SESSIONS
+ * capping (that's addConversation's business logic, not the raw save path).
+ * Only lib/sync/snapshot.ts should call this; every other write path goes
+ * through addConversation/updateConversation/deleteConversation above so
+ * `updatedAt`/tombstones stay correct. */
+export function replaceConversationsForSync(sessions: ConversationSession[]): void {
+  saveConversations(sessions);
 }
 
 /** Builds one turn with a fresh id — callers append it to a session's
