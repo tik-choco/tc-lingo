@@ -1512,16 +1512,19 @@ button:disabled {
 
 .settings-tab-bar {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 2px;
   padding: 2px;
   border-radius: var(--radius-pill);
   background: var(--surface-2);
   border: 1px solid var(--border);
   align-self: flex-start;
+  max-width: 100%;
+  overflow-x: auto;
 }
 
 .settings-tab {
+  flex-shrink: 0;
   border: none;
   background: transparent;
   border-radius: var(--radius-pill);
@@ -1529,6 +1532,7 @@ button:disabled {
   font-size: 0.85rem;
   font-weight: 600;
   color: var(--text-muted);
+  white-space: nowrap;
 }
 
 .settings-tab:hover:not(:disabled) {

@@ -449,8 +449,40 @@ a:hover {
     display: none;
   }
 
+  /* Header row 1 = brand + links; tabs drop to their own full-width row
+     so they don't get squeezed to zero by the non-shrinking language
+     switcher / icon buttons fighting them for space. */
   .app-header {
+    flex-wrap: wrap;
     padding: var(--space-3);
     gap: var(--space-2);
+  }
+
+  .app-header-brand {
+    order: 1;
+  }
+
+  .app-header-brand span {
+    display: none;
+  }
+
+  .app-header-links {
+    order: 2;
+    margin-left: auto;
+  }
+
+  .app-tabs {
+    order: 3;
+    flex-basis: 100%;
+    margin-left: 0;
+    gap: var(--space-2);
+  }
+
+  .app-tab {
+    flex-shrink: 0;
+    min-width: 44px;
+    min-height: 44px;
+    padding: var(--space-2);
+    justify-content: center;
   }
 }

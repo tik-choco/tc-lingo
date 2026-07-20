@@ -194,7 +194,7 @@ export function App() {
       <header class="app-header">
         <div class="app-header-brand">
           <Languages size={20} />
-          TC Lingo
+          <span>TC Lingo</span>
         </div>
         <nav class="app-tabs">
           {TABS.map(({ id, labelKey, icon: Icon }) => (
