@@ -113,4 +113,18 @@ export interface SyncSessionState {
   peerCount: number;
   error: string | null;
   summary: SyncMergeSummary | null;
+  /** Counters for the current session, shown as a small diagnostic line in
+   * the "waiting"/"exchanging" UI so a stalled exchange (peer visible but no
+   * progress) can be triaged from the screen alone, without DevTools access.
+   * Not part of the wire contract; reset by every stopSync(). */
+  debug: SyncDebugCounters;
+}
+
+export interface SyncDebugCounters {
+  /** Times a `lingo_sync_hello` was received from any peer. */
+  helloReceived: number;
+  /** `lingo_sync_data` chunks sent out (to any peer). */
+  dataChunksSent: number;
+  /** `lingo_sync_data` chunks received (from any peer) that weren't duplicates. */
+  dataChunksReceived: number;
 }

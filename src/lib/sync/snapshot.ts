@@ -152,6 +152,21 @@ export function mergeSyncSnapshot(remote: unknown): SyncMergeSummary | null {
   const cardsResult = mergeStore(loadCards(), remoteCards, (c) => c.id, "cards", tombstoneDeletedAtByKey);
   const topicsResult = mergeStore(loadTopics(), remoteTopics, (t) => t.id, "topics", tombstoneDeletedAtByKey);
   const attemptsResult = mergeStore(loadAttempts(), remoteAttempts, (a) => a.id, "attempts", tombstoneDeletedAtByKey);
+  // An attempt whose topic didn't survive the merge is orphaned: this
+  // happens when one peer deletes a topic (and tombstones the attempts it
+  // could see at delete time — lib/topics.ts's deleteTopic) while the other
+  // peer independently records a *new* attempt against that same topic
+  // before ever seeing the delete. That attempt has no tombstone of its own
+  // (the deleting peer never knew it existed) and would otherwise survive
+  // pointing at a topic that no longer exists anywhere. Drop it too, same as
+  // deleteTopic()'s own cascade.
+  const survivingTopicIds = new Set(topicsResult.merged.map((t) => t.id));
+  const orphanedAttempts = attemptsResult.merged.filter((a) => !survivingTopicIds.has(a.topicId));
+  if (orphanedAttempts.length > 0) {
+    attemptsResult.merged = attemptsResult.merged.filter((a) => survivingTopicIds.has(a.topicId));
+    attemptsResult.counts = { ...attemptsResult.counts, removed: attemptsResult.counts.removed + orphanedAttempts.length };
+    attemptsResult.changed = true;
+  }
   const passagesResult = mergeStore(loadPassages(), remotePassages, (p) => p.id, "passages", tombstoneDeletedAtByKey);
   const conversationsResult = mergeStore(
     loadConversations(),

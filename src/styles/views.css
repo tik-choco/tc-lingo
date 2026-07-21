@@ -34,6 +34,14 @@
   line-height: 1.6;
 }
 
+/* Sync exchange counters (SyncPanel) — a diagnostic line for triaging a
+ * stalled session without DevTools access, so it's deliberately smaller/
+ * quieter than a regular hint. */
+.sync-debug-line {
+  font-size: 0.78rem;
+  font-family: ui-monospace, "SFMono-Regular", "Menlo", "Consolas", monospace;
+}
+
 /* Always-visible reading line (e.g. pinyin) under target-language text —
    see lib/languages.ts readingAid. Shared by 読む/会話/練習/履歴. */
 .reading-aid {

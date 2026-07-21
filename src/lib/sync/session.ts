@@ -24,7 +24,7 @@ import { createMistNode, NODE_ID_STORAGE_KEY } from "../network";
 import { mergeSyncSnapshot, buildSyncSnapshot } from "./snapshot";
 import { ChunkAssembler, type SyncDataMsg, type SyncMessage } from "./protocol";
 import { SyncNetwork } from "./network";
-import type { SyncMergeSummary, SyncSessionState, SyncStoreName } from "./types";
+import type { SyncDebugCounters, SyncMergeSummary, SyncSessionState, SyncStoreName } from "./types";
 
 // Base64 chars per wire message — mirrors lib/p2p/tunnel.ts's OAI_CHUNK_SIZE
 // (mist's reliable data channel is only safe for ~16KB per message).
@@ -74,6 +74,10 @@ function base64ToUtf8(base64: string): string {
 // ---------------------------------------------------------------------------
 // Session store.
 
+function idleDebugCounters(): SyncDebugCounters {
+  return { helloReceived: 0, dataChunksSent: 0, dataChunksReceived: 0 };
+}
+
 function idleState(): SyncSessionState {
   return {
     phase: "idle",
@@ -83,7 +87,12 @@ function idleState(): SyncSessionState {
     peerCount: 0,
     error: null,
     summary: null,
+    debug: idleDebugCounters(),
   };
+}
+
+function bumpDebug(patch: Partial<SyncDebugCounters>): void {
+  setState({ debug: { ...state.debug, ...patch } });
 }
 
 let state: SyncSessionState = idleState();
@@ -101,6 +110,15 @@ const pendingPeers = new Set<string>();
 // from the same peer; a fresh peer id — e.g. a different guest — always
 // gets its own send).
 const sentTo = new Set<string>();
+// Peer ids with an active hello-resend loop. EVENT_PEER_CONNECTED can fire
+// before the underlying data channel is actually ready to carry messages, so
+// the one-shot hello sent from handlePeerConnected can be silently lost —
+// observed in the wild as a session stuck showing "connected" with zero
+// hello/data ever exchanged on either side. Resending on an interval until we
+// hear anything back from that peer (proof the channel works both ways) or
+// they disconnect turns that permanent hang into a few seconds' delay.
+const helloRetryTimers = new Map<string, ReturnType<typeof setInterval>>();
+const HELLO_RETRY_INTERVAL_MS = 1500;
 
 function notify(): void {
   for (const cb of [...listeners]) cb();
@@ -123,6 +141,14 @@ export function subscribeSync(cb: () => void): () => void {
   };
 }
 
+function stopHelloRetry(peerId: string): void {
+  const timer = helloRetryTimers.get(peerId);
+  if (timer !== undefined) {
+    clearInterval(timer);
+    helloRetryTimers.delete(peerId);
+  }
+}
+
 /** Tears down the network/timers/buffers but leaves `state` (phase/error/summary) as the caller set it. */
 function teardownTransport(): void {
   network?.destroy();
@@ -131,6 +157,8 @@ function teardownTransport(): void {
     clearTimeout(guestTimeoutTimer);
     guestTimeoutTimer = null;
   }
+  for (const timer of helloRetryTimers.values()) clearInterval(timer);
+  helloRetryTimers.clear();
   buffers.clear();
   pendingPeers.clear();
   sentTo.clear();
@@ -213,9 +241,19 @@ function handlePeerConnected(peerId: string): void {
   // The broadcast hello sent on join may predate this peer's arrival, so
   // re-announce directly to them (symmetric: host and guest both do this).
   network?.send(peerId, { v: 1, type: "lingo_sync_hello" });
+  // This first send can be lost — EVENT_PEER_CONNECTED has been observed to
+  // fire before the peer's data channel is actually ready to carry messages
+  // (see the module header comment on helloRetryTimers above). Keep
+  // re-announcing until stopHelloRetry() hears anything back from them.
+  stopHelloRetry(peerId);
+  helloRetryTimers.set(
+    peerId,
+    setInterval(() => network?.send(peerId, { v: 1, type: "lingo_sync_hello" }), HELLO_RETRY_INTERVAL_MS),
+  );
 }
 
 function handlePeerDisconnected(peerId: string): void {
+  stopHelloRetry(peerId);
   for (const key of [...buffers.keys()]) {
     if (key.startsWith(`${peerId}:`)) buffers.delete(key);
   }
@@ -231,6 +269,10 @@ function handlePeerDisconnected(peerId: string): void {
 }
 
 function handleMessage(fromId: string, msg: SyncMessage): void {
+  // Hearing anything at all from this peer proves the channel works in both
+  // directions (it's the same underlying data channel either way), so our
+  // own hello has necessarily gotten through by now too — stop resending it.
+  stopHelloRetry(fromId);
   switch (msg.type) {
     case "lingo_sync_hello":
       handleHello(fromId);
@@ -253,6 +295,7 @@ function handleMessage(fromId: string, msg: SyncMessage): void {
 }
 
 function handleHello(fromId: string): void {
+  bumpDebug({ helloReceived: state.debug.helloReceived + 1 });
   if (sentTo.has(fromId)) return;
   sentTo.add(fromId);
   sendSnapshotTo(fromId);
@@ -268,6 +311,7 @@ function sendSnapshotTo(peerId: string): void {
     const last = index === parts.length - 1;
     const msg: SyncDataMsg = { v: 1, type: "lingo_sync_data", id, seq: index, last, data };
     network?.send(peerId, msg);
+    bumpDebug({ dataChunksSent: state.debug.dataChunksSent + 1 });
   });
 }
 
@@ -307,6 +351,7 @@ function handleData(fromId: string, msg: SyncDataMsg): void {
   }
   if (result === "added") {
     pendingPeers.add(fromId);
+    bumpDebug({ dataChunksReceived: state.debug.dataChunksReceived + 1 });
     if (state.phase === "waiting" || state.phase === "done") setState({ phase: "exchanging" });
   }
   if (!assembler.isComplete) return;

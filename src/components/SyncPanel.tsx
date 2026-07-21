@@ -149,6 +149,15 @@ export function SyncPanel() {
             t("settings-sync-status-waiting-host")
           )}
         </p>
+        {state.peerCount > 0 && (
+          <p class="hint-text sync-debug-line">
+            {t("settings-sync-debug-line", {
+              hello: state.debug.helloReceived,
+              sent: state.debug.dataChunksSent,
+              received: state.debug.dataChunksReceived,
+            })}
+          </p>
+        )}
         <div class="button-row">
           <button type="button" onClick={() => stopSync()}>
             {t("settings-sync-abort-button")}
@@ -167,6 +176,13 @@ export function SyncPanel() {
         <p class="sync-status" aria-live="polite">
           <Loader2 size={15} class="sync-spin" />
           {t(statusKey)}
+        </p>
+        <p class="hint-text sync-debug-line">
+          {t("settings-sync-debug-line", {
+            hello: state.debug.helloReceived,
+            sent: state.debug.dataChunksSent,
+            received: state.debug.dataChunksReceived,
+          })}
         </p>
         <div class="button-row">
           <button type="button" onClick={() => stopSync()}>
