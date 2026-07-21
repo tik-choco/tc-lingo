@@ -1,5 +1,6 @@
 import { useEffect } from "preact/hooks";
 import { emptyLlmConfig, ensurePreset, ensureProvider, loadLlmConfig, normalizeBaseUrl, saveLlmConfig } from "../lib/llmConfig";
+import { notifyLlmConfigChanged } from "../lib/llmConfigSync";
 import { NETWORK_PROVIDER_LABEL, networkProviderBaseUrl } from "../lib/networkModels";
 import type { ConsumerStatus } from "../lib/network";
 import type { LingoSettings } from "../types";
@@ -30,13 +31,19 @@ import type { LingoSettings } from "../types";
  * each time this effect actually has work to do, mutated directly (this app's
  * `lib/llmConfigOps.ts` CRUD helpers each independently load-mutate-save,
  * which would fragment this multi-step add+prune into several separate
- * writes/re-renders if used here), and saved once.
+ * writes/re-renders if used here), and saved once, followed by
+ * `notifyLlmConfigChanged()` (lib/llmConfigSync.ts) - this hook runs at the
+ * `App` level (see app.tsx), not inside SettingsView, so without that
+ * explicit same-tab notification the Endpoints/Models lists there would stay
+ * stale until a cross-tab `storage` event or a remount (e.g. leaving and
+ * returning to the settings tab).
  *
  * Only runs while actively consuming via the network transport
  * (`settings.connectionMode === 'network'`) and connected to a room
  * (`ConsumerStatus`, see lib/network.ts). Writes are skipped entirely when
  * the mirrored set already matches, so reconnects/re-renders don't thrash
- * localStorage or retrigger the cross-tab `storage` event on every tick.
+ * localStorage or retrigger the same/cross-tab change notification on every
+ * tick.
  */
 export function useNetworkModelSync(settings: LingoSettings, consumerStatus: ConsumerStatus, roomId: string): void {
   const connected = consumerStatus.phase === "connected";
@@ -58,11 +65,12 @@ export function useNetworkModelSync(settings: LingoSettings, consumerStatus: Con
     const provider = config.providers.find((p) => p.baseUrl === normalizedBaseUrl && p.apiKey === "");
 
     // No-op check mirroring the save below against the current config, so
-    // saveLlmConfig - which re-renders every consumer of the shared config -
-    // is only called when there's actually something to add or prune. The
-    // dedup keys match ensureProvider's/ensurePreset's own (baseUrl+apiKey
-    // for the provider; providerId+model+temperature+reasoningEffort for
-    // each preset).
+    // saveLlmConfig + notifyLlmConfigChanged (see lib/llmConfigSync.ts) -
+    // which notify every same-tab consumer of the shared config, e.g.
+    // SettingsView's Endpoints/Models display - are only called when there's
+    // actually something to add or prune. The dedup keys match
+    // ensureProvider's/ensurePreset's own (baseUrl+apiKey for the provider;
+    // providerId+model+temperature+reasoningEffort for each preset).
     const inSync =
       provider === undefined
         ? modelList.length === 0
@@ -91,6 +99,7 @@ export function useNetworkModelSync(settings: LingoSettings, consumerStatus: Con
       }
       config.providers = config.providers.filter((p) => p.id !== provider.id);
       saveLlmConfig(config);
+      notifyLlmConfigChanged();
       return;
     }
 
@@ -108,5 +117,6 @@ export function useNetworkModelSync(settings: LingoSettings, consumerStatus: Con
       }
     }
     saveLlmConfig(config);
+    notifyLlmConfigChanged();
   }, [settings.connectionMode, roomId, connected, modelsKey]);
 }

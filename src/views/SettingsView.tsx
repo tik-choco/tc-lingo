@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import { Network, Plus, Server, Sparkles, Volume2, X } from "lucide-preact";
 import { fetchModels } from "@tik-choco/mistai";
-import { emptyLlmConfig, loadLlmConfig, saveLlmConfig, subscribeLlmConfig } from "../lib/llmConfig";
+import { emptyLlmConfig, loadLlmConfig, saveLlmConfig } from "../lib/llmConfig";
 import type { LlmProviderV1, ModelPresetV1, SharedLlmConfigV1 } from "../lib/llmConfig";
+import { subscribeLlmConfigChanges } from "../lib/llmConfigSync";
 import {
   addPreset,
   addProvider,
@@ -154,12 +155,16 @@ export function SettingsView() {
 
   // ----- Shared llm config (providers/presets/tts/network.roomId) ------------
   // Local mirror of the shared config, kept in sync with our own writes
-  // (updateTts, the provider/preset editors, setDefaultPresetId, room id) plus
-  // cross-tab writes (subscribeLlmConfig). Same-tab writes to
-  // tc-shared-llm-config-v1 don't self-notify (see llmConfig.ts), so every
-  // handler below that mutates it also calls setSharedConfig directly.
+  // (updateTts, the provider/preset editors, setDefaultPresetId, room id;
+  // every handler below that mutates it also calls setSharedConfig directly,
+  // since even the same-tab notification below is async) plus cross-tab
+  // writes and other same-tab writers - notably hooks/useNetworkModelSync.ts,
+  // which mirrors AI Network room models into this config from app.tsx - via
+  // subscribeLlmConfigChanges (lib/llmConfigSync.ts; plain subscribeLlmConfig
+  // only fires for the native cross-tab `storage` event, which never fires in
+  // the tab that wrote the change).
   const [sharedConfig, setSharedConfig] = useState<SharedLlmConfigV1>(() => loadLlmConfig() ?? emptyLlmConfig());
-  useEffect(() => subscribeLlmConfig((cfg) => setSharedConfig(cfg ?? emptyLlmConfig())), []);
+  useEffect(() => subscribeLlmConfigChanges((cfg) => setSharedConfig(cfg ?? emptyLlmConfig())), []);
   const speech = useSpeech();
 
   // Local draft for the Room ID field: mirrors sharedConfig.network.roomId
