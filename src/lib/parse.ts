@@ -22,27 +22,35 @@ export interface FeedbackResult {
   /** Always-visible reading aid for `corrected` (e.g. pinyin — see
    * lib/languages.ts readingAid); "" when the target language has no aid. */
   correctedReading: string;
+  /** Native-language translation of `corrected`; "" when no translation. */
+  correctedTranslation: string;
   reasons: string;
   retryPrompt: string;
   /** Reading aid for `retryPrompt`; "" when no aid. */
   retryPromptReading: string;
+  /** Native-language translation of `retryPrompt`; "" when no translation. */
+  retryPromptTranslation: string;
 }
 
 export function parseFeedback(content: string): FeedbackResult {
   const parsed = extractJson(content) as Record<string, unknown>;
   const corrected = typeof parsed.corrected === "string" ? parsed.corrected : "";
   const correctedReading = typeof parsed.correctedReading === "string" ? parsed.correctedReading : "";
+  const correctedTranslation = typeof parsed.correctedTranslation === "string" ? parsed.correctedTranslation : "";
   const reasons = typeof parsed.reasons === "string" ? parsed.reasons : "";
   const retryPrompt = typeof parsed.retryPrompt === "string" ? parsed.retryPrompt : "";
   const retryPromptReading = typeof parsed.retryPromptReading === "string" ? parsed.retryPromptReading : "";
+  const retryPromptTranslation = typeof parsed.retryPromptTranslation === "string" ? parsed.retryPromptTranslation : "";
   if (!corrected) throw new Error(t("error-missing-correction"));
-  return { corrected, correctedReading, reasons, retryPrompt, retryPromptReading };
+  return { corrected, correctedReading, correctedTranslation, reasons, retryPrompt, retryPromptReading, retryPromptTranslation };
 }
 
 export interface RetryFeedbackResult {
   corrected: string;
   /** Reading aid for `corrected`; "" when no aid. */
   correctedReading: string;
+  /** Native-language translation of `corrected`; "" when no translation. */
+  correctedTranslation: string;
   reasons: string;
 }
 
@@ -52,22 +60,26 @@ export function parseRetryFeedback(content: string): RetryFeedbackResult {
   const parsed = extractJson(content) as Record<string, unknown>;
   const corrected = typeof parsed.corrected === "string" ? parsed.corrected : "";
   const correctedReading = typeof parsed.correctedReading === "string" ? parsed.correctedReading : "";
+  const correctedTranslation = typeof parsed.correctedTranslation === "string" ? parsed.correctedTranslation : "";
   const reasons = typeof parsed.reasons === "string" ? parsed.reasons : "";
   if (!corrected) throw new Error(t("error-missing-correction"));
-  return { corrected, correctedReading, reasons };
+  return { corrected, correctedReading, correctedTranslation, reasons };
 }
 
 export interface TopicSuggestion {
   title: string;
   prompt: string;
+  /** Native-language translation of `prompt`; "" when no translation. */
+  promptTranslation: string;
 }
 
 export function parseTopicSuggestion(content: string): TopicSuggestion {
   const parsed = extractJson(content) as Record<string, unknown>;
   const title = typeof parsed.title === "string" ? parsed.title : "";
   const prompt = typeof parsed.prompt === "string" ? parsed.prompt : "";
+  const promptTranslation = typeof parsed.promptTranslation === "string" ? parsed.promptTranslation : "";
   if (!title || !prompt) throw new Error(t("error-missing-topic"));
-  return { title, prompt };
+  return { title, prompt, promptTranslation };
 }
 
 export interface TopicFanOutPlan {

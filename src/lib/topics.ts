@@ -18,6 +18,7 @@ export function isTopic(value: unknown): value is Topic {
     typeof r.id === "string" &&
     typeof r.title === "string" &&
     typeof r.prompt === "string" &&
+    (r.promptTranslation === undefined || typeof r.promptTranslation === "string") &&
     typeof r.custom === "boolean" &&
     (r.language === undefined || typeof r.language === "string") &&
     typeof r.createdAt === "string" &&
@@ -37,25 +38,34 @@ export function isAttempt(value: unknown): value is PracticeAttempt {
     typeof r.original === "string" &&
     typeof r.corrected === "string" &&
     (r.correctedReading === undefined || typeof r.correctedReading === "string") &&
+    (r.correctedTranslation === undefined || typeof r.correctedTranslation === "string") &&
     typeof r.reasons === "string" &&
     typeof r.retryPrompt === "string" &&
     (r.retryPromptReading === undefined || typeof r.retryPromptReading === "string") &&
+    (r.retryPromptTranslation === undefined || typeof r.retryPromptTranslation === "string") &&
     typeof r.retryAnswer === "string" &&
     (r.retryCorrected === undefined || typeof r.retryCorrected === "string") &&
     (r.retryCorrectedReading === undefined || typeof r.retryCorrectedReading === "string") &&
+    (r.retryCorrectedTranslation === undefined || typeof r.retryCorrectedTranslation === "string") &&
     (r.retryReasons === undefined || typeof r.retryReasons === "string") &&
     (r.updatedAt === undefined || typeof r.updatedAt === "string")
   );
 }
 
 /** Filters + backfills a raw array into valid Topics: `language` predates
- * multi-language support (backfilled to ""); `updatedAt` predates the sync
- * feature (backfilled to `createdAt`, same rationale as cards.ts's
+ * multi-language support (backfilled to ""); `promptTranslation` predates
+ * the translation-reveal feature (backfilled to ""); `updatedAt` predates
+ * the sync feature (backfilled to `createdAt`, same rationale as cards.ts's
  * sanitizeCards). Exported so lib/sync/snapshot.ts can apply identical
  * sanitization to a remote snapshot's topics. */
 export function sanitizeTopics(raw: unknown): Topic[] {
   if (!Array.isArray(raw)) return [];
-  return raw.filter(isTopic).map((t) => ({ ...t, language: t.language ?? "", updatedAt: t.updatedAt ?? t.createdAt }));
+  return raw.filter(isTopic).map((t) => ({
+    ...t,
+    language: t.language ?? "",
+    promptTranslation: t.promptTranslation ?? "",
+    updatedAt: t.updatedAt ?? t.createdAt,
+  }));
 }
 
 /** `retryCorrected`/`retryReasons` predate the retry-check feature on some
@@ -72,9 +82,12 @@ export function sanitizeAttempts(raw: unknown): PracticeAttempt[] {
   return raw.filter(isAttempt).map((a) => ({
     ...a,
     correctedReading: a.correctedReading ?? "",
+    correctedTranslation: a.correctedTranslation ?? "",
     retryPromptReading: a.retryPromptReading ?? "",
+    retryPromptTranslation: a.retryPromptTranslation ?? "",
     retryCorrected: a.retryCorrected ?? "",
     retryCorrectedReading: a.retryCorrectedReading ?? "",
+    retryCorrectedTranslation: a.retryCorrectedTranslation ?? "",
     retryReasons: a.retryReasons ?? "",
     updatedAt: a.updatedAt ?? a.createdAt,
   }));
@@ -103,12 +116,19 @@ export function subscribeTopics(cb: () => void): () => void {
   return subscribeStorage(cb);
 }
 
-export function addTopic(input: { title: string; prompt: string; custom: boolean; language?: string }): Topic {
+export function addTopic(input: {
+  title: string;
+  prompt: string;
+  promptTranslation?: string;
+  custom: boolean;
+  language?: string;
+}): Topic {
   const now = new Date().toISOString();
   const topic: Topic = {
     id: newId(),
     title: input.title.trim(),
     prompt: input.prompt.trim(),
+    promptTranslation: input.promptTranslation?.trim() ?? "",
     custom: input.custom,
     language: input.language ?? "",
     createdAt: now,
@@ -155,12 +175,15 @@ export interface NewAttemptInput {
   original: string;
   corrected?: string;
   correctedReading?: string;
+  correctedTranslation?: string;
   reasons?: string;
   retryPrompt?: string;
   retryPromptReading?: string;
+  retryPromptTranslation?: string;
   retryAnswer?: string;
   retryCorrected?: string;
   retryCorrectedReading?: string;
+  retryCorrectedTranslation?: string;
   retryReasons?: string;
 }
 
@@ -174,12 +197,15 @@ export function addAttempt(input: NewAttemptInput): PracticeAttempt {
     original: input.original,
     corrected: input.corrected ?? "",
     correctedReading: input.correctedReading ?? "",
+    correctedTranslation: input.correctedTranslation ?? "",
     reasons: input.reasons ?? "",
     retryPrompt: input.retryPrompt ?? "",
     retryPromptReading: input.retryPromptReading ?? "",
+    retryPromptTranslation: input.retryPromptTranslation ?? "",
     retryAnswer: input.retryAnswer ?? "",
     retryCorrected: input.retryCorrected ?? "",
     retryCorrectedReading: input.retryCorrectedReading ?? "",
+    retryCorrectedTranslation: input.retryCorrectedTranslation ?? "",
     retryReasons: input.retryReasons ?? "",
     updatedAt: now,
   };

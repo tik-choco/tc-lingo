@@ -345,6 +345,23 @@ button:disabled {
   line-height: 1.7;
 }
 
+/* Toggle-on-demand translation for target-language-only text the learner
+   reads rather than produces (topic prompt, follow-up question) — same idea
+   as ReadingView's per-sentence translation toggle. */
+.practice-translation-row {
+  margin-top: var(--space-1);
+}
+
+.practice-translation-toggle {
+  font-size: 0.78rem;
+}
+
+.practice-translation {
+  margin-top: var(--space-1);
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
 .diff-added {
   background: var(--diff-added-soft);
   color: var(--diff-added);

@@ -39,6 +39,7 @@ function RetryCheckResult({
   retryAnswer,
   retryCorrected,
   retryCorrectedReading,
+  retryCorrectedTranslation,
   retryReasons,
   language,
   showReadingAids,
@@ -46,6 +47,7 @@ function RetryCheckResult({
   retryAnswer: string;
   retryCorrected: string;
   retryCorrectedReading: string;
+  retryCorrectedTranslation: string;
   retryReasons: string;
   language: string;
   showReadingAids: boolean;
@@ -55,6 +57,7 @@ function RetryCheckResult({
   const speakId = "retry-corrected";
   const speaking = speech.speakingId === speakId;
   const loading = speech.loadingId === speakId;
+  const [translationRevealed, setTranslationRevealed] = useState(false);
   return (
     <div class="feedback-field">
       <div class="topic-header">
@@ -81,6 +84,19 @@ function RetryCheckResult({
         ))}
       </p>
       {showReadingAids && retryCorrectedReading && <p class="reading-aid">{retryCorrectedReading}</p>}
+      {retryCorrectedTranslation && (
+        <div class="practice-translation-row">
+          <button
+            type="button"
+            class="link-button practice-translation-toggle"
+            aria-expanded={translationRevealed}
+            onClick={() => setTranslationRevealed((v) => !v)}
+          >
+            {translationRevealed ? t("practice-translation-hide") : t("practice-translation-show")}
+          </button>
+          {translationRevealed && <p class="practice-translation">{retryCorrectedTranslation}</p>}
+        </div>
+      )}
       {retryReasons && (
         <>
           <h3>{t("practice-feedback-reasons")}</h3>
@@ -150,6 +166,10 @@ export function PracticeView() {
   const [retryAnswer, setRetryAnswer] = useState("");
   const [checkingRetry, setCheckingRetry] = useState(false);
   const [showPrevious, setShowPrevious] = useState(false);
+  // Toggle-on-demand translation of the topic prompt (same idea as
+  // ReadingView's per-sentence translation reveal) — reset alongside the
+  // rest of the round/topic UI state below.
+  const [promptTranslationRevealed, setPromptTranslationRevealed] = useState(false);
   const [candidates, setCandidates] = useState<CardCandidate[] | null>(null);
   const [extracting, setExtracting] = useState(false);
   const [cardsAdded, setCardsAdded] = useState(0);
@@ -230,6 +250,7 @@ export function PracticeView() {
     setRetrySentenceCardsSaved(false);
     setRetrySentenceCardsSavedCount(0);
     setShowPrevious(false);
+    setPromptTranslationRevealed(false);
     setError("");
     setBatchGeneratedCount(0);
   }
@@ -255,6 +276,10 @@ export function PracticeView() {
     setBatchGeneratedCount(0);
   }
 
+  function toggleTranslation() {
+    setPromptTranslationRevealed((v) => !v);
+  }
+
   async function generateTopic() {
     if (!connection) {
       setError(t("practice-need-llm"));
@@ -276,7 +301,13 @@ export function PracticeView() {
         topicRequest: topicRequest.trim() || undefined,
         levelHint: levelInstruction(settings.activeLanguage),
       });
-      const topic = addTopic({ title: suggestion.title, prompt: suggestion.prompt, custom: false, language: settings.activeLanguage });
+      const topic = addTopic({
+        title: suggestion.title,
+        prompt: suggestion.prompt,
+        promptTranslation: suggestion.promptTranslation,
+        custom: false,
+        language: settings.activeLanguage,
+      });
       setActiveTopicId(topic.id);
     } catch (e) {
       setError(localizeNetworkError(e, t("practice-topic-generate-failed")));
@@ -318,7 +349,13 @@ export function PracticeView() {
             topicRequest: topicRequest.trim() || undefined,
             levelHint: levelInstruction(lang),
           });
-          return addTopic({ title: suggestion.title, prompt: suggestion.prompt, custom: false, language: lang });
+          return addTopic({
+            title: suggestion.title,
+            prompt: suggestion.prompt,
+            promptTranslation: suggestion.promptTranslation,
+            custom: false,
+            language: lang,
+          });
         }),
       );
       setTopics(loadTopics(settings.activeLanguage));
@@ -370,9 +407,11 @@ export function PracticeView() {
         original: text,
         corrected: feedback.corrected,
         correctedReading: feedback.correctedReading,
+        correctedTranslation: feedback.correctedTranslation,
         reasons: feedback.reasons,
         retryPrompt: feedback.retryPrompt,
         retryPromptReading: feedback.retryPromptReading,
+        retryPromptTranslation: feedback.retryPromptTranslation,
       });
       setCurrentAttempt(attempt);
       recordOutputSample(settings.activeLanguage, text, feedback.corrected);
@@ -426,6 +465,7 @@ export function PracticeView() {
         retryAnswer,
         retryCorrected: result.corrected,
         retryCorrectedReading: result.correctedReading,
+        retryCorrectedTranslation: result.correctedTranslation,
         retryReasons: result.reasons,
       });
       setCurrentAttempt({
@@ -433,6 +473,7 @@ export function PracticeView() {
         retryAnswer,
         retryCorrected: result.corrected,
         retryCorrectedReading: result.correctedReading,
+        retryCorrectedTranslation: result.correctedTranslation,
         retryReasons: result.reasons,
       });
       recordOutputSample(settings.activeLanguage, retryAnswer, result.corrected);
@@ -697,6 +738,19 @@ export function PracticeView() {
             </button>
           )}
         </p>
+        {activeTopic.promptTranslation && (
+          <div class="practice-translation-row">
+            <button
+              type="button"
+              class="link-button practice-translation-toggle"
+              aria-expanded={promptTranslationRevealed}
+              onClick={toggleTranslation}
+            >
+              {promptTranslationRevealed ? t("practice-translation-hide") : t("practice-translation-show")}
+            </button>
+            {promptTranslationRevealed && <p class="practice-translation">{activeTopic.promptTranslation}</p>}
+          </div>
+        )}
         {speech.speechError && <p class="speak-error">{speech.speechError}</p>}
         {batchGeneratedCount > 0 && (
           <p class="hint-text status-ok">{t("practice-batch-generated", { count: batchGeneratedCount })}</p>
@@ -709,12 +763,15 @@ export function PracticeView() {
             </button>
             {showPrevious && (
               <FeedbackPanel
+                key={previousAttempt.id}
                 original={previousAttempt.original}
                 corrected={previousAttempt.corrected}
                 correctedReading={previousAttempt.correctedReading}
+                correctedTranslation={previousAttempt.correctedTranslation}
                 reasons={previousAttempt.reasons}
                 retryPrompt={previousAttempt.retryPrompt}
                 retryPromptReading={previousAttempt.retryPromptReading}
+                retryPromptTranslation={previousAttempt.retryPromptTranslation}
                 language={feedbackLanguage}
               />
             )}
@@ -759,6 +816,7 @@ export function PracticeView() {
               original={currentAttempt.original}
               corrected={currentAttempt.corrected}
               correctedReading={currentAttempt.correctedReading}
+              correctedTranslation={currentAttempt.correctedTranslation}
               reasons={currentAttempt.reasons}
               retryPrompt={currentAttempt.retryPrompt}
               retryPromptReading={currentAttempt.retryPromptReading}
@@ -771,6 +829,7 @@ export function PracticeView() {
                 <RetryPromptField
                   retryPrompt={currentAttempt.retryPrompt}
                   retryPromptReading={currentAttempt.retryPromptReading}
+                  retryPromptTranslation={currentAttempt.retryPromptTranslation}
                   language={feedbackLanguage}
                 />
                 <textarea
@@ -805,6 +864,7 @@ export function PracticeView() {
                       retryAnswer={currentAttempt.retryAnswer}
                       retryCorrected={currentAttempt.retryCorrected}
                       retryCorrectedReading={currentAttempt.retryCorrectedReading}
+                      retryCorrectedTranslation={currentAttempt.retryCorrectedTranslation}
                       retryReasons={currentAttempt.retryReasons}
                       language={feedbackLanguage}
                       showReadingAids={settings.showReadingAids}

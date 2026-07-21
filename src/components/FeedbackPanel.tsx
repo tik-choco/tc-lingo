@@ -18,10 +18,16 @@ export interface FeedbackPanelProps {
    * lib/languages.ts readingAid); "" for languages without one. Optional so
    * existing callers that don't pass it (predating the feature) keep working. */
   correctedReading?: string;
+  /** Native-language translation of `corrected`, revealed on demand (same
+   * idea as ReadingPassage's per-sentence translation); "" when none. */
+  correctedTranslation?: string;
   reasons: string;
   retryPrompt: string;
   /** Reading aid for `retryPrompt`; "" when none. */
   retryPromptReading?: string;
+  /** Native-language translation of `retryPrompt`, revealed on demand
+   * (same idea as ReadingPassage's per-sentence translation); "" when none. */
+  retryPromptTranslation?: string;
   language: string;
   showRetryPrompt?: boolean;
 }
@@ -38,10 +44,12 @@ function useShowReadingAids(): boolean {
 export function RetryPromptField({
   retryPrompt,
   retryPromptReading,
+  retryPromptTranslation,
   language,
 }: {
   retryPrompt: string;
   retryPromptReading?: string;
+  retryPromptTranslation?: string;
   language: string;
 }) {
   const speech = useSpeech();
@@ -49,6 +57,10 @@ export function RetryPromptField({
   const speaking = speech.speakingId === speakId;
   const loading = speech.loadingId === speakId;
   const showReadingAids = useShowReadingAids();
+  // Self-contained toggle (not lifted to the caller) — every RetryPromptField
+  // call site already remounts fresh per attempt/round, same idea as
+  // ReadingView's per-sentence reveal but scoped to this one field.
+  const [translationRevealed, setTranslationRevealed] = useState(false);
 
   return (
     <div class="feedback-field">
@@ -70,6 +82,19 @@ export function RetryPromptField({
       </div>
       <p class="feedback-retry-prompt">{retryPrompt}</p>
       {showReadingAids && retryPromptReading && <p class="reading-aid">{retryPromptReading}</p>}
+      {retryPromptTranslation && (
+        <div class="practice-translation-row">
+          <button
+            type="button"
+            class="link-button practice-translation-toggle"
+            aria-expanded={translationRevealed}
+            onClick={() => setTranslationRevealed((v) => !v)}
+          >
+            {translationRevealed ? t("practice-translation-hide") : t("practice-translation-show")}
+          </button>
+          {translationRevealed && <p class="practice-translation">{retryPromptTranslation}</p>}
+        </div>
+      )}
       {speech.speechError && <p class="speak-error">{speech.speechError}</p>}
     </div>
   );
@@ -79,9 +104,11 @@ export function FeedbackPanel({
   original,
   corrected,
   correctedReading,
+  correctedTranslation,
   reasons,
   retryPrompt,
   retryPromptReading,
+  retryPromptTranslation,
   language,
   showRetryPrompt,
 }: FeedbackPanelProps) {
@@ -91,6 +118,9 @@ export function FeedbackPanel({
   const speaking = speech.speakingId === speakId;
   const loading = speech.loadingId === speakId;
   const showReadingAids = useShowReadingAids();
+  // Self-contained toggle, same rationale as RetryPromptField's — this panel
+  // remounts fresh per attempt/round at every call site.
+  const [correctedTranslationRevealed, setCorrectedTranslationRevealed] = useState(false);
 
   return (
     <div class="feedback-panel">
@@ -123,6 +153,19 @@ export function FeedbackPanel({
           ))}
         </p>
         {showReadingAids && correctedReading && <p class="reading-aid">{correctedReading}</p>}
+        {correctedTranslation && (
+          <div class="practice-translation-row">
+            <button
+              type="button"
+              class="link-button practice-translation-toggle"
+              aria-expanded={correctedTranslationRevealed}
+              onClick={() => setCorrectedTranslationRevealed((v) => !v)}
+            >
+              {correctedTranslationRevealed ? t("practice-translation-hide") : t("practice-translation-show")}
+            </button>
+            {correctedTranslationRevealed && <p class="practice-translation">{correctedTranslation}</p>}
+          </div>
+        )}
         <GrammarExplain sentence={corrected} targetLanguage={language} />
       </div>
       <div class="feedback-field">
@@ -130,7 +173,12 @@ export function FeedbackPanel({
         <p class="feedback-reasons">{reasons}</p>
       </div>
       {retryPrompt && showRetryPrompt !== false && (
-        <RetryPromptField retryPrompt={retryPrompt} retryPromptReading={retryPromptReading} language={language} />
+        <RetryPromptField
+          retryPrompt={retryPrompt}
+          retryPromptReading={retryPromptReading}
+          retryPromptTranslation={retryPromptTranslation}
+          language={language}
+        />
       )}
       {speech.speechError && <p class="speak-error">{speech.speechError}</p>}
     </div>

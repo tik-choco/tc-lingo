@@ -145,9 +145,11 @@ export function HistoryView() {
                       {/* retryPrompt is deliberately blanked here: the Q&A block
                           below owns the follow-up question so it isn't shown twice. */}
                       <FeedbackPanel
+                        key={attempt.id}
                         original={attempt.original}
                         corrected={attempt.corrected}
                         correctedReading={attempt.correctedReading}
+                        correctedTranslation={attempt.correctedTranslation}
                         reasons={attempt.reasons}
                         retryPrompt=""
                         language={topic.language || settings.activeLanguage}

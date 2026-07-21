@@ -45,6 +45,10 @@ export interface Topic {
   id: string;
   title: string;
   prompt: string;
+  /** Native-language translation of `prompt`, revealed on demand (same idea
+   * as ReadingPassage's per-sentence translation); "" for topics saved
+   * before this feature existed. */
+  promptTranslation: string;
   custom: boolean;
   /** Which of the learner's target languages this topic is written in. ""
    * for topics saved before multi-language support existed. */
@@ -70,16 +74,27 @@ export interface PracticeAttempt {
    * lib/languages.ts readingAid); "" for languages without one and attempts
    * saved before reading aids existed. */
   correctedReading: string;
+  /** Native-language translation of `corrected`, revealed on demand (same
+   * idea as ReadingPassage's per-sentence translation); "" when none, or
+   * attempts saved before this feature existed. */
+  correctedTranslation: string;
   reasons: string;
   retryPrompt: string;
   /** Reading aid for `retryPrompt`; "" when none. */
   retryPromptReading: string;
+  /** Native-language translation of `retryPrompt`, revealed on demand (same
+   * idea as ReadingPassage's per-sentence translation); "" when none, or
+   * attempts saved before this feature existed. */
+  retryPromptTranslation: string;
   retryAnswer: string;
   /** AI-corrected version of retryAnswer, from a learner-triggered "check my
    * answer" pass over the retry (see PracticeView). "" until checked. */
   retryCorrected: string;
   /** Reading aid for `retryCorrected`; "" when unchecked / no aid. */
   retryCorrectedReading: string;
+  /** Native-language translation of `retryCorrected`; "" when unchecked /
+   * none, or attempts saved before this feature existed. */
+  retryCorrectedTranslation: string;
   /** Explanation for retryCorrected, in the learner's native language. */
   retryReasons: string;
   /** ISO timestamp, bumped on every mutation to this attempt; exists for the
