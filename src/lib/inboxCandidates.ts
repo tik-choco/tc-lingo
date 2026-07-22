@@ -29,6 +29,7 @@ function explainCandidates(payload: LingoCardPayloadV1): CardCandidate[] {
       reading: v.reading,
       meaning: v.meaning,
       exampleSentence: grammarExamples.find((example) => example.includes(v.word)) ?? "",
+      exampleSentenceTranslation: "",
       context: v.note,
       cloze: "",
     }));
@@ -50,6 +51,7 @@ function translateCandidates(payload: LingoCardPayloadV1): CardCandidate[] {
       reading: (chosen.reading ?? chosen.pinyin ?? "").trim(),
       meaning: chosen.text.trim(),
       exampleSentence: "",
+      exampleSentenceTranslation: "",
       context: "",
       cloze: "",
     },

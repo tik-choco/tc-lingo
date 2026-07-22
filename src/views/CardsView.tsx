@@ -4,6 +4,7 @@ import { addCard, deleteCard, loadCards, mergeCards, subscribeCards, updateCard 
 import { loadSettings, subscribeSettings } from "../lib/settings";
 import { loadTopics } from "../lib/topics";
 import { languageDisplayName, readingSpec } from "../lib/languages";
+import { CardFront } from "../components/CardFront";
 import { LanguageSelect } from "../components/LanguageSelect";
 import { MistakeCardPicker } from "../components/MistakeCardPicker";
 import { getUiLanguage, t } from "../i18n";
@@ -261,6 +262,19 @@ export function CardsView() {
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   function toggleExpand(id: string) {
     setExpandedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  // Which cards' example-sentence translation is currently revealed — same
+  // idea as PracticeView's promptTranslationRevealed, just keyed per-card
+  // since this list shows many cards at once.
+  const [exampleTranslationRevealedIds, setExampleTranslationRevealedIds] = useState<Set<string>>(new Set());
+  function toggleExampleTranslation(id: string) {
+    setExampleTranslationRevealedIds((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
@@ -551,8 +565,13 @@ export function CardsView() {
                 <li key={c.id} class="card-list-entry">
                   <div class="card-list-item card-list-clickable" onClick={() => toggleExpand(c.id)}>
                     <div class="card-list-main">
-                      <strong>{c.front}</strong>
-                      {c.reading && <span class="card-list-reading"> ({c.reading})</span>}
+                      <CardFront
+                        front={c.front}
+                        reading={c.reading}
+                        language={c.language || settings.activeLanguage}
+                        readingClassName="card-list-reading"
+                        bold
+                      />
                       <span class="card-list-meaning"> — {c.meaning}</span>
                     </div>
                     <div class="card-list-meta">
@@ -691,7 +710,7 @@ export function CardsView() {
                     ) : (
                       <div class="card-list-detail">
                         {c.exampleSentence && (
-                          <p class="card-detail-row">
+                          <div class="card-detail-row">
                             <span class="card-detail-label">{t("cards-detail-example")}</span>
                             {c.exampleSentence}
                             {speech.supported && (
@@ -723,7 +742,22 @@ export function CardsView() {
                                 )}
                               </button>
                             )}
-                          </p>
+                            {c.exampleSentenceTranslation && (
+                              <button
+                                type="button"
+                                class="link-button example-translation-toggle"
+                                aria-expanded={exampleTranslationRevealedIds.has(c.id)}
+                                onClick={() => toggleExampleTranslation(c.id)}
+                              >
+                                {exampleTranslationRevealedIds.has(c.id)
+                                  ? t("cards-example-translation-hide")
+                                  : t("cards-example-translation-show")}
+                              </button>
+                            )}
+                            {exampleTranslationRevealedIds.has(c.id) && (
+                              <p class="example-translation">{c.exampleSentenceTranslation}</p>
+                            )}
+                          </div>
                         )}
                         {c.context && (
                           <p class="card-detail-row">

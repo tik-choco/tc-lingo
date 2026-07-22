@@ -153,6 +153,10 @@ export interface CardCandidate {
   reading: string;
   meaning: string;
   exampleSentence: string;
+  /** Native-language translation of exampleSentence, revealed on demand in
+   * the UI (see types.ts's Card.exampleSentenceTranslation); "" when the
+   * model didn't provide one (e.g. exampleSentence itself is empty). */
+  exampleSentenceTranslation: string;
   context: string;
   cloze: string;
 }
@@ -168,6 +172,7 @@ export function parseCardCandidates(content: string): CardCandidate[] {
       reading: typeof item.reading === "string" ? item.reading : "",
       meaning: typeof item.meaning === "string" ? item.meaning : "",
       exampleSentence: typeof item.exampleSentence === "string" ? item.exampleSentence : "",
+      exampleSentenceTranslation: typeof item.exampleSentenceTranslation === "string" ? item.exampleSentenceTranslation : "",
       context: typeof item.context === "string" ? item.context : "",
       cloze: typeof item.cloze === "string" ? item.cloze : "",
     }))

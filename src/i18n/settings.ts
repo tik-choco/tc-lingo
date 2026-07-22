@@ -36,7 +36,7 @@ export const settingsMessages = {
       "When on, corrections from Practice and Talk automatically become SRS cards in the background (duplicates are skipped). When off, use the manual extract button after each correction instead.",
     "settings-reading-aids-label": "Always show readings",
     "settings-reading-aids-hint":
-      "Shows a reading line (e.g. pinyin for Chinese) under target-language text.",
+      "Shows a reading line (e.g. pinyin for Chinese) under target-language text. For Japanese cards, shows the reading as furigana (ruby) above the kanji instead of in parentheses.",
     "settings-auto-organize-label": "Automatically tidy up similar cards",
     "settings-auto-organize-hint":
       "When on, cards that look redundant (duplicates, near-synonyms, or the same word differing only in tense/plural/form) are quietly merged in the background — no confirmation shown. Set an embedding model for \"Similar-card detection model\" in the Tasks tab to turn it on; without one, this silently does nothing.",
@@ -195,7 +195,8 @@ export const settingsMessages = {
     "settings-auto-extract-hint":
       "オンにすると、練習・会話タブでの修正がバックグラウンドで自動的にSRSカードになります(重複は除外)。オフにすると、修正後に手動で抽出ボタンを押す方式に戻ります。",
     "settings-reading-aids-label": "読みを常に表示",
-    "settings-reading-aids-hint": "中国語のピンインなど、学習言語の文に読みを添えて表示します。",
+    "settings-reading-aids-hint":
+      "中国語のピンインなど、学習言語の文に読みを添えて表示します。日本語カードの場合は、カッコ書きではなく漢字の上にふりがな(ルビ)として読みを表示します。",
     "settings-auto-organize-label": "似ているカードを自動で整理する",
     "settings-auto-organize-hint":
       "オンにすると、重複や類義語、時制・複数形などの語形違いだけのカードが確認画面なしで自動的に1枚に統合されます。有効にするには「タスク」タブの「類似カード検出用モデル」にembeddingモデルを設定してください。未設定の間は何も起こりません。",
@@ -349,7 +350,7 @@ export const settingsMessages = {
     "settings-auto-extract-hint":
       "开启后,练习和对话标签中的修正会在后台自动生成SRS卡片(自动跳过重复项)。关闭后,需在每次修正后手动点击提取按钮。",
     "settings-reading-aids-label": "始终显示注音",
-    "settings-reading-aids-hint": "在学习语言的文字下方显示注音(例如中文拼音)。",
+    "settings-reading-aids-hint": "在学习语言的文字下方显示注音(例如中文拼音)。对于日语卡片,读音将显示为汉字上方的振假名(注音),而不是括号中的文字。",
     "settings-auto-organize-label": "自动整理相似卡片",
     "settings-auto-organize-hint":
       "开启后，重复卡片、近义词，或仅时态/单复数等词形不同的卡片会在后台自动合并为一张，不会显示确认界面。请在「任务」标签页的「相似卡片检测模型」中设置embedding模型以启用；未设置时不会有任何效果。",
@@ -499,7 +500,7 @@ export const settingsMessages = {
     "settings-auto-extract-hint":
       "開啟後,練習和會話標籤中的修正會在背景自動產生SRS卡片(自動略過重複項)。關閉後,需在每次修正後手動點擊擷取按鈕。",
     "settings-reading-aids-label": "始終顯示注音",
-    "settings-reading-aids-hint": "在學習語言的文字下方顯示注音(例如中文拼音)。",
+    "settings-reading-aids-hint": "在學習語言的文字下方顯示注音(例如中文拼音)。對於日語卡片,讀音將顯示為漢字上方的振假名(注音),而不是括號中的文字。",
     "settings-auto-organize-label": "自動整理相似卡片",
     "settings-auto-organize-hint":
       "開啟後，重複卡片、近義詞，或僅時態/單複數等詞形不同的卡片會在背景自動合併為一張，不會顯示確認畫面。請在「工作」分頁的「相似卡片偵測模型」中設定embedding模型以啟用;未設定時不會有任何效果。",

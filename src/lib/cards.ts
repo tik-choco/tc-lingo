@@ -18,6 +18,7 @@ export function isCard(value: unknown): value is Card {
     typeof r.reading === "string" &&
     typeof r.meaning === "string" &&
     typeof r.exampleSentence === "string" &&
+    (r.exampleSentenceTranslation === undefined || typeof r.exampleSentenceTranslation === "string") &&
     typeof r.context === "string" &&
     typeof r.cloze === "string" &&
     (r.source === "manual" || r.source === "mistake" || r.source === "translate" || r.source === "sentence") &&
@@ -36,13 +37,20 @@ export function isCard(value: unknown): value is Card {
 /** Filters + backfills a raw array into valid Cards: `language` predates
  * multi-language support on some saved cards (backfilled to "", shown
  * regardless of the active language filter, rather than dropping the card);
- * `updatedAt` predates the sync feature (backfilled to `createdAt` — a
- * stable, deterministic timestamp, not `now`, so a pre-sync card doesn't
- * spuriously look newer than it is). Exported so lib/sync/snapshot.ts can
- * apply identical sanitization to a remote snapshot's cards. */
+ * `exampleSentenceTranslation` predates the translation-reveal feature
+ * (backfilled to ""); `updatedAt` predates the sync feature (backfilled to
+ * `createdAt` — a stable, deterministic timestamp, not `now`, so a pre-sync
+ * card doesn't spuriously look newer than it is). Exported so
+ * lib/sync/snapshot.ts can apply identical sanitization to a remote
+ * snapshot's cards. */
 export function sanitizeCards(raw: unknown): Card[] {
   if (!Array.isArray(raw)) return [];
-  return raw.filter(isCard).map((c) => ({ ...c, language: c.language ?? "", updatedAt: c.updatedAt ?? c.createdAt }));
+  return raw.filter(isCard).map((c) => ({
+    ...c,
+    language: c.language ?? "",
+    exampleSentenceTranslation: c.exampleSentenceTranslation ?? "",
+    updatedAt: c.updatedAt ?? c.createdAt,
+  }));
 }
 
 export function loadCards(): Card[] {
@@ -62,6 +70,7 @@ export interface NewCardInput {
   reading?: string;
   meaning: string;
   exampleSentence?: string;
+  exampleSentenceTranslation?: string;
   context?: string;
   cloze?: string;
   source?: CardSource;
@@ -79,6 +88,7 @@ export function addCard(input: NewCardInput): Card {
     reading: (input.reading ?? "").trim(),
     meaning: input.meaning.trim(),
     exampleSentence: (input.exampleSentence ?? "").trim(),
+    exampleSentenceTranslation: (input.exampleSentenceTranslation ?? "").trim(),
     context: (input.context ?? "").trim(),
     cloze: (input.cloze ?? "").trim(),
     source: input.source ?? "manual",
@@ -102,6 +112,9 @@ export function updateCard(id: string, patch: Partial<NewCardInput>): void {
           ...(patch.reading !== undefined ? { reading: patch.reading.trim() } : {}),
           ...(patch.meaning !== undefined ? { meaning: patch.meaning.trim() } : {}),
           ...(patch.exampleSentence !== undefined ? { exampleSentence: patch.exampleSentence.trim() } : {}),
+          ...(patch.exampleSentenceTranslation !== undefined
+            ? { exampleSentenceTranslation: patch.exampleSentenceTranslation.trim() }
+            : {}),
           ...(patch.context !== undefined ? { context: patch.context.trim() } : {}),
           ...(patch.cloze !== undefined ? { cloze: patch.cloze.trim() } : {}),
           updatedAt: now,

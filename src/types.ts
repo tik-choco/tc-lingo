@@ -19,6 +19,11 @@ export interface Card {
   reading: string;
   meaning: string;
   exampleSentence: string;
+  /** Native-language translation of `exampleSentence`, revealed on demand
+   * (same idea as ReadingPassage's per-sentence translation); "" for cards
+   * saved before this feature existed, or when generation didn't provide
+   * one (e.g. manually-entered cards). */
+  exampleSentenceTranslation: string;
   context: string;
   cloze: string;
   source: CardSource;
@@ -275,8 +280,11 @@ export interface LingoSettings {
    * waiting for the learner to press the manual extract button. */
   autoExtractCards: boolean;
   /** Whether target-language text shows its always-visible reading aid line
-   * (e.g. pinyin for Chinese — see lib/languages.ts readingAid). Display-only:
-   * readings are still generated and stored while this is off. */
+   * (e.g. pinyin for Chinese — see lib/languages.ts readingAid). Also gates
+   * furigana ruby display (kana above the kanji, instead of the usual
+   * "front (reading)" parenthetical) for Japanese card fronts — see
+   * components/CardFront.tsx. Display-only: readings are still generated and
+   * stored while this is off. */
   showReadingAids: boolean;
   /** Whether this app participates in the AI Network room as a *provider*
    * (serving llm_request/tts_request traffic from other peers), independent

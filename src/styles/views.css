@@ -614,6 +614,11 @@ button:disabled {
   font-size: 0.9rem;
 }
 
+.card-front-ruby rt {
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
 .card-list-meta {
   display: flex;
   align-items: center;
@@ -680,6 +685,20 @@ button:disabled {
   font-weight: 600;
   color: var(--text-muted);
   margin-right: var(--space-2);
+}
+
+/* Toggle-on-demand translation for a card's example sentence — same idea as
+   PracticeView's .practice-translation-row (topic prompt translation). Used
+   in both CardsView's detail row and ReviewView's answer reveal. */
+.example-translation-toggle {
+  font-size: 0.78rem;
+  margin-left: var(--space-2);
+}
+
+.example-translation {
+  margin: var(--space-1) 0 0;
+  color: var(--text-muted);
+  font-size: 0.9rem;
 }
 
 .card-detail-source {

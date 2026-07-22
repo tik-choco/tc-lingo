@@ -27,6 +27,7 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import { Loader2, RotateCw, Square, Volume2 } from "lucide-preact";
 import { dueCards, gradeCard } from "../lib/cards";
+import { CardFront } from "../components/CardFront";
 import { diffChars } from "../lib/diff";
 import { GrammarExplain } from "../components/GrammarExplain";
 import { SpellingDrill } from "../components/SpellingDrill";
@@ -73,6 +74,9 @@ export function ReviewView() {
   // Ephemeral, session-only cloze variations (lib/reviewClozeVariation.ts),
   // keyed by card id — never persisted, see the prefetch effect below.
   const [clozeVariations, setClozeVariations] = useState<Record<string, string>>({});
+  // Toggle-on-demand example-sentence translation, same idea as PracticeView's
+  // promptTranslationRevealed — reset whenever the shown card changes.
+  const [exampleTranslationRevealed, setExampleTranslationRevealed] = useState(false);
 
   function refresh() {
     setQueue(dueCards(new Date(), settings.activeLanguage));
@@ -81,6 +85,7 @@ export function ReviewView() {
     setDoneCount(0);
     setTypedAnswer("");
     setClozeVariations({});
+    setExampleTranslationRevealed(false);
     shownAtRef.current = performance.now();
   }
 
@@ -91,6 +96,7 @@ export function ReviewView() {
     setDoneCount(0);
     setTypedAnswer("");
     setClozeVariations({});
+    setExampleTranslationRevealed(false);
     shownAtRef.current = performance.now();
   }, [settings.activeLanguage]);
 
@@ -212,6 +218,7 @@ export function ReviewView() {
     setIndex((i) => i + 1);
     setResult(null);
     setTypedAnswer("");
+    setExampleTranslationRevealed(false);
   }
 
   // Keep keyboard-only review flowing without a mouse: the answer input is
@@ -335,8 +342,7 @@ export function ReviewView() {
                 )}
                 <div class="review-answer">
                   <p class="review-answer-front">
-                    {current.front}
-                    {current.reading && <span class="review-answer-reading"> ({current.reading})</span>}
+                    <CardFront front={current.front} reading={current.reading} language={cardLanguage} readingClassName="review-answer-reading" />
                     {speech.supported && (
                       <button
                         type="button"
@@ -361,7 +367,7 @@ export function ReviewView() {
                   </p>
                   <p class="review-answer-meaning">{current.meaning}</p>
                   {current.exampleSentence && (
-                    <p class="review-answer-example">
+                    <div class="review-answer-example">
                       {current.exampleSentence}
                       {speech.supported && (
                         <button
@@ -390,7 +396,18 @@ export function ReviewView() {
                           )}
                         </button>
                       )}
-                    </p>
+                      {current.exampleSentenceTranslation && (
+                        <button
+                          type="button"
+                          class="link-button example-translation-toggle"
+                          aria-expanded={exampleTranslationRevealed}
+                          onClick={() => setExampleTranslationRevealed((v) => !v)}
+                        >
+                          {exampleTranslationRevealed ? t("cards-example-translation-hide") : t("cards-example-translation-show")}
+                        </button>
+                      )}
+                      {exampleTranslationRevealed && <p class="example-translation">{current.exampleSentenceTranslation}</p>}
+                    </div>
                   )}
                   {current.context && <p class="review-answer-context">{current.context}</p>}
                   {speech.speechError && <p class="speak-error">{speech.speechError}</p>}
