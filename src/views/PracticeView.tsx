@@ -285,7 +285,7 @@ export function PracticeView() {
       setError(t("practice-need-llm"));
       return;
     }
-    const conn = connectionForTask("topic");
+    const conn = connectionForTask("generation");
     if (!conn) return;
     setError("");
     setGeneratingTopic(true);
@@ -321,7 +321,7 @@ export function PracticeView() {
       setError(t("practice-need-llm"));
       return;
     }
-    const conn = connectionForTask("topic");
+    const conn = connectionForTask("generation");
     if (!conn) return;
     setError("");
     setGeneratingAllTopics(true);
@@ -386,9 +386,9 @@ export function PracticeView() {
       setError(t("practice-need-llm"));
       return;
     }
-    const practiceConn = connectionForTask("practice");
+    const practiceConn = connectionForTask("correction");
     if (!practiceConn) return;
-    const cardsConn = connectionForTask("cards");
+    const cardsConn = connectionForTask("generation");
     if (!cardsConn) return;
     setError("");
     setAutoAddedCards([]);
@@ -445,9 +445,9 @@ export function PracticeView() {
       setError(t("practice-need-llm"));
       return;
     }
-    const practiceConn = connectionForTask("practice");
+    const practiceConn = connectionForTask("correction");
     if (!practiceConn) return;
-    const cardsConn = connectionForTask("cards");
+    const cardsConn = connectionForTask("generation");
     if (!cardsConn) return;
     setError("");
     setAutoAddedRetryCards([]);
@@ -510,7 +510,7 @@ export function PracticeView() {
       setError(t("practice-need-llm"));
       return;
     }
-    const conn = connectionForTask("cards");
+    const conn = connectionForTask("generation");
     if (!conn) return;
     setError("");
     setSavingSentenceCards(true);
@@ -541,7 +541,7 @@ export function PracticeView() {
       setError(t("practice-need-llm"));
       return;
     }
-    const conn = connectionForTask("cards");
+    const conn = connectionForTask("generation");
     if (!conn) return;
     setError("");
     setSavingRetrySentenceCards(true);
@@ -565,7 +565,7 @@ export function PracticeView() {
 
   async function extractCards() {
     if (!currentAttempt || !connection) return;
-    const conn = connectionForTask("cards");
+    const conn = connectionForTask("generation");
     if (!conn) return;
     setError("");
     setExtracting(true);

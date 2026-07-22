@@ -458,7 +458,7 @@ export function TalkView() {
       setStartError(t("talk-need-llm"));
       return;
     }
-    const conn = connectionForTask("conversation");
+    const conn = connectionForTask("generation");
     if (!conn) return;
     setStartError("");
     setStarting(true);
@@ -546,23 +546,21 @@ export function TalkView() {
       setSendError(t("talk-need-llm"));
       return;
     }
-    const conversationConn = connectionForTask("conversation");
-    if (!conversationConn) return;
-    const cardsConn = connectionForTask("cards");
-    if (!cardsConn) return;
+    const conn = connectionForTask("generation");
+    if (!conn) return;
     setSendError("");
     setSending(true);
     const learnerText = text;
     try {
       const result = await requestConversationReply({
-        connection: conversationConn,
+        connection: conn,
         targetLanguage: sessionLanguage,
         nativeLanguage: settings.nativeLanguage,
         scenario: activeSession.scenario,
         turns: activeSession.turns,
         learnerText,
       });
-      const [learnerTurn, assistantTurn] = buildReplyTurns(result, learnerText, cardsConn);
+      const [learnerTurn, assistantTurn] = buildReplyTurns(result, learnerText, conn);
       updateConversation(activeSession.id, { turns: [...activeSession.turns, learnerTurn, assistantTurn] });
       setText("");
     } catch (e) {
@@ -600,23 +598,21 @@ export function TalkView() {
       setEditError(t("talk-need-llm"));
       return;
     }
-    const conversationConn = connectionForTask("conversation");
-    if (!conversationConn) return;
-    const cardsConn = connectionForTask("cards");
-    if (!cardsConn) return;
+    const conn = connectionForTask("generation");
+    if (!conn) return;
     setEditError("");
     setEditSubmitting(true);
     const learnerText = editText;
     try {
       const result = await requestConversationReply({
-        connection: conversationConn,
+        connection: conn,
         targetLanguage: sessionLanguage,
         nativeLanguage: settings.nativeLanguage,
         scenario: activeSession.scenario,
         turns: historyTurns,
         learnerText,
       });
-      const [learnerTurn, assistantTurn] = buildReplyTurns(result, learnerText, cardsConn);
+      const [learnerTurn, assistantTurn] = buildReplyTurns(result, learnerText, conn);
       updateConversation(activeSession.id, { turns: [...historyTurns, learnerTurn, assistantTurn] });
       cancelEdit();
     } catch (e) {
@@ -632,7 +628,7 @@ export function TalkView() {
    * regardless of settings.autoExtractCards. */
   async function saveTurnSentenceCards(turn: ConversationTurn) {
     if (!connection || !turn.corrected) return;
-    const conn = connectionForTask("cards");
+    const conn = connectionForTask("generation");
     if (!conn) return;
     setSentenceCardsByTurn((prev) => ({ ...prev, [turn.id]: { kind: "saving" } }));
     try {
@@ -672,7 +668,7 @@ export function TalkView() {
 
   async function extractCards() {
     if (!activeSession || !connection || correctedTurns.length === 0) return;
-    const conn = connectionForTask("cards");
+    const conn = connectionForTask("generation");
     if (!conn) return;
     setExtractError("");
     setExtracting(true);

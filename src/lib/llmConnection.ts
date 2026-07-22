@@ -56,17 +56,10 @@ export function setSharedNetworkRoomId(roomId: string): void {
 }
 
 /** UI display order for the per-task preset/reasoning-effort override list
- * (see SettingsView / `LingoSettings.taskPresetIds`/`taskReasoningEfforts`). */
-export const LLM_TASKS: readonly LlmTask[] = [
-  "practice",
-  "topic",
-  "cards",
-  "review",
-  "reading",
-  "conversation",
-  "grammar",
-  "ui-translation",
-];
+ * (see SettingsView / `LingoSettings.taskPresetIds`/`taskReasoningEfforts`).
+ * Three entries, not one per feature — see types.ts's `LlmTask` doc comment
+ * for why they're grouped this way. */
+export const LLM_TASKS: readonly LlmTask[] = ["correction", "generation", "card-organize"];
 
 /**
  * Resolves the actual connection an LLM call for `task` should use, folding

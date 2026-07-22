@@ -221,30 +221,44 @@ export type TtsEngine = "browser" | "api" | "network";
 
 /** Which app task an LLM call is for, so a per-task preset override
  * (`LingoSettings.taskPresetIds`) can pick a different shared preset (and
- * therefore a different model/provider) than the default for that one task —
- * e.g. a cheaper/faster model for "cards" extraction, a stronger one for
- * "practice" correction. "practice" is requestFeedback/requestRetryFeedback
- * (練習の添削), "topic" is requestTopicSuggestion/planTopicFanOut (トピック提案),
- * "cards" is requestMistakeCards/requestTranslationCards/
- * requestSentenceCardInfo/autoExtract (カード抽出), "review" is
- * judgeReviewAnswer (復習の解答判定), "reading" is lib/reading.ts's passage
- * generation (読解教材の生成), "conversation" is lib/conversation.ts (会話),
- * "grammar" is lib/grammar.ts (文法解説), and "ui-translation" is
- * lib/uiTranslation.ts's runtime UI-string translation (UI文言のLLM翻訳). See
- * lib/llmConnection.ts's `connectionForTask` for how the preset id (and the
- * paired `taskReasoningEfforts` entry) resolve into an actual connection —
- * a task preset that itself resolves to a `mist-network://` pseudo-provider
+ * therefore a different model/provider) than the default for that one task.
+ * Grouped into three by "same nature of model" rather than one entry per
+ * feature — a flat one-per-feature list grew unwieldy (9 rows in Settings)
+ * without most learners actually wanting a different model per feature:
+ *
+ * - "correction": the accuracy-critical judgment calls — practice's
+ *   requestFeedback/requestRetryFeedback (練習の添削) and review's
+ *   judgeReviewAnswer (復習の解答判定). Worth a stronger model, since a wrong
+ *   correction or a wrongly-accepted review answer teaches the learner
+ *   something false.
+ * - "generation": every other chat-completion call — requestTopicSuggestion/
+ *   planTopicFanOut (トピック提案), requestMistakeCards/
+ *   requestTranslationCards/requestSentenceCardInfo/autoExtract/
+ *   requestCardMerges (カード抽出・統合判断), lib/reading.ts's passage
+ *   generation (読解教材の生成), lib/conversation.ts (会話), lib/grammar.ts
+ *   (文法解説), and lib/uiTranslation.ts's runtime UI-string translation (UI
+ *   文言のLLM翻訳) — all generation/extraction tasks a learner would
+ *   reasonably point at the same (often cheaper) model.
+ * - "card-organize": the embedding model lib/cardAutoOrganize.ts's
+ *   background similar-card detection uses to cheaply pre-filter merge
+ *   candidates before confirming them with the "generation" task's chat
+ *   model (類似カード検出用モデル) — kept separate because it's categorically a
+ *   different kind of model (embeddings, not chat completions), unlike
+ *   "correction" vs "generation" which is purely a quality/cost split. A
+ *   preset resolving to a `mist-network://` pseudo-provider (or any AI
+ *   Network room connection) can't serve this one, since embeddings aren't
+ *   supported over that transport.
+ *
+ * See lib/llmConnection.ts's `connectionForTask` for how the preset id (and
+ * the paired `taskReasoningEfforts` entry) resolve into an actual connection
+ * — a task preset that itself resolves to a `mist-network://` pseudo-provider
  * routes over the AI Network room even when `connectionMode` is "api" (see
- * tc-docs/drafts/llm-settings-common-v1.md §2.3/§6). */
-export type LlmTask =
-  | "practice"
-  | "topic"
-  | "cards"
-  | "review"
-  | "reading"
-  | "conversation"
-  | "grammar"
-  | "ui-translation";
+ * tc-docs/drafts/llm-settings-common-v1.md §2.3/§6). lib/settings.ts's
+ * `loadSettings` folds any pre-consolidation per-feature override
+ * (`practice`/`topic`/`cards`/`review`/`reading`/`conversation`/`grammar`/
+ * `ui-translation` keys) into these three on load, so existing installs
+ * don't silently lose a customization they'd already made. */
+export type LlmTask = "correction" | "generation" | "card-organize";
 
 /** Supports studying more than one language at once: `targetLanguages` is
  * the full set the learner is juggling, `activeLanguage` (always a member of
@@ -292,4 +306,14 @@ export interface LingoSettings {
   /** `reasoning_effort` used for any task without its own
    * `taskReasoningEfforts` entry. */
   defaultReasoningEffort: ReasoningEffort;
+  /** Whether lib/cardAutoOrganize.ts's background pass silently merges
+   * near-duplicate/redundant cards it's confident about (embedding
+   * pre-filter + "cards"-task chat confirmation, no approval UI — see that
+   * module's header comment). Independent of the manual "類似カードを整理"
+   * button in CardsView, which always asks first regardless of this flag. */
+  autoOrganizeCards: boolean;
+  /** ISO timestamp of the last runCardAutoOrganize pass, or "" if it has
+   * never run. Device-local bookkeeping (not synced) that paces automatic
+   * merging — see lib/cardAutoOrganize.ts's cooldown check. */
+  lastCardAutoOrganizeAt: string;
 }

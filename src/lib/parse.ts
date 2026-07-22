@@ -102,19 +102,27 @@ export function parseTopicFanOutPlan(content: string, candidateLanguages: string
   }
 }
 
+/** "near" covers a right-word-wrong-form recall (tense, plural, conjugation,
+ * politeness level, minor spelling slip) — same three-way shape as
+ * lib/srs.ts's AnswerJudgement, so callers can drop it straight into the
+ * existing correct/near/wrong grading and UI. */
+export type AnswerVerdictKind = "correct" | "near" | "wrong";
+
 export interface AnswerVerdict {
-  acceptable: boolean;
+  verdict: AnswerVerdictKind;
   note: string;
 }
 
 /** For the review tab's LLM second-opinion judge (llm.ts judgeReviewAnswer):
- * a missing/non-boolean "acceptable" is a parse failure — the caller catches
- * and falls back to the strict string judgement — while a missing note is
- * just "". */
+ * a missing/invalid "verdict" is a parse failure — the caller catches and
+ * falls back to the strict string judgement — while a missing note is just
+ * "". */
 export function parseAnswerVerdict(content: string): AnswerVerdict {
   const parsed = extractJson(content) as Record<string, unknown>;
-  if (typeof parsed.acceptable !== "boolean") throw new Error(t("error-parse-json"));
-  return { acceptable: parsed.acceptable, note: typeof parsed.note === "string" ? parsed.note : "" };
+  if (parsed.verdict !== "correct" && parsed.verdict !== "near" && parsed.verdict !== "wrong") {
+    throw new Error(t("error-parse-json"));
+  }
+  return { verdict: parsed.verdict, note: typeof parsed.note === "string" ? parsed.note : "" };
 }
 
 export interface CardCandidate {
@@ -141,6 +149,60 @@ export function parseCardCandidates(content: string): CardCandidate[] {
       cloze: typeof item.cloze === "string" ? item.cloze : "",
     }))
     .filter((c) => c.front && c.meaning);
+}
+
+export interface CardMergeGroup {
+  cardIds: string[];
+  merged: { front: string; reading: string; meaning: string; exampleSentence: string; context: string; cloze: string };
+  reason: string;
+}
+
+/** For lib/llm.ts's requestCardMerges (CardsView's "similar cards" cleanup
+ * tool): defensively resolves the model's proposed merge groups against the
+ * actual card ids sent in the request. `validIds` filters out any
+ * hallucinated id; a group left with fewer than 2 known ids can't merge
+ * anything, so it's dropped. If the model reuses the same card id across
+ * multiple groups (which would make merging ambiguous), only its first
+ * group keeps that id — later groups have it stripped, and may themselves
+ * end up dropped below the 2-id floor. */
+export function parseCardMergeGroups(content: string, validIds: Set<string>): CardMergeGroup[] {
+  const parsed = extractJson(content);
+  const list = Array.isArray(parsed)
+    ? parsed
+    : Array.isArray((parsed as Record<string, unknown>)?.groups)
+      ? (parsed as Record<string, unknown>).groups
+      : null;
+  if (!Array.isArray(list)) return [];
+
+  const claimed = new Set<string>();
+  const groups: CardMergeGroup[] = [];
+  for (const item of list) {
+    if (typeof item !== "object" || item === null) continue;
+    const r = item as Record<string, unknown>;
+    const rawIds = Array.isArray(r.cardIds) ? r.cardIds.filter((id): id is string => typeof id === "string") : [];
+    const cardIds = rawIds.filter((id) => validIds.has(id) && !claimed.has(id));
+    if (cardIds.length < 2) continue;
+
+    const m = (typeof r.merged === "object" && r.merged !== null ? r.merged : {}) as Record<string, unknown>;
+    const front = typeof m.front === "string" ? m.front : "";
+    const meaning = typeof m.meaning === "string" ? m.meaning : "";
+    if (!front || !meaning) continue;
+
+    cardIds.forEach((id) => claimed.add(id));
+    groups.push({
+      cardIds,
+      merged: {
+        front,
+        meaning,
+        reading: typeof m.reading === "string" ? m.reading : "",
+        exampleSentence: typeof m.exampleSentence === "string" ? m.exampleSentence : "",
+        context: typeof m.context === "string" ? m.context : "",
+        cloze: typeof m.cloze === "string" ? m.cloze : "",
+      },
+      reason: typeof r.reason === "string" ? r.reason : "",
+    });
+  }
+  return groups;
 }
 
 export interface SentenceCardCandidate {

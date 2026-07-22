@@ -11,8 +11,8 @@ import { t } from "../i18n";
 import type { ResolvedLlmTargetV1 } from "./llmConfig";
 import type { LlmConnection } from "./llmConnection";
 import { requestNetworkChat } from "./network";
-import { parseAnswerVerdict, parseCardCandidates, parseFeedback, parseRetryFeedback, parseSentenceCards, parseTopicFanOutPlan, parseTopicSuggestion } from "./parse";
-import type { AnswerVerdict, CardCandidate, FeedbackResult, RetryFeedbackResult, SentenceCardCandidate, TopicFanOutPlan, TopicSuggestion } from "./parse";
+import { parseAnswerVerdict, parseCardCandidates, parseCardMergeGroups, parseFeedback, parseRetryFeedback, parseSentenceCards, parseTopicFanOutPlan, parseTopicSuggestion } from "./parse";
+import type { AnswerVerdict, CardCandidate, CardMergeGroup, FeedbackResult, RetryFeedbackResult, SentenceCardCandidate, TopicFanOutPlan, TopicSuggestion } from "./parse";
 import { readingAid, readingSpec } from "./languages";
 import { levelInstruction } from "./level";
 
@@ -292,12 +292,40 @@ export async function requestSentenceCardInfo(params: {
   return parseSentenceCards(content);
 }
 
+/** CardsView's "類似カードを整理" cleanup tool: given the learner's current
+ * deck (one language's worth, as currently filtered/shown by the caller),
+ * finds groups of cards that aren't worth reviewing as separate cards —
+ * true duplicates, near-synonyms covering the same meaning, or the same
+ * core word/phrase differing only in grammatical form (tense, singular/
+ * plural, conjugation, politeness level, minor spelling variant) — and
+ * proposes one consolidated replacement card per group. The caller (never
+ * this function) applies any of the proposed merges, and only after the
+ * learner reviews and accepts them (lib/cards.ts mergeCards). */
+export async function requestCardMerges(params: {
+  connection: LlmConnection;
+  targetLanguage: string;
+  nativeLanguage: string;
+  cards: Array<{ id: string; front: string; reading: string; meaning: string; exampleSentence: string; context: string; cloze: string }>;
+}): Promise<CardMergeGroup[]> {
+  if (params.cards.length < 2) return [];
+  const content = await chatJson(
+    params.connection,
+    `You are TC Lingo's flashcard deck curator. The learner has too many ${params.targetLanguage} review cards (native language: ${params.nativeLanguage}) and wants help consolidating ones that don't need to stay separate. Given the full list of cards (each with an "id"), find groups of 2 or more cards that are redundant to review individually: true duplicates, near-synonyms that cover the same meaning, or the same core word/phrase differing only in grammatical form (tense, singular/plural, verb conjugation, politeness/formality level, or a minor spelling variant). Do NOT group cards that test genuinely different vocabulary, meanings, or usages, even if they look superficially similar — when in doubt, leave them ungrouped. For each group, propose one consolidated replacement card that preserves the learning value of the originals (e.g. mention notable alternate forms in "context" or weave them into "exampleSentence" when useful, instead of silently dropping them). Return only JSON: an array of objects, each with exactly these keys: "cardIds" (array of the original card ids being merged, from the input), "merged" (an object with "front", "reading", "meaning", "exampleSentence", "context", "cloze" — same shape as the input cards), "reason" (one short sentence in ${params.nativeLanguage} explaining why these were grouped). Return an empty array if nothing should be merged.`,
+    { cards: params.cards },
+  );
+  return parseCardMergeGroups(
+    content,
+    new Set(params.cards.map((c) => c.id)),
+  );
+}
+
 /** The review tab's second-opinion judge: strict string matching (lib/srs.ts
- * judgeAnswer) can't tell a synonym or alternative spelling from a genuinely
- * wrong answer, so when a non-blank typed answer fails the strict check and
- * an LLM connection exists, this asks whether the answer should still count
- * for THIS card. Best-effort — callers fall back to the strict judgement on
- * any error rather than surfacing one. */
+ * judgeAnswer) can't tell a synonym, a right-word-wrong-form slip, or an
+ * alternative spelling from a genuinely wrong answer, so when a non-blank
+ * typed answer fails the strict check and an LLM connection exists, this
+ * gives a three-way verdict on the typed answer for THIS card. Best-effort —
+ * callers fall back to the strict judgement on any error rather than
+ * surfacing one. */
 export async function judgeReviewAnswer(params: {
   connection: LlmConnection;
   targetLanguage: string;
@@ -307,7 +335,7 @@ export async function judgeReviewAnswer(params: {
 }): Promise<AnswerVerdict> {
   const content = await chatJson(
     params.connection,
-    `You are TC Lingo's review-answer judge. A learner of ${params.targetLanguage} (native language: ${params.nativeLanguage}) was reviewing a flashcard: shown the card's meaning (and its cloze sentence when present), they had to recall and type the ${params.targetLanguage} expression. The expected answer is the card's "front"; their typed answer did not match it exactly. Decide whether the typed answer should still count as a correct recall for THIS card: accept synonyms, alternative spellings/scripts, and equivalent phrasings that a teacher would accept as naturally expressing the card's meaning in the card's context (including in the cloze sentence, if there is one). Reject answers that mean something different, are the wrong word form for the context, or are ungrammatical. Be fair but not lenient — close in spelling but different in meaning is wrong. Return only JSON with exactly these keys: "acceptable" (boolean), "note" (one short sentence in ${params.nativeLanguage}: if acceptable, confirm the learner's expression also works and mention the card's expected one; if not, briefly say how it differs from the expected answer).`,
+    `You are TC Lingo's review-answer judge. A learner of ${params.targetLanguage} (native language: ${params.nativeLanguage}) was reviewing a flashcard: shown the card's meaning (and its cloze sentence when present), they had to recall and type the ${params.targetLanguage} expression. The expected answer is the card's "front"; their typed answer did not match it exactly. Classify the typed answer against THIS card's expected answer as one of three verdicts: "correct" — a synonym, alternative spelling/script, or equivalent phrasing that a teacher would accept as naturally expressing the card's meaning in the card's context (including the cloze sentence, if there is one); "near" — the learner clearly recalled the right word or expression, but produced the wrong grammatical form of it (wrong tense, singular/plural, verb conjugation, politeness/formality level, or a minor spelling/typo slip) — they know the vocabulary, they just didn't produce the exact form the card expects; "wrong" — the answer means something different, is unrelated, or is not a recognizable attempt at the expected word/expression. Be fair but not lenient — close in spelling but different in meaning is "wrong", not "near". Return only JSON with exactly these keys: "verdict" ("correct", "near", or "wrong"), "note" (one short sentence in ${params.nativeLanguage}: if correct, confirm the learner's expression also works and mention the card's expected one; if near, briefly say what form the expected answer uses instead; if wrong, briefly say how it differs from the expected answer).`,
     { card: params.card, typedAnswer: params.typedAnswer },
   );
   return parseAnswerVerdict(content);

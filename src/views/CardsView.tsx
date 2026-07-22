@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import { ChevronDown, ChevronUp, Loader2, Pencil, Square, Trash2, Volume2 } from "lucide-preact";
-import { addCard, deleteCard, loadCards, subscribeCards, updateCard } from "../lib/cards";
+import { addCard, deleteCard, loadCards, mergeCards, subscribeCards, updateCard } from "../lib/cards";
 import { loadSettings, subscribeSettings } from "../lib/settings";
 import { loadTopics } from "../lib/topics";
 import { languageDisplayName, readingSpec } from "../lib/languages";
@@ -11,8 +11,9 @@ import { useSpeech } from "../hooks/useSpeech";
 import { useLlmConnection } from "../hooks/useLlmConnection";
 import { connectionForTask } from "../lib/llmConnection";
 import { localizeNetworkError } from "../lib/network";
-import { requestTranslationCards } from "../lib/llm";
-import type { CardCandidate } from "../lib/parse";
+import { requestCardMerges, requestTranslationCards } from "../lib/llm";
+import type { CardCandidate, CardMergeGroup } from "../lib/parse";
+import { CardMergePanel } from "../components/CardMergePanel";
 import {
   dismiss,
   loadInboxItems,
@@ -96,7 +97,7 @@ function InboxItemRow({
 
   async function extractWithAi() {
     if (!connection || resolution.kind !== "ok") return;
-    const conn = connectionForTask("cards");
+    const conn = connectionForTask("generation");
     if (!conn) return;
     setExtracting(true);
     setError("");
@@ -214,6 +215,22 @@ export function CardsView() {
   useEffect(() => subscribeSettings(() => setSettings(loadSettings())), []);
 
   const { connection } = useLlmConnection();
+
+  // "類似カードを整理" — LLM-assisted merge cleanup (lib/llm.ts
+  // requestCardMerges / lib/cards.ts mergeCards). Scoped to the current
+  // active language, so a language switch invalidates any pending
+  // suggestions (their card ids no longer match what's shown).
+  const [mergeGroups, setMergeGroups] = useState<CardMergeGroup[]>([]);
+  const [mergeScanning, setMergeScanning] = useState(false);
+  const [mergeError, setMergeError] = useState("");
+  const [mergeNoneFound, setMergeNoneFound] = useState(false);
+  const [mergeMessage, setMergeMessage] = useState("");
+  useEffect(() => {
+    setMergeGroups([]);
+    setMergeError("");
+    setMergeNoneFound(false);
+    setMergeMessage("");
+  }, [settings.activeLanguage]);
 
   const [inboxItems, setInboxItems] = useState<LingoCardInboxItem[]>(loadInboxItems);
   useEffect(() => subscribeInbox(() => setInboxItems(loadInboxItems())), []);
@@ -347,6 +364,47 @@ export function CardsView() {
   const cardLanguage = settings.targetLanguages.length > 1 ? language : settings.targetLanguages[0];
   const readingField = readingSpec(cardLanguage);
 
+  const cardsById = new Map(cards.map((c) => [c.id, c]));
+
+  async function scanForMerges() {
+    const conn = connectionForTask("generation");
+    if (!conn) return;
+    setMergeScanning(true);
+    setMergeError("");
+    setMergeNoneFound(false);
+    setMergeMessage("");
+    try {
+      const found = await requestCardMerges({
+        connection: conn,
+        targetLanguage: settings.activeLanguage,
+        nativeLanguage: settings.nativeLanguage,
+        cards: visible.map((c) => ({
+          id: c.id,
+          front: c.front,
+          reading: c.reading,
+          meaning: c.meaning,
+          exampleSentence: c.exampleSentence,
+          context: c.context,
+          cloze: c.cloze,
+        })),
+      });
+      setMergeGroups(found);
+      setMergeNoneFound(found.length === 0);
+    } catch (e) {
+      setMergeError(localizeNetworkError(e, t("cards-merge-failed")));
+    } finally {
+      setMergeScanning(false);
+    }
+  }
+
+  function handleMerge(accepted: CardMergeGroup[]) {
+    for (const group of accepted) {
+      mergeCards(group.cardIds, group.merged);
+    }
+    setMergeGroups([]);
+    setMergeMessage(t("cards-merge-success", { count: accepted.length }));
+  }
+
   return (
     <div class="view-container cards-view">
       <section class="card-panel">
@@ -452,6 +510,31 @@ export function CardsView() {
             </ul>
           ))}
       </section>
+
+      {connection && visible.length >= 2 && (
+        <section class="card-panel">
+          <div class="topic-header">
+            <h2>{t("cards-merge-section-heading")}</h2>
+            <button type="button" onClick={scanForMerges} disabled={mergeScanning}>
+              {mergeScanning ? t("cards-merge-scanning") : t("cards-merge-button")}
+            </button>
+          </div>
+          {mergeError && <p class="error-text">{mergeError}</p>}
+          {mergeNoneFound && <p class="hint-text">{t("cards-merge-none-found")}</p>}
+          {mergeMessage && <p class="hint-text status-ok">{mergeMessage}</p>}
+          {mergeGroups.length > 0 && (
+            <>
+              <p class="hint-text">{t("cards-merge-heading", { count: mergeGroups.length })}</p>
+              <CardMergePanel
+                groups={mergeGroups}
+                cardsById={cardsById}
+                onMerge={handleMerge}
+                onClose={() => setMergeGroups([])}
+              />
+            </>
+          )}
+        </section>
+      )}
 
       <section class="card-panel">
         {speech.speechError && <p class="speak-error">{speech.speechError}</p>}

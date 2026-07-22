@@ -76,7 +76,7 @@ export function ReadingView() {
       setError(t("reading-need-llm"));
       return;
     }
-    const conn = connectionForTask("reading");
+    const conn = connectionForTask("generation");
     if (!conn) return;
     setError("");
     setGenerating(true);
@@ -115,7 +115,7 @@ export function ReadingView() {
 
   async function extractCards() {
     if (!openPassage || !connection) return;
-    const conn = connectionForTask("cards");
+    const conn = connectionForTask("generation");
     if (!conn) return;
     setError("");
     setExtracting(true);

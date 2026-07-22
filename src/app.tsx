@@ -45,6 +45,7 @@ import { useNetworkProvider } from "./hooks/useNetworkProvider";
 import { useNetworkModelSync } from "./hooks/useNetworkModelSync";
 import { isEditableTarget, SHORTCUT_PRIORITY } from "./lib/keyboard";
 import { useShortcuts } from "./hooks/useShortcuts";
+import { runCardAutoOrganize } from "./lib/cardAutoOrganize";
 
 // `#/sync/<roomId>` deep link (opened e.g. by scanning the sync QR code):
 // stage the join for 設定 > 同期 to confirm, and rewrite the hash immediately
@@ -112,13 +113,22 @@ export function App() {
   const consumerStatus = useNetworkConsumerStatus();
   useNetworkModelSync(settings, consumerStatus, roomId);
 
+  // Silent background card-deck cleanup (settings.autoOrganizeCards) — see
+  // lib/cardAutoOrganize.ts's header comment. Fire-and-forget: the function
+  // re-reads settings/connections itself and is internally gated by a
+  // cooldown, so a plain mount-only effect is enough — no need to re-run on
+  // every unrelated settings change.
+  useEffect(() => {
+    void runCardAutoOrganize();
+  }, []);
+
   // Languages without a built-in dictionary get their UI strings translated
   // once by the configured LLM and cached; until that resolves (or if no LLM
   // is configured/reachable) the UI shows English.
   const uiTranslationInFlight = useRef("");
   useEffect(() => {
     if (applyUiLanguageForNative(settings.nativeLanguage) !== "needs-translation") return;
-    const conn = connectionForTask("ui-translation");
+    const conn = connectionForTask("generation");
     if (!conn) return;
     const language = settings.nativeLanguage;
     if (uiTranslationInFlight.current === language) return;

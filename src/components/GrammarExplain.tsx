@@ -46,7 +46,7 @@ export function GrammarExplain({ sentence, targetLanguage }: GrammarExplainProps
 
   async function fetchExplanation() {
     if (!connection) return;
-    const conn = connectionForTask("grammar");
+    const conn = connectionForTask("generation");
     if (!conn) return;
     setState("loading");
     setError("");

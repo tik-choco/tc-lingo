@@ -131,6 +131,36 @@ export function dueCards(now: Date = new Date(), language?: string): Card[] {
     .sort((a, b) => new Date(a.dueAt).getTime() - new Date(b.dueAt).getTime());
 }
 
+/** Merges `cardIds` (2 or more) into a single card, for CardsView's LLM-
+ * assisted "類似カードを整理" cleanup tool (see lib/llm.ts requestCardMerges).
+ * The survivor is whichever of the given cards has made the most learning
+ * progress — highest `reps`, then highest `intervalDays`, then oldest
+ * `createdAt` to break remaining ties deterministically — so consolidating
+ * near-duplicate cards doesn't reset SRS progress back to new. Its content
+ * fields are replaced with `merged` via updateCard (which never touches SRS
+ * fields); every other id in the group is deleted (tombstoned, same as any
+ * other deleteCard call) so sync/other devices converge too. No-ops if
+ * fewer than 2 of the given ids are found among the current cards. */
+export function mergeCards(
+  cardIds: string[],
+  merged: Pick<NewCardInput, "front" | "reading" | "meaning" | "exampleSentence" | "context" | "cloze">,
+): void {
+  const idSet = new Set(cardIds);
+  const group = loadCards().filter((c) => idSet.has(c.id));
+  if (group.length < 2) return;
+
+  const survivor = group.reduce((best, c) => {
+    if (c.reps !== best.reps) return c.reps > best.reps ? c : best;
+    if (c.intervalDays !== best.intervalDays) return c.intervalDays > best.intervalDays ? c : best;
+    return new Date(c.createdAt).getTime() < new Date(best.createdAt).getTime() ? c : best;
+  });
+
+  updateCard(survivor.id, merged);
+  for (const c of group) {
+    if (c.id !== survivor.id) deleteCard(c.id);
+  }
+}
+
 /** Bulk-replaces the entire card store with `cards` (one save, one change
  * event) — persistence only, no id lookup/merge. Only lib/sync/snapshot.ts
  * should call this; every other write path goes through addCard/updateCard/

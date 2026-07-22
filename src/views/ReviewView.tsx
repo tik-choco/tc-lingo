@@ -8,8 +8,10 @@
 // with how long it took (autoGrade) to derive a ReviewGrade, which is applied
 // via gradeCard immediately. There's no manual again/hard/good/easy choice.
 // When an LLM connection exists, a non-blank answer that fails the strict
-// check gets a second opinion (judgeReviewAnswer) so synonyms/equivalent
-// phrasings count as correct instead of lapsing the card.
+// check gets a second opinion (judgeReviewAnswer): synonyms/equivalent
+// phrasings count as correct, and a right-word-wrong-form slip (tense,
+// plural, conjugation, ...) counts as "near" (partial credit) instead of
+// lapsing the card outright.
 import { useEffect, useRef, useState } from "preact/hooks";
 import { Loader2, RotateCw, Square, Volume2 } from "lucide-preact";
 import { dueCards, gradeCard } from "../lib/cards";
@@ -87,7 +89,7 @@ export function ReviewView() {
     let judgement = judgeAnswer(typedAnswer, current.front);
     let llmAccepted = false;
     let llmNote = "";
-    const reviewConn = connection ? connectionForTask("review") : null;
+    const reviewConn = connection ? connectionForTask("correction") : null;
     if (judgement === "wrong" && typedAnswer.trim() && reviewConn) {
       setChecking(true);
       try {
@@ -105,8 +107,11 @@ export function ReviewView() {
           typedAnswer: typedAnswer.trim(),
         });
         llmNote = verdict.note;
-        if (verdict.acceptable) {
+        if (verdict.verdict === "correct") {
           judgement = "correct";
+          llmAccepted = true;
+        } else if (verdict.verdict === "near") {
+          judgement = "near";
           llmAccepted = true;
         }
       } catch {

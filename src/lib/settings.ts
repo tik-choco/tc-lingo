@@ -68,6 +68,8 @@ function defaultSettings(): LingoSettings {
     taskPresetIds: {},
     taskReasoningEfforts: {},
     defaultReasoningEffort: "none",
+    autoOrganizeCards: true,
+    lastCardAutoOrganizeAt: "",
   };
 }
 
@@ -101,10 +103,39 @@ function isTaskReasoningEfforts(value: unknown): value is Partial<Record<string,
   return Object.values(value as Record<string, unknown>).every(isReasoningEffortValue);
 }
 
-/** Current `LingoSettings` shape (post AI-Network-participation +
- * per-task-preset/reasoning-effort change — see
- * tc-docs/drafts/llm-settings-common-v1.md §2.3/§5). */
+/** Current `LingoSettings` shape (post auto-organize-cards change — see
+ * `isPreCardOrganizeSettings` for the shape immediately before it). */
 function isLingoSettings(value: unknown): value is LingoSettings {
+  if (value === null || typeof value !== "object") return false;
+  const r = value as Record<string, unknown>;
+  return (
+    Array.isArray(r.targetLanguages) &&
+    r.targetLanguages.every((l) => typeof l === "string") &&
+    typeof r.activeLanguage === "string" &&
+    typeof r.nativeLanguage === "string" &&
+    (r.connectionMode === "api" || r.connectionMode === "network") &&
+    typeof r.autoExtractCards === "boolean" &&
+    typeof r.showReadingAids === "boolean" &&
+    typeof r.networkProviderEnabled === "boolean" &&
+    Array.isArray(r.networkProviderPresetIds) &&
+    r.networkProviderPresetIds.every((id) => typeof id === "string") &&
+    isTaskPresetIds(r.taskPresetIds) &&
+    isTaskReasoningEfforts(r.taskReasoningEfforts) &&
+    isReasoningEffortValue(r.defaultReasoningEffort) &&
+    typeof r.autoOrganizeCards === "boolean" &&
+    typeof r.lastCardAutoOrganizeAt === "string"
+  );
+}
+
+/** Shape used just before the auto-organize-cards change (post
+ * AI-Network-participation + per-task-preset/reasoning-effort change — see
+ * tc-docs/drafts/llm-settings-common-v1.md §2.3/§5): identical to
+ * `LingoSettings` minus `autoOrganizeCards`/`lastCardAutoOrganizeAt`.
+ * Migrated in-place on load — the missing flag defaults to true (auto-organize
+ * on, matching `autoExtractCards`'s existing "on by default, opt out in
+ * settings" precedent) and the missing timestamp to "" (never run) — so
+ * existing installs pick the feature up without a settings reset. */
+function isPreCardOrganizeSettings(value: unknown): value is Omit<LingoSettings, "autoOrganizeCards" | "lastCardAutoOrganizeAt"> {
   if (value === null || typeof value !== "object") return false;
   const r = value as Record<string, unknown>;
   return (
@@ -371,12 +402,69 @@ function migrateToTaskPresetIds(pre: {
     taskPresetIds,
     taskReasoningEfforts: {},
     defaultReasoningEffort: "none",
+    autoOrganizeCards: true,
+    lastCardAutoOrganizeAt: "",
+  };
+}
+
+const LEGACY_CORRECTION_TASKS = ["practice", "review"];
+const LEGACY_GENERATION_TASKS = ["topic", "cards", "reading", "conversation", "grammar", "ui-translation"];
+
+/** Folds a pre-task-consolidation per-feature override
+ * (`practice`/`topic`/`cards`/`review`/`reading`/`conversation`/`grammar`/
+ * `ui-translation` keys — see types.ts's `LlmTask` doc comment for why the
+ * task list collapsed to three) into the current shape, preferring a value
+ * already stored under a current task name. Runs on every load (cheap,
+ * idempotent) rather than as a one-time flagged migration: taskPresetIds/
+ * taskReasoningEfforts are untyped string-keyed records at the storage
+ * layer, so a stale legacy key would otherwise just sit there unused
+ * forever instead of being picked up. Lossy by nature when a learner had
+ * set *different* overrides across several now-folded-together tasks (e.g.
+ * a different preset for "topic" than for "cards") — only one survives,
+ * picked by LEGACY_*_TASKS priority order. */
+function foldLegacyTaskKeys<T>(record: Partial<Record<string, T>>): Partial<Record<LlmTask, T>> {
+  const next: Partial<Record<LlmTask, T>> = {};
+  if (record.correction !== undefined) next.correction = record.correction;
+  if (record.generation !== undefined) next.generation = record.generation;
+  if (record["card-organize"] !== undefined) next["card-organize"] = record["card-organize"];
+
+  if (next.correction === undefined) {
+    for (const legacy of LEGACY_CORRECTION_TASKS) {
+      if (record[legacy] !== undefined) {
+        next.correction = record[legacy];
+        break;
+      }
+    }
+  }
+  if (next.generation === undefined) {
+    for (const legacy of LEGACY_GENERATION_TASKS) {
+      if (record[legacy] !== undefined) {
+        next.generation = record[legacy];
+        break;
+      }
+    }
+  }
+  return next;
+}
+
+function withConsolidatedTaskOverrides(settings: LingoSettings): LingoSettings {
+  return {
+    ...settings,
+    taskPresetIds: foldLegacyTaskKeys(settings.taskPresetIds),
+    taskReasoningEfforts: foldLegacyTaskKeys(settings.taskReasoningEfforts),
   };
 }
 
 export function loadSettings(): LingoSettings {
+  return withConsolidatedTaskOverrides(loadResolvedSettings());
+}
+
+function loadResolvedSettings(): LingoSettings {
   const raw = loadJson<unknown>(STORAGE_NAME, null);
   if (isLingoSettings(raw)) return withValidLanguages(raw);
+  if (isPreCardOrganizeSettings(raw)) {
+    return withValidLanguages({ ...raw, autoOrganizeCards: true, lastCardAutoOrganizeAt: "" });
+  }
   if (isPreCommonSettingsShape(raw)) return withValidLanguages(migrateToTaskPresetIds(raw));
   if (isPreTaskModelsSettings(raw)) return withValidLanguages(migrateToTaskPresetIds({ ...raw, taskModels: {} }));
   if (isPreReadingAidsSettings(raw)) {
@@ -520,4 +608,19 @@ export function setDefaultReasoningEffort(effort: ReasoningEffort): LingoSetting
   const next: LingoSettings = { ...current, defaultReasoningEffort: effort };
   saveSettings(next);
   return next;
+}
+
+/** Toggles lib/cardAutoOrganize.ts's silent background merge pass. */
+export function setAutoOrganizeCards(enabled: boolean): LingoSettings {
+  const current = loadSettings();
+  const next: LingoSettings = { ...current, autoOrganizeCards: enabled };
+  saveSettings(next);
+  return next;
+}
+
+/** Internal bookkeeping for lib/cardAutoOrganize.ts's cooldown check — not
+ * meant to be called from the UI. */
+export function markCardAutoOrganizeRan(at: string): void {
+  const current = loadSettings();
+  saveSettings({ ...current, lastCardAutoOrganizeAt: at });
 }

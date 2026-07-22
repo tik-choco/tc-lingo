@@ -20,6 +20,7 @@ import {
   removeTargetLanguage,
   saveSettings,
   setAutoExtractCards,
+  setAutoOrganizeCards,
   setConnectionMode,
   setDefaultReasoningEffort,
   setNetworkProviderEnabled,
@@ -77,25 +78,15 @@ const TTS_TEST_ID = "settings-tts-test";
 // always-visible copy; see tc-docs/drafts/llm-settings-common-v1.md §3.2's
 // "説明文は最小限、詳細はラベルの hover ツールチップへ" principle.
 const TASK_LABEL_KEYS: Record<LlmTask, string> = {
-  practice: "settings-task-practice",
-  topic: "settings-task-topic",
-  cards: "settings-task-cards",
-  review: "settings-task-review",
-  reading: "settings-task-reading",
-  conversation: "settings-task-conversation",
-  grammar: "settings-task-grammar",
-  "ui-translation": "settings-task-ui-translation",
+  correction: "settings-task-correction",
+  generation: "settings-task-generation",
+  "card-organize": "settings-task-card-organize",
 };
 
 const TASK_TIP_KEYS: Record<LlmTask, string> = {
-  practice: "settings-task-tip-practice",
-  topic: "settings-task-tip-topic",
-  cards: "settings-task-tip-cards",
-  review: "settings-task-tip-review",
-  reading: "settings-task-tip-reading",
-  conversation: "settings-task-tip-conversation",
-  grammar: "settings-task-tip-grammar",
-  "ui-translation": "settings-task-tip-ui-translation",
+  correction: "settings-task-tip-correction",
+  generation: "settings-task-tip-generation",
+  "card-organize": "settings-task-tip-card-organize",
 };
 
 const REASONING_EFFORT_OPTIONS: ReasoningEffort[] = ["none", "minimal", "low", "medium", "high"];
@@ -984,6 +975,18 @@ export function SettingsView() {
                 {t("settings-reading-aids-label")}
               </label>
               <p class="hint-text">{t("settings-reading-aids-hint")}</p>
+            </div>
+
+            <div class="field-grid">
+              <label class="toggle-row">
+                <input
+                  type="checkbox"
+                  checked={settings.autoOrganizeCards}
+                  onChange={(e) => setAutoOrganizeCards((e.target as HTMLInputElement).checked)}
+                />
+                {t("settings-auto-organize-label")}
+              </label>
+              <p class="hint-text">{t("settings-auto-organize-hint")}</p>
             </div>
 
             <div class="field-grid">
