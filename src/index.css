@@ -100,6 +100,18 @@
   --sans: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   --mono: ui-monospace, 'Cascadia Mono', 'SF Mono', Consolas, monospace;
 
+  /* Theme @tik-choco/mistai/ui.css (the AI Network status panel's shared
+     library styles, see components/NetworkStatusPanel.tsx) onto our own
+     tokens instead of its hardcoded light-only fallback colors — same
+     mapping as tc-translate's styles/network-status.css. One definition
+     covers both themes since --border/--surface/--text* are already
+     re-defined per theme below. */
+  --mistai-border: var(--border);
+  --mistai-surface: var(--surface);
+  --mistai-text: var(--text);
+  --mistai-text-muted: var(--text-muted);
+  --mistai-text-strong: var(--text);
+
   font: 16px/1.5 var(--sans);
   color: var(--text);
   background: var(--bg);
@@ -380,13 +392,22 @@ a:hover {
   display: flex;
   align-items: center;
   gap: 2px;
-  padding: 2px;
+  padding: 3px;
   border-radius: var(--radius-pill);
   background: var(--surface-2);
   border: 1px solid var(--border);
   flex-shrink: 0;
   overflow-x: auto;
   max-width: 220px;
+  scroll-behavior: smooth;
+  /* Overridden below: the global thin scrollbar (index.css "Thin custom
+     scrollbars") reads as clutter inside a pill this short — chips stay
+     reachable by scroll/swipe without a visible track. */
+  scrollbar-width: none;
+}
+
+.language-switcher::-webkit-scrollbar {
+  display: none;
 }
 
 .language-switcher-chip {
@@ -399,6 +420,11 @@ a:hover {
   font-weight: 600;
   white-space: nowrap;
   cursor: pointer;
+  transition:
+    background-color var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease),
+    box-shadow var(--dur-fast) var(--ease),
+    transform var(--dur-fast) var(--ease);
 }
 
 .language-switcher-chip:hover:not(.active) {
@@ -406,9 +432,19 @@ a:hover {
   color: var(--text);
 }
 
+.language-switcher-chip:active {
+  transform: scale(0.94);
+}
+
+.language-switcher-chip:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
 .language-switcher-chip.active {
-  background: var(--primary);
-  color: var(--on-primary);
+  background: var(--primary-soft-strong);
+  color: var(--primary);
+  box-shadow: inset 0 0 0 1px var(--primary-border);
 }
 
 @media (max-width: 640px) {

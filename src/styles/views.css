@@ -1828,7 +1828,9 @@ button:disabled {
 
 /* ---------------- Settings view: AI Network tab — share-models checklist ----------------
    Checkbox list of presets advertised to the room when acting as a
-   provider — a plain checklist rather than the card grid above. */
+   provider — same responsive card-grid pattern as .llm-row-list above
+   (narrower cells since each card is just a checkbox + two short lines),
+   rather than one full-width row per item. */
 
 .network-share-models {
   display: flex;
@@ -1844,8 +1846,8 @@ button:disabled {
 }
 
 .network-share-list {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
   gap: var(--space-2);
   margin-top: var(--space-1);
 }
