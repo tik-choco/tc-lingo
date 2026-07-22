@@ -125,6 +125,29 @@ export function parseAnswerVerdict(content: string): AnswerVerdict {
   return { verdict: parsed.verdict, note: typeof parsed.note === "string" ? parsed.note : "" };
 }
 
+/** lib/llm.ts's requestCardConsistencyCheck: whether a card's `cloze` blank,
+ * filled with `front`, actually reproduces `exampleSentence` — and if not,
+ * a corrected `front`/`cloze` pair that does. When `consistent` is true,
+ * `front`/`cloze` just echo the input (callers should ignore them). */
+export interface CardConsistencyResult {
+  consistent: boolean;
+  front: string;
+  cloze: string;
+}
+
+/** A missing/non-boolean "consistent" is a parse failure — the caller
+ * catches and treats the card as already consistent (best-effort, never
+ * worth surfacing a failure for a background QA pass). */
+export function parseCardConsistencyResult(content: string): CardConsistencyResult {
+  const parsed = extractJson(content) as Record<string, unknown>;
+  if (typeof parsed.consistent !== "boolean") throw new Error(t("error-parse-json"));
+  return {
+    consistent: parsed.consistent,
+    front: typeof parsed.front === "string" ? parsed.front : "",
+    cloze: typeof parsed.cloze === "string" ? parsed.cloze : "",
+  };
+}
+
 export interface CardCandidate {
   front: string;
   reading: string;
@@ -149,6 +172,16 @@ export function parseCardCandidates(content: string): CardCandidate[] {
       cloze: typeof item.cloze === "string" ? item.cloze : "",
     }))
     .filter((c) => c.front && c.meaning);
+}
+
+/** lib/llm.ts's requestClozeVariation: a missing/empty "cloze" is a parse
+ * failure — the caller catches and falls back to the card's own stored
+ * cloze rather than surfacing one. */
+export function parseClozeVariation(content: string): string {
+  const parsed = extractJson(content) as Record<string, unknown>;
+  const cloze = typeof parsed.cloze === "string" ? parsed.cloze.trim() : "";
+  if (!cloze) throw new Error(t("error-parse-json"));
+  return cloze;
 }
 
 export interface CardMergeGroup {

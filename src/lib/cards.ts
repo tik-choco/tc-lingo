@@ -124,11 +124,16 @@ export function gradeCard(id: string, grade: ReviewGrade, now: Date = new Date()
 }
 
 /** `language`, when given, also matches cards saved with "" (unassigned) so
- * pre-multi-language cards don't get orphaned out of every filtered queue. */
+ * pre-multi-language cards don't get orphaned out of every filtered queue.
+ * Ordered by `lapses` descending first, `dueAt` ascending as a tiebreak —
+ * every card here is already due (isDue), so this only reorders *within*
+ * that set: consistently hard cards (more past "again" grades) surface
+ * earlier in the session, while attention is freshest, rather than being
+ * ordered purely by which happened to become due first. */
 export function dueCards(now: Date = new Date(), language?: string): Card[] {
   return loadCards()
     .filter((c) => isDue(c, now) && (!language || c.language === language || c.language === ""))
-    .sort((a, b) => new Date(a.dueAt).getTime() - new Date(b.dueAt).getTime());
+    .sort((a, b) => b.lapses - a.lapses || new Date(a.dueAt).getTime() - new Date(b.dueAt).getTime());
 }
 
 /** Merges `cardIds` (2 or more) into a single card, for CardsView's LLM-

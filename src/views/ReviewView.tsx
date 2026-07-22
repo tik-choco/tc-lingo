@@ -12,6 +12,18 @@
 // phrasings count as correct, and a right-word-wrong-form slip (tense,
 // plural, conjugation, ...) counts as "near" (partial credit) instead of
 // lapsing the card outright.
+//
+// Three more LLM-connection-gated, best-effort niceties layered on top,
+// all designed to cost zero added latency by working during the idle time
+// the learner spends on whichever card is currently shown:
+// - A miss also gets requeued a few cards later in *this session's* queue
+//   (interleaving — see REQUEUE_OFFSET), independent of its normal SRS
+//   reschedule to tomorrow-or-later.
+// - lib/cards.ts's dueCards() already orders by lapses first, so
+//   consistently-hard cards front-load the session.
+// - lib/reviewClozeVariation.ts prefetches a fresh example-sentence variant
+//   for a card that's been seen before, so repeat reviews don't always show
+//   the exact same sentence (see displayCloze).
 import { useEffect, useRef, useState } from "preact/hooks";
 import { Loader2, RotateCw, Square, Volume2 } from "lucide-preact";
 import { dueCards, gradeCard } from "../lib/cards";
@@ -26,10 +38,19 @@ import { languageDisplayName } from "../lib/languages";
 import { judgeReviewAnswer } from "../lib/llm";
 import { useLlmConnection } from "../hooks/useLlmConnection";
 import { connectionForTask } from "../lib/llmConnection";
+import { checkCardConsistency } from "../lib/reviewConsistencyCheck";
+import { generateClozeVariation } from "../lib/reviewClozeVariation";
 import { t } from "../i18n";
 import { isEditableTarget, SHORTCUT_PRIORITY } from "../lib/keyboard";
 import { useShortcuts } from "../hooks/useShortcuts";
 import { useSpeech } from "../hooks/useSpeech";
+
+/** How many cards later a missed card reappears in *this session's* queue
+ * (interleaving) — separate from its persisted SRS reschedule (still
+ * tomorrow-or-later via scheduleReview/gradeCard). Small enough that the
+ * retry stays close enough to be useful, large enough that it isn't just
+ * the very next card (no interleaving benefit from immediate repetition). */
+const REQUEUE_OFFSET = 4;
 
 export function ReviewView() {
   const [settings, setSettings] = useState(loadSettings);
@@ -49,6 +70,9 @@ export function ReviewView() {
   // diff for display) against `front` once checked. Cleared whenever the
   // card changes.
   const [typedAnswer, setTypedAnswer] = useState("");
+  // Ephemeral, session-only cloze variations (lib/reviewClozeVariation.ts),
+  // keyed by card id — never persisted, see the prefetch effect below.
+  const [clozeVariations, setClozeVariations] = useState<Record<string, string>>({});
 
   function refresh() {
     setQueue(dueCards(new Date(), settings.activeLanguage));
@@ -56,6 +80,7 @@ export function ReviewView() {
     setResult(null);
     setDoneCount(0);
     setTypedAnswer("");
+    setClozeVariations({});
     shownAtRef.current = performance.now();
   }
 
@@ -65,11 +90,15 @@ export function ReviewView() {
     setResult(null);
     setDoneCount(0);
     setTypedAnswer("");
+    setClozeVariations({});
     shownAtRef.current = performance.now();
   }, [settings.activeLanguage]);
 
   const current = queue[index] ?? null;
   const cardLanguage = current?.language || settings.activeLanguage;
+  // Ephemeral variation (lib/reviewClozeVariation.ts) when one's ready for
+  // this card, else the card's own stored cloze — never both/blended.
+  const displayCloze = current ? (clozeVariations[current.id] ?? current.cloze) : "";
 
   const speech = useSpeech();
 
@@ -80,6 +109,45 @@ export function ReviewView() {
   useEffect(() => {
     shownAtRef.current = performance.now();
   }, [current?.id]);
+
+  // Background QA: while the learner is occupied with `current`, spend that
+  // idle time checking the *next* queued card's front/cloze consistency
+  // (lib/reviewConsistencyCheck.ts) so a bad pairing is already fixed by the
+  // time they reach it, instead of adding latency right when they need the
+  // card. Fire-and-forget; a fix patches this snapshot's `queue` in place
+  // (never re-fetched from storage) so it's picked up without reshuffling
+  // the deck — see this file's header comment on why the queue stays static.
+  useEffect(() => {
+    const next = queue[index + 1];
+    if (!next) return;
+    let cancelled = false;
+    void checkCardConsistency(next, next.language || settings.activeLanguage).then((fixed) => {
+      if (cancelled || !fixed) return;
+      setQueue((prev) => prev.map((c) => (c.id === fixed.id ? fixed : c)));
+    });
+    return () => {
+      cancelled = true;
+    };
+    // Depends on the *id* of the next card, not `queue` itself — `queue`'s
+    // reference changes on every grade/fix (including this effect's own
+    // setQueue below), which would otherwise refire this on every card.
+  }, [index, queue[index + 1]?.id, settings.activeLanguage]);
+
+  // Same idle-time-of-the-next-card prefetch shape as the consistency check
+  // above, but for lib/reviewClozeVariation.ts's fresh-sentence generator —
+  // independent concern (variety, not correctness), so a separate effect.
+  useEffect(() => {
+    const next = queue[index + 1];
+    if (!next || clozeVariations[next.id]) return;
+    let cancelled = false;
+    void generateClozeVariation(next, next.language || settings.activeLanguage).then((variation) => {
+      if (cancelled || !variation) return;
+      setClozeVariations((prev) => ({ ...prev, [next.id]: variation }));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [index, queue[index + 1]?.id, settings.activeLanguage]);
 
   async function check() {
     if (!current || result || checking) return;
@@ -123,6 +191,19 @@ export function ReviewView() {
     const grade = autoGrade(judgement, elapsed);
     const days = scheduleReview(current, grade).intervalDays;
     gradeCard(current.id, grade);
+    // Interleaving: a genuine miss also reappears later in *this session's*
+    // queue (independent of its persisted SRS reschedule, which still moves
+    // it to tomorrow-or-later) so the learner gets another shot at it today
+    // instead of only via the app's normal daily due-date cycle.
+    if (judgement === "wrong") {
+      const missedCard = current;
+      setQueue((prev) => {
+        const insertAt = Math.min(prev.length, index + 1 + REQUEUE_OFFSET);
+        const next = [...prev];
+        next.splice(insertAt, 0, missedCard);
+        return next;
+      });
+    }
     setDoneCount((n) => n + 1);
     setResult({ judgement, days, llmAccepted, llmNote });
   }
@@ -193,7 +274,7 @@ export function ReviewView() {
             </p>
             {current.cloze ? (
               <>
-                <p class="review-prompt">{current.cloze}</p>
+                <p class="review-prompt">{displayCloze}</p>
                 <p class="review-prompt-hint">
                   <span class="review-hint-label">{t("review-hint-label")}</span> {current.meaning}
                 </p>

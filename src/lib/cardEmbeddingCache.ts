@@ -10,6 +10,8 @@
 // ...), and this cache has no UI subscriber of its own — routing through it
 // would just cause spurious re-renders every time the background pass
 // updates an embedding.
+import { hashText } from "./textHash";
+
 const STORAGE_KEY = "tc-lingo:card-embeddings-v1";
 
 export interface CardEmbeddingEntry {
@@ -27,18 +29,12 @@ function isCardEmbeddingEntry(value: unknown): value is CardEmbeddingEntry {
   return typeof r.hash === "string" && Array.isArray(r.vector) && r.vector.every((n) => typeof n === "number");
 }
 
-/** djb2, truncated to a base36 string — not cryptographic, just cheap and
- * collision-unlikely enough to detect "this card's text changed" (or "the
- * card-organize task's embedding model changed" — `model` is folded into the
- * hash too, so switching models invalidates every cached vector instead of
- * silently comparing vectors from two different embedding spaces). */
+/** Detects "this card's text changed" (or "the card-organize task's
+ * embedding model changed" — `model` is folded into the hash too, so
+ * switching models invalidates every cached vector instead of silently
+ * comparing vectors from two different embedding spaces). */
 export function hashCardText(front: string, meaning: string, model: string): string {
-  const text = `${model} ${front} ${meaning}`;
-  let hash = 5381;
-  for (let i = 0; i < text.length; i++) {
-    hash = (hash * 33) ^ text.charCodeAt(i);
-  }
-  return (hash >>> 0).toString(36);
+  return hashText(`${model} ${front} ${meaning}`);
 }
 
 export function loadEmbeddingCache(): CardEmbeddingCache {

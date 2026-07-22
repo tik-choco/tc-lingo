@@ -11,8 +11,29 @@ import { t } from "../i18n";
 import type { ResolvedLlmTargetV1 } from "./llmConfig";
 import type { LlmConnection } from "./llmConnection";
 import { requestNetworkChat } from "./network";
-import { parseAnswerVerdict, parseCardCandidates, parseCardMergeGroups, parseFeedback, parseRetryFeedback, parseSentenceCards, parseTopicFanOutPlan, parseTopicSuggestion } from "./parse";
-import type { AnswerVerdict, CardCandidate, CardMergeGroup, FeedbackResult, RetryFeedbackResult, SentenceCardCandidate, TopicFanOutPlan, TopicSuggestion } from "./parse";
+import {
+  parseAnswerVerdict,
+  parseCardCandidates,
+  parseCardConsistencyResult,
+  parseCardMergeGroups,
+  parseClozeVariation,
+  parseFeedback,
+  parseRetryFeedback,
+  parseSentenceCards,
+  parseTopicFanOutPlan,
+  parseTopicSuggestion,
+} from "./parse";
+import type {
+  AnswerVerdict,
+  CardCandidate,
+  CardConsistencyResult,
+  CardMergeGroup,
+  FeedbackResult,
+  RetryFeedbackResult,
+  SentenceCardCandidate,
+  TopicFanOutPlan,
+  TopicSuggestion,
+} from "./parse";
 import { readingAid, readingSpec } from "./languages";
 import { levelInstruction } from "./level";
 
@@ -244,7 +265,7 @@ export async function requestMistakeCards(params: {
   const reading = readingSpec(params.targetLanguage);
   const content = await chatJson(
     params.connection,
-    `You are TC Lingo's flashcard extractor. From a learner's original attempt, the corrected ${params.targetLanguage} version, and the explanation of what changed, pick 1 to 3 of the most reusable words or short phrases the learner should drill (prioritize things they got wrong or phrased awkwardly, not things that were already correct). For each, return a card. Return only JSON: an array of objects, each with exactly these keys: "front" (the ${params.targetLanguage} word/phrase), "reading" (${reading.llmInstruction}), "meaning" (translation/definition in ${params.nativeLanguage}), "exampleSentence" (a natural short example sentence in ${params.targetLanguage} using it, ideally adapted from the corrected text), "context" (when/how it's used, in ${params.nativeLanguage}), "cloze" (the example sentence with the front word/phrase replaced by "___"). Return an empty array if nothing is worth drilling.${levelInstruction(params.targetLanguage)}`,
+    `You are TC Lingo's flashcard extractor. From a learner's original attempt, the corrected ${params.targetLanguage} version, and the explanation of what changed, pick 1 to 3 of the most reusable words or short phrases the learner should drill (prioritize things they got wrong or phrased awkwardly, not things that were already correct). For each, return a card. Return only JSON: an array of objects, each with exactly these keys: "front" (the ${params.targetLanguage} word/phrase), "reading" (${reading.llmInstruction}), "meaning" (translation/definition in ${params.nativeLanguage}), "exampleSentence" (a natural short example sentence in ${params.targetLanguage} using it, ideally adapted from the corrected text), "context" (when/how it's used, in ${params.nativeLanguage}), "cloze" (exampleSentence with front replaced by "___" — front must appear verbatim, unmodified, as a contiguous span of exampleSentence, so substituting front back into cloze's blank reproduces exampleSentence exactly; if front doesn't literally occur that way in a natural exampleSentence, shorten front to the word/phrase that does, rather than forcing a mismatched cloze). Return an empty array if nothing is worth drilling.${levelInstruction(params.targetLanguage)}`,
     { original: params.original, corrected: params.corrected, reasons: params.reasons },
   );
   return parseCardCandidates(content);
@@ -266,7 +287,7 @@ export async function requestTranslationCards(params: {
   const reading = readingSpec(params.targetLanguage);
   const content = await chatJson(
     params.connection,
-    `You are TC Lingo's flashcard extractor. From a source sentence and its ${params.targetLanguage} translation, pick 1 to 3 of the most reusable words or short phrases from the ${params.targetLanguage} translation that a learner should drill (prioritize vocabulary and set phrases over grammar particles or proper nouns). For each, return a card. Return only JSON: an array of objects, each with exactly these keys: "front" (the ${params.targetLanguage} word/phrase), "reading" (${reading.llmInstruction}), "meaning" (translation/definition in ${params.nativeLanguage}), "exampleSentence" (a natural short example sentence in ${params.targetLanguage} using it, ideally the translation itself or adapted from it), "context" (when/how it's used, in ${params.nativeLanguage}), "cloze" (the example sentence with the front word/phrase replaced by "___"). Return an empty array if nothing is worth drilling.${levelInstruction(params.targetLanguage)}`,
+    `You are TC Lingo's flashcard extractor. From a source sentence and its ${params.targetLanguage} translation, pick 1 to 3 of the most reusable words or short phrases from the ${params.targetLanguage} translation that a learner should drill (prioritize vocabulary and set phrases over grammar particles or proper nouns). For each, return a card. Return only JSON: an array of objects, each with exactly these keys: "front" (the ${params.targetLanguage} word/phrase), "reading" (${reading.llmInstruction}), "meaning" (translation/definition in ${params.nativeLanguage}), "exampleSentence" (a natural short example sentence in ${params.targetLanguage} using it, ideally the translation itself or adapted from it), "context" (when/how it's used, in ${params.nativeLanguage}), "cloze" (exampleSentence with front replaced by "___" — front must appear verbatim, unmodified, as a contiguous span of exampleSentence, so substituting front back into cloze's blank reproduces exampleSentence exactly; if front doesn't literally occur that way in a natural exampleSentence, shorten front to the word/phrase that does, rather than forcing a mismatched cloze). Return an empty array if nothing is worth drilling.${levelInstruction(params.targetLanguage)}`,
     { sourceText: params.sourceText, translation: params.translationText },
   );
   return parseCardCandidates(content);
@@ -310,13 +331,57 @@ export async function requestCardMerges(params: {
   if (params.cards.length < 2) return [];
   const content = await chatJson(
     params.connection,
-    `You are TC Lingo's flashcard deck curator. The learner has too many ${params.targetLanguage} review cards (native language: ${params.nativeLanguage}) and wants help consolidating ones that don't need to stay separate. Given the full list of cards (each with an "id"), find groups of 2 or more cards that are redundant to review individually: true duplicates, near-synonyms that cover the same meaning, or the same core word/phrase differing only in grammatical form (tense, singular/plural, verb conjugation, politeness/formality level, or a minor spelling variant). Do NOT group cards that test genuinely different vocabulary, meanings, or usages, even if they look superficially similar — when in doubt, leave them ungrouped. For each group, propose one consolidated replacement card that preserves the learning value of the originals (e.g. mention notable alternate forms in "context" or weave them into "exampleSentence" when useful, instead of silently dropping them). Return only JSON: an array of objects, each with exactly these keys: "cardIds" (array of the original card ids being merged, from the input), "merged" (an object with "front", "reading", "meaning", "exampleSentence", "context", "cloze" — same shape as the input cards), "reason" (one short sentence in ${params.nativeLanguage} explaining why these were grouped). Return an empty array if nothing should be merged.`,
+    `You are TC Lingo's flashcard deck curator. The learner has too many ${params.targetLanguage} review cards (native language: ${params.nativeLanguage}) and wants help consolidating ones that don't need to stay separate. Given the full list of cards (each with an "id"), find groups of 2 or more cards that are redundant to review individually: true duplicates, near-synonyms that cover the same meaning, or the same core word/phrase differing only in grammatical form (tense, singular/plural, verb conjugation, politeness/formality level, or a minor spelling variant). Do NOT group cards that test genuinely different vocabulary, meanings, or usages, even if they look superficially similar — when in doubt, leave them ungrouped. For each group, propose one consolidated replacement card that preserves the learning value of the originals (e.g. mention notable alternate forms in "context" or weave them into "exampleSentence" when useful, instead of silently dropping them). Return only JSON: an array of objects, each with exactly these keys: "cardIds" (array of the original card ids being merged, from the input), "merged" (an object with "front", "reading", "meaning", "exampleSentence", "context", "cloze" — same shape as the input cards; "cloze" must be "exampleSentence" with "front" replaced by "___", with "front" appearing verbatim, unmodified, as a contiguous span of "exampleSentence" so substituting "front" back into "cloze"'s blank reproduces "exampleSentence" exactly), "reason" (one short sentence in ${params.nativeLanguage} explaining why these were grouped). Return an empty array if nothing should be merged.`,
     { cards: params.cards },
   );
   return parseCardMergeGroups(
     content,
     new Set(params.cards.map((c) => c.id)),
   );
+}
+
+/** lib/reviewConsistencyCheck.ts's background QA pass: cards occasionally
+ * come out of extraction/merging with a `front` that doesn't actually fit
+ * `cloze`'s blank (e.g. front carries an extra word not present at that
+ * position in exampleSentence — see requestMistakeCards/requestTranslationCards/
+ * requestCardMerges's cloze-consistency instruction, which this exists to
+ * catch when a model didn't follow it). Checked, not assumed: whether
+ * `front` fits `cloze` can't be verified with plain string matching for
+ * languages without whitespace word boundaries (Japanese, Chinese, ...), so
+ * this asks the model directly instead. Best-effort — callers treat a
+ * thrown/malformed response as "assume consistent, don't touch the card". */
+export async function requestCardConsistencyCheck(params: {
+  connection: LlmConnection;
+  targetLanguage: string;
+  card: { front: string; exampleSentence: string; cloze: string };
+}): Promise<CardConsistencyResult> {
+  const content = await chatJson(
+    params.connection,
+    `You are TC Lingo's flashcard QA checker. A flashcard has a "front" (the word/phrase to drill), an "exampleSentence", and a "cloze" version of exampleSentence with front's occurrence replaced by one or more "___" blanks. Check whether substituting front back into cloze's blank(s), in order, exactly reproduces exampleSentence (ignoring only whitespace differences). If it does, return {"consistent": true}. If it doesn't (front is missing/extra words, doesn't match the wording actually used in exampleSentence, or the blank count doesn't correspond to front), return {"consistent": false, "front": <a corrected front that IS a verbatim span of exampleSentence>, "cloze": <exampleSentence with that corrected front replaced by "___", so substituting it back reproduces exampleSentence exactly>}. Keep the corrected front as close as possible to the original front's core word/phrase — only trim or adjust it enough to fit exampleSentence, don't invent a different vocabulary item. This is ${params.targetLanguage} text. Return only JSON with exactly the keys described above.`,
+    { front: params.card.front, exampleSentence: params.card.exampleSentence, cloze: params.card.cloze },
+  );
+  return parseCardConsistencyResult(content);
+}
+
+/** lib/reviewClozeVariation.ts's background variety generator: a card
+ * reviewed for the Nth time keeps showing the exact same cloze sentence,
+ * which risks the learner memorizing that one sentence instead of
+ * genuinely recalling "front" — this generates a fresh natural sentence
+ * using the same word/phrase in different wording/context each time, kept
+ * ephemeral (never persisted; the card's own stored cloze/exampleSentence
+ * stay canonical). Same cloze-consistency requirement as the
+ * card-generating prompts above. */
+export async function requestClozeVariation(params: {
+  connection: LlmConnection;
+  targetLanguage: string;
+  card: { front: string; reading: string; meaning: string; exampleSentence: string };
+}): Promise<string> {
+  const content = await chatJson(
+    params.connection,
+    `You are TC Lingo's flashcard variety generator. The learner has reviewed this card before; showing the exact same example sentence every time risks them memorizing that sentence instead of genuinely recalling the word. Given the card's "front" (the ${params.targetLanguage} word/phrase), "meaning", and its original "exampleSentence", write ONE new, natural ${params.targetLanguage} example sentence that uses front, clearly different in wording and context from the original exampleSentence, then express it as a cloze with front's occurrence replaced by "___". front must appear verbatim, unmodified, as a contiguous span of your new sentence, so substituting it back into the blank reproduces your new sentence exactly. Return only JSON: {"cloze": string}.`,
+    { front: params.card.front, reading: params.card.reading, meaning: params.card.meaning, originalExampleSentence: params.card.exampleSentence },
+  );
+  return parseClozeVariation(content);
 }
 
 /** The review tab's second-opinion judge: strict string matching (lib/srs.ts
@@ -335,7 +400,7 @@ export async function judgeReviewAnswer(params: {
 }): Promise<AnswerVerdict> {
   const content = await chatJson(
     params.connection,
-    `You are TC Lingo's review-answer judge. A learner of ${params.targetLanguage} (native language: ${params.nativeLanguage}) was reviewing a flashcard: shown the card's meaning (and its cloze sentence when present), they had to recall and type the ${params.targetLanguage} expression. The expected answer is the card's "front"; their typed answer did not match it exactly. Classify the typed answer against THIS card's expected answer as one of three verdicts: "correct" — a synonym, alternative spelling/script, or equivalent phrasing that a teacher would accept as naturally expressing the card's meaning in the card's context (including the cloze sentence, if there is one); "near" — the learner clearly recalled the right word or expression, but produced the wrong grammatical form of it (wrong tense, singular/plural, verb conjugation, politeness/formality level, or a minor spelling/typo slip) — they know the vocabulary, they just didn't produce the exact form the card expects; "wrong" — the answer means something different, is unrelated, or is not a recognizable attempt at the expected word/expression. Be fair but not lenient — close in spelling but different in meaning is "wrong", not "near". Return only JSON with exactly these keys: "verdict" ("correct", "near", or "wrong"), "note" (one short sentence in ${params.nativeLanguage}: if correct, confirm the learner's expression also works and mention the card's expected one; if near, briefly say what form the expected answer uses instead; if wrong, briefly say how it differs from the expected answer).`,
+    `You are TC Lingo's review-answer judge. A learner of ${params.targetLanguage} (native language: ${params.nativeLanguage}) was reviewing a flashcard: shown the card's meaning (and its cloze sentence when present), they had to recall and type the ${params.targetLanguage} expression. The expected answer is the card's "front"; their typed answer did not match it exactly. Classify the typed answer against THIS card's expected answer as one of three verdicts: "correct" — a synonym, alternative spelling/script, or equivalent phrasing that a teacher would accept as naturally expressing the card's meaning in the card's context (including the cloze sentence, if there is one); "near" — the learner clearly recalled the right word or expression, but produced the wrong grammatical form of it (wrong tense, singular/plural, verb conjugation, politeness/formality level, or a minor spelling/typo slip) — they know the vocabulary, they just didn't produce the exact form the card expects; "wrong" — the answer means something different, is unrelated, or is not a recognizable attempt at the expected word/expression. Be fair but not lenient — close in spelling but different in meaning is "wrong", not "near". Return only JSON with exactly these keys: "verdict" ("correct", "near", or "wrong"), "note" (one short sentence in ${params.nativeLanguage}, always phrased around what the LEARNER typed, never describing the expected answer itself as missing or wrong: if correct, confirm the learner's expression also works and mention the card's expected one; if near, tell the learner concretely what to change in what they typed to reach the expected form — e.g. "change it to past tense" or "add り at the end" — not a description of the expected answer in isolation; if wrong, briefly say how their answer differs in meaning from the expected one).`,
     { card: params.card, typedAnswer: params.typedAnswer },
   );
   return parseAnswerVerdict(content);
