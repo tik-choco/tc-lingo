@@ -506,6 +506,41 @@ export function subscribeSettings(cb: () => void): () => void {
   return subscribeStorage(cb);
 }
 
+/**
+ * Repoints any `taskPresetIds`/`networkProviderPresetIds` entry naming a
+ * preset id in `remap`'s keys at its mapped surviving id instead. Used by
+ * `useNetworkModelSync`'s mirror self-heal
+ * (`lib/networkMirrorSync.ts#consolidateNetworkMirror`) after it merges
+ * duplicate mist-network:// presets for the same advertised model into one
+ * survivor: without this, a per-task override that had been pointing at one
+ * of the now-removed duplicates would silently degrade to the shared
+ * config's default preset (see `resolvePreset`'s fallback) instead of
+ * continuing to point at the same model under its surviving id. A no-op
+ * (never calls `saveSettings`) when nothing in the current settings actually
+ * names a remapped id.
+ */
+export function remapPresetIdReferences(remap: ReadonlyMap<string, string>): void {
+  if (remap.size === 0) return;
+  const current = loadSettings();
+  let changed = false;
+
+  const taskPresetIds = { ...current.taskPresetIds };
+  for (const task of Object.keys(taskPresetIds) as LlmTask[]) {
+    const id = taskPresetIds[task];
+    const remapped = id ? remap.get(id) : undefined;
+    if (remapped) {
+      taskPresetIds[task] = remapped;
+      changed = true;
+    }
+  }
+
+  const networkProviderPresetIds = current.networkProviderPresetIds.map((id) => remap.get(id) ?? id);
+  if (networkProviderPresetIds.some((id, i) => id !== current.networkProviderPresetIds[i])) changed = true;
+
+  if (!changed) return;
+  saveSettings({ ...current, taskPresetIds, networkProviderPresetIds });
+}
+
 /** Adds a target language (no-op if already present) and makes it active. */
 export function addTargetLanguage(language: string): LingoSettings {
   const trimmed = language.trim();

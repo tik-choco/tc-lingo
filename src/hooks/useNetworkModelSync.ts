@@ -1,7 +1,9 @@
 import { useEffect } from "preact/hooks";
 import { emptyLlmConfig, ensurePreset, ensureProvider, loadLlmConfig, normalizeBaseUrl, saveLlmConfig } from "../lib/llmConfig";
 import { notifyLlmConfigChanged } from "../lib/llmConfigSync";
+import { consolidateNetworkMirror } from "../lib/networkMirrorSync";
 import { NETWORK_PROVIDER_LABEL, networkProviderBaseUrl } from "../lib/networkModels";
+import { remapPresetIdReferences } from "../lib/settings";
 import type { ConsumerStatus } from "../lib/network";
 import type { LingoSettings } from "../types";
 
@@ -44,6 +46,18 @@ import type { LingoSettings } from "../types";
  * the mirrored set already matches, so reconnects/re-renders don't thrash
  * localStorage or retrigger the same/cross-tab change notification on every
  * tick.
+ *
+ * Every run also self-heals via `consolidateNetworkMirror`
+ * (lib/networkMirrorSync.ts): the shared config is co-owned with no locking
+ * (last-write-wins), so two same-origin app instances mirroring the same
+ * room can each create their own duplicate pseudo-provider/preset row if
+ * their writes race - `ensureProvider`/`ensurePreset` alone can't prevent
+ * that, only dedup within a single writer's own read-modify-write. Any
+ * duplicate found for this room (however it happened, including
+ * historically) is collapsed on the next reconnect, and any per-task preset
+ * override that had pointed at a removed duplicate is repointed at the
+ * survivor via `lib/settings.ts`'s `remapPresetIdReferences` rather than
+ * left to silently fall back to the default preset.
  */
 export function useNetworkModelSync(settings: LingoSettings, consumerStatus: ConsumerStatus, roomId: string): void {
   const connected = consumerStatus.phase === "connected";
@@ -62,6 +76,15 @@ export function useNetworkModelSync(settings: LingoSettings, consumerStatus: Con
     const modelSet = new Set(modelList);
 
     const config = loadLlmConfig() ?? emptyLlmConfig();
+
+    // Self-heal any duplicate mist-network:// row/preset for this room
+    // before deciding whether anything else needs to change - see
+    // consolidateNetworkMirror's doc comment for why duplicates can exist at
+    // all despite ensureProvider/ensurePreset's own exact dedup keys
+    // (cross-instance write races; a re-advertised model name that only
+    // differs by whitespace across reconnects). Forces a write below even if
+    // the mirrored set would otherwise already look in-sync.
+    const merge = consolidateNetworkMirror(config, roomId);
     const provider = config.providers.find((p) => p.baseUrl === normalizedBaseUrl && p.apiKey === "");
 
     // No-op check mirroring the save below against the current config, so
@@ -72,7 +95,8 @@ export function useNetworkModelSync(settings: LingoSettings, consumerStatus: Con
     // ensureProvider's/ensurePreset's own (baseUrl+apiKey for the provider;
     // providerId+model+temperature+reasoningEffort for each preset).
     const inSync =
-      provider === undefined
+      !merge.changed &&
+      (provider === undefined
         ? modelList.length === 0
         : modelList.length === 0
           ? false // provider row lingers although nothing is advertised any more
@@ -85,8 +109,10 @@ export function useNetworkModelSync(settings: LingoSettings, consumerStatus: Con
                   preset.temperature === undefined &&
                   preset.reasoningEffort === undefined,
               ),
-            );
+            ));
     if (inSync) return;
+
+    if (merge.presetIdRemap.size > 0) remapPresetIdReferences(merge.presetIdRemap);
 
     if (modelList.length === 0) {
       // Connected, but the room advertises nothing (everything was
