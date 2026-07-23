@@ -1164,7 +1164,8 @@ button:disabled {
   position: relative;
   padding: var(--space-1) var(--space-3) var(--space-1) var(--space-5);
   border-radius: var(--radius-pill);
-  background: var(--surface-3);
+  border: 1px solid var(--border);
+  background: transparent;
   color: var(--text-subtle);
   font-size: 0.8rem;
   font-weight: 600;
@@ -1182,7 +1183,11 @@ button:disabled {
   transform: translateY(-50%);
 }
 
+/* "done" (already-passed) steps get a light tint so they read as complete
+   without competing with the "current" step below — see .current for why
+   the two need to look clearly different, not just a shade apart. */
 .network-status-step.done {
+  border-color: var(--primary-border);
   background: var(--primary-soft);
   color: var(--primary);
 }
@@ -1191,13 +1196,20 @@ button:disabled {
   background: var(--primary);
 }
 
+/* The step the user actually needs to notice: filled solid instead of
+   tinted, bold, and on-primary text so it reads unmistakably differently
+   from "done" (soft tint) and "not yet reached" (outline only) — those two
+   used to share the same text color and a ~6% alpha difference in
+   background, which made the active step blend into the rest of the row. */
 .network-status-step.current {
-  background: var(--primary-soft-strong);
-  color: var(--primary);
+  border-color: var(--primary);
+  background: var(--primary);
+  color: var(--on-primary);
+  font-weight: 700;
 }
 
 .network-status-step.current::before {
-  background: var(--primary);
+  background: var(--on-primary);
   animation: network-status-pulse 1.4s var(--ease) infinite;
 }
 
