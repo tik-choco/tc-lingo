@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import { Network, Plus, Server, Sparkles, Volume2, X } from "lucide-preact";
-import { fetchModels } from "@tik-choco/mistai";
+import { OPENAI_TTS_VOICES, fetchModels, fetchVoices } from "@tik-choco/mistai";
 import { emptyLlmConfig, loadLlmConfig, saveLlmConfig } from "../lib/llmConfig";
 import type { LlmProviderV1, ModelPresetV1, SharedLlmConfigV1 } from "../lib/llmConfig";
 import { subscribeLlmConfigChanges } from "../lib/llmConfigSync";
@@ -13,7 +13,6 @@ import {
   updatePreset,
   updateProvider,
 } from "../lib/llmConfigOps";
-import { OPENAI_TTS_VOICES, fetchVoices } from "../lib/voices";
 import {
   addTargetLanguage,
   loadSettings,
@@ -139,6 +138,11 @@ export function SettingsView() {
   useEffect(() => subscribeLevels(() => setLevelRecords(loadLevels())), []);
   const { status, updatedAt } = useNetworkConsumerStatusWithTimestamp();
   const currentStepIndex = networkStepIndex(status.phase);
+  // Gates AI-Network-derived presets/options in the タスク tab selects below
+  // (option-network styling, task-badge-network badge, and hiding those
+  // options entirely while disconnected — see tc-translate's SettingsModal
+  // for the reference pattern).
+  const networkConnected = status.phase === "connected";
   // Display-only mirror of the single useNetworkProvider() instance mounted
   // in app.tsx — see hooks/useNetworkProvider.ts's useNetworkProviderStatus
   // doc comment for why this view must not call useNetworkProvider itself.
@@ -849,29 +853,40 @@ export function SettingsView() {
   const ttsProviderId = ttsSettings.providerId || sharedConfig.presets.find((p) => p.id === sharedConfig.defaultPresetId)?.providerId;
   const ttsProvider = sharedConfig.providers.find((p) => p.id === ttsProviderId);
 
-  // Voice names offered in the TTS voice picker, fetched only when the
-  // derived engine is 'api' (network/browser have no HTTP voice list to
-  // fetch). Failures fall back to the documented OpenAI voice set; a voice
-  // saved from another server stays selectable via an extra <option> below.
-  const [ttsVoiceOptions, setTtsVoiceOptions] = useState<string[] | null>(null);
+  // Voice names offered in the TTS voice picker, sourced per engine (see
+  // tc-docs/drafts/tts-voice-selection-v1.md §2.4):
+  //  - api: a live fetchVoices() result, fetched only when the derived engine
+  //    is 'api' (network/browser have no HTTP voice list to fetch). Falls
+  //    back to the documented OpenAI voice set when the endpoint can't list
+  //    them (fetchVoices resolves to [] rather than throwing).
+  //  - network: the room's advertised union (status.voices, built by mistai's
+  //    ConsumerClient from every connected TTS provider's
+  //    provider_hello.voices). Never falls back to the static OpenAI list —
+  //    a name the room doesn't actually support would mislead the user into
+  //    picking it; an empty union just leaves the "provider既定" option (plus
+  //    the current saved value, via the extra <option> below) as the only
+  //    choices.
+  //  - browser: unused (the row isn't shown at all for this engine).
+  const [ttsApiVoices, setTtsApiVoices] = useState<string[] | null>(null);
   useEffect(() => {
     if (ttsEngine !== "api" || !ttsProvider?.baseUrl) {
-      setTtsVoiceOptions(null);
+      setTtsApiVoices(null);
       return;
     }
     let cancelled = false;
-    fetchVoices({ baseUrl: ttsProvider.baseUrl, apiKey: ttsProvider.apiKey })
+    fetchVoices(ttsProvider.baseUrl, ttsProvider.apiKey)
       .then((voices) => {
-        if (!cancelled) setTtsVoiceOptions(voices);
+        if (!cancelled) setTtsApiVoices(voices.length > 0 ? voices : null);
       })
       .catch(() => {
-        if (!cancelled) setTtsVoiceOptions(null);
+        if (!cancelled) setTtsApiVoices(null);
       });
     return () => {
       cancelled = true;
     };
   }, [ttsEngine, ttsProvider?.baseUrl, ttsProvider?.apiKey]);
-  const voiceOptions = ttsVoiceOptions ?? OPENAI_TTS_VOICES;
+  const networkTtsVoices = status.phase === "connected" ? (status.voices ?? []) : [];
+  const voiceOptions = ttsEngine === "network" ? networkTtsVoices : ttsEngine === "api" ? (ttsApiVoices ?? OPENAI_TTS_VOICES) : [];
 
   return (
     <div class="view-container settings-view">
@@ -1184,12 +1199,22 @@ export function SettingsView() {
                     aria-label={t("settings-task-default-label")}
                   >
                     <option value="">{t("settings-preset-unset-option")}</option>
-                    {sharedConfig.presets.map((preset) => (
-                      <option key={preset.id} value={preset.id}>
-                        {preset.label || preset.id}
-                      </option>
-                    ))}
+                    {sharedConfig.presets
+                      .filter((preset) => networkConnected || !isNetworkPresetProvider(preset.providerId))
+                      .map((preset) => (
+                        <option
+                          key={preset.id}
+                          value={preset.id}
+                          class={isNetworkPresetProvider(preset.providerId) ? "option-network" : undefined}
+                        >
+                          {preset.label || preset.id}
+                        </option>
+                      ))}
                   </select>
+                  {networkConnected &&
+                  isNetworkPresetProvider(sharedConfig.presets.find((p) => p.id === sharedConfig.defaultPresetId)?.providerId ?? "") ? (
+                    <span class="task-badge-network">{t("settings-badge-network")}</span>
+                  ) : null}
                 </div>
                 <div class="task-model-field">
                   <select
@@ -1219,12 +1244,22 @@ export function SettingsView() {
                       aria-label={t(TASK_LABEL_KEYS[task])}
                     >
                       <option value="">{t("settings-task-follow-default-option")}</option>
-                      {sharedConfig.presets.map((preset) => (
-                        <option key={preset.id} value={preset.id}>
-                          {preset.label || preset.id}
-                        </option>
-                      ))}
+                      {sharedConfig.presets
+                        .filter((preset) => networkConnected || !isNetworkPresetProvider(preset.providerId))
+                        .map((preset) => (
+                          <option
+                            key={preset.id}
+                            value={preset.id}
+                            class={isNetworkPresetProvider(preset.providerId) ? "option-network" : undefined}
+                          >
+                            {preset.label || preset.id}
+                          </option>
+                        ))}
                     </select>
+                    {networkConnected &&
+                    isNetworkPresetProvider(sharedConfig.presets.find((p) => p.id === settings.taskPresetIds[task])?.providerId ?? "") ? (
+                      <span class="task-badge-network">{t("settings-badge-network")}</span>
+                    ) : null}
                   </div>
                   <div class="task-model-field">
                     <select
@@ -1276,20 +1311,31 @@ export function SettingsView() {
                     aria-label={t("settings-task-tts-label")}
                   >
                     <option value="">{t("settings-voice-model-browser-option")}</option>
-                    {networkVoiceProviderId ? (
-                      <option value="__network__">{t("settings-voice-model-network-auto-option")}</option>
+                    {networkVoiceProviderId && networkConnected ? (
+                      <option value="__network__" class="option-network">
+                        {t("settings-voice-model-network-auto-option")}
+                      </option>
                     ) : null}
                     {ttsSettings.model.trim() && !matchedTtsPreset && !isTtsNetworkAuto ? (
                       <option value="__current__">{ttsSettings.model}</option>
                     ) : null}
-                    {sharedConfig.presets.map((preset) => (
-                      <option key={preset.id} value={preset.id}>
-                        {preset.label || preset.model || preset.id}
-                      </option>
-                    ))}
+                    {sharedConfig.presets
+                      .filter((preset) => networkConnected || !isNetworkPresetProvider(preset.providerId))
+                      .map((preset) => (
+                        <option
+                          key={preset.id}
+                          value={preset.id}
+                          class={isNetworkPresetProvider(preset.providerId) ? "option-network" : undefined}
+                        >
+                          {preset.label || preset.model || preset.id}
+                        </option>
+                      ))}
                   </select>
+                  {networkConnected && (isTtsNetworkAuto || (matchedTtsPreset && isNetworkPresetProvider(matchedTtsPreset.providerId))) ? (
+                    <span class="task-badge-network">{t("settings-badge-network")}</span>
+                  ) : null}
                 </div>
-                {ttsEngine !== "browser" && ttsSettings.model !== NETWORK_VOICE_AUTO_MODEL ? (
+                {ttsEngine !== "browser" ? (
                   <div class="task-model-field">
                     <select
                       value={ttsSettings.voice ?? ""}

@@ -1803,12 +1803,37 @@ button:disabled {
 }
 
 .task-model-field {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
   min-width: 0;
 }
 
 .task-model-field select {
   width: 100%;
   min-width: 0;
+  flex: 1 1 auto;
+}
+
+/* AI Networkルーム提供のプリセットが選ばれているタスクselectに添える印。
+   .llm-row-badgeと同じ見た目で統一する。 */
+.task-model-field .task-badge-network {
+  flex-shrink: 0;
+  background: var(--primary-soft-strong);
+  color: var(--primary);
+  font-size: 0.62rem;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: var(--radius-pill);
+  white-space: nowrap;
+}
+
+/* select内、AI Networkルーム由来のoptionをテキスト色で区別する。ネイティブ
+   optionはbackground/borderなど装飾がほぼ効かないブラウザが多いため、
+   colorのみ .llm-row-network / .task-badge-network と同じprimaryトーンで
+   当てる。 */
+option.option-network {
+  color: var(--primary);
 }
 
 /* ---------------- Settings view: AI接続 tab — Network-derived rows ----------------

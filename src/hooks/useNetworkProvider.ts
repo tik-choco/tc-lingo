@@ -13,7 +13,7 @@
 // Independent of `settings.connectionMode` — provider mode can run alongside
 // this app consuming via direct API for its own practice/reading/etc. calls.
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
-import { MistaiError } from "@tik-choco/mistai";
+import { MistaiError, fetchVoices } from "@tik-choco/mistai";
 import type { NetworkProviderPeer, NetworkProviderStatus, UseNetworkProviderResult } from "@tik-choco/mistai/preact";
 import { requestResolvedChatCompletionStreaming } from "../lib/llm";
 import { resolvePreset, resolveVoice, type ResolvedLlmTargetV1, type SharedLlmConfigV1 } from "../lib/llmConfig";
@@ -97,6 +97,37 @@ export function useNetworkProvider(settings: LingoSettings, llmConfig: SharedLlm
   // is passed.
   const ttsVoice = resolveVoice(llmConfig, "tts");
   const ttsConfigured = Boolean(ttsVoice && !isNetworkProviderBaseUrl(ttsVoice.baseUrl));
+
+  // Voice names advertised via provider_hello.voices (see
+  // tc-docs/drafts/tts-voice-selection-v1.md §2.1/§2.5): fetched from the TTS
+  // upstream only while TTS serving is actually enabled and resolves to a
+  // real HTTP endpoint (never against a mist-network:// pseudo-provider,
+  // same guard as ttsConfigured above - that would just loop the fetch back
+  // into the room). fetchVoices never throws (resolves to [] when the
+  // endpoint can't list voices), so advertising is simply omitted rather than
+  // surfacing an error here; no static-list fallback is used for the
+  // advertisement itself (only the consumer-side picker UI falls back to a
+  // static list, and only for the 'api' engine - see SettingsView.tsx).
+  const [advertisedVoices, setAdvertisedVoices] = useState<string[]>([]);
+  useEffect(() => {
+    if (!ttsConfigured || !ttsVoice) {
+      setAdvertisedVoices([]);
+      return;
+    }
+    let cancelled = false;
+    fetchVoices(ttsVoice.baseUrl, ttsVoice.apiKey)
+      .then((voices) => {
+        if (!cancelled) setAdvertisedVoices(voices);
+      })
+      .catch(() => {
+        if (!cancelled) setAdvertisedVoices([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+    // Depends on baseUrl/apiKey specifically, not the ttsVoice object
+    // identity (resolveVoice returns a fresh object every render).
+  }, [ttsConfigured, ttsVoice?.baseUrl, ttsVoice?.apiKey]);
 
   const [debouncedRoomId, setDebouncedRoomId] = useState(llmConfig.network.roomId);
   useEffect(() => {
@@ -211,6 +242,7 @@ export function useNetworkProvider(settings: LingoSettings, llmConfig: SharedLlm
       throw new MistaiError("ENDPOINT_NOT_CONFIGURED", "This provider has no LLM endpoint configured.");
     },
     advertisedModels: advertisedModels.length ? advertisedModels : undefined,
+    advertisedVoices: advertisedVoices.length ? advertisedVoices : undefined,
     synthesize: ttsConfigured
       ? async (text, model, voice) => {
           const voiceTarget = resolveVoice(llmConfigRef.current, "tts");
