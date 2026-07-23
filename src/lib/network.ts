@@ -45,6 +45,18 @@ export const networkClient = new ConsumerClient({
   createNode: createMistNode,
   nodeIdStorageKey: NODE_ID_STORAGE_KEY,
   requestTimeoutMs: 120_000,
+  // ConsumerClient's own default (10s, see mistai's
+  // DEFAULT_PROVIDER_WAIT_TIMEOUT_MS) is tuned for same-machine/dev testing;
+  // a real cross-device LLM Network join (mistlib WebRTC peer discovery +
+  // ICE negotiation over an actual LAN/WAN, especially the first connection
+  // of a session) can take noticeably longer, and waitForEligibleProvider's
+  // wait is already event-driven (resolves the instant a provider_hello
+  // arrives, see mistai's resolveProviderWaiters) - so widening this ceiling
+  // only delays the failure case, it never slows down a fast connection.
+  // Bumped after a real-device report of "音声APIに接続できない" (network
+  // TTS falling back to the browser voice) that self-resolved moments
+  // later on retry once the room finished connecting in the background.
+  providerWaitTimeoutMs: 30_000,
 });
 
 export type { ConsumerStatus, ConsumerStatusListener };

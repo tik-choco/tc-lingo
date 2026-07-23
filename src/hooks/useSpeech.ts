@@ -42,7 +42,7 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import { emptyLlmConfig, loadLlmConfig, resolveVoice } from "../lib/llmConfig";
 import { languageBcp47Tag } from "../lib/languages";
-import { localizeNetworkError, requestNetworkTts } from "../lib/network";
+import { localizeNetworkError, networkClient, requestNetworkTts } from "../lib/network";
 import { networkVoiceModelParam } from "../lib/networkModels";
 import { subscribeSettings } from "../lib/settings";
 import { synthesizeSpeechApi } from "../lib/tts";
@@ -77,6 +77,21 @@ type ChunkFetchResult = { blob: Blob } | { error: unknown };
 
 function browserSpeechSupported(): boolean {
   return typeof window !== "undefined" && "speechSynthesis" in window;
+}
+
+/** DevTools-only diagnostics for a failed API/network TTS attempt: the raw
+ * error alongside the consumer's current provider table (which peers are
+ * connected and what `services`/`voices` each one advertised in its last
+ * `provider_hello`) — the single most useful thing to check when "no tts
+ * provider was found" (was a provider even discovered? did it advertise
+ * "tts"?) vs. an actual upstream failure needs telling apart on a real
+ * device where there's no other way to see the wire state. Console-only by
+ * design: this can be a lot of detail, and the AI Network tab's own status
+ * display already covers the UI-facing summary. */
+function logTtsFailureDiagnostics(err: unknown): void {
+  console.warn("[useSpeech] TTS request failed; falling back to the browser voice.", err, {
+    consumerStatus: networkClient.status,
+  });
 }
 
 /** Whether *some* playback path is currently usable — the browser voice, or
@@ -234,7 +249,17 @@ export function useSpeech(): SpeechController {
       if (generation !== playGenerationRef.current) return; // superseded; don't resurrect error/fallback
       setLoadingId(null);
       if (browserSpeechSupported()) {
-        setSpeechError(t("app-tts-fallback-browser"));
+        // The generic notice is all that's guaranteed to make sense in every
+        // UI language, but the underlying cause (e.g. "no tts provider
+        // found" vs. the room's provider itself rejecting the request) is
+        // still worth surfacing for anyone debugging a real-device setup -
+        // console for whoever's watching DevTools, and appended to the
+        // visible notice itself so it doesn't require opening DevTools at
+        // all. See localizeNetworkError's REMOTE_ERROR handling for how a
+        // provider-authored voice_error message flows through here verbatim.
+        logTtsFailureDiagnostics(err);
+        const detail = localizeNetworkError(err, "");
+        setSpeechError(detail ? `${t("app-tts-fallback-browser")} (${detail})` : t("app-tts-fallback-browser"));
         speakWithBrowser(text, lang, id);
         return;
       }
@@ -270,7 +295,11 @@ export function useSpeech(): SpeechController {
     function fallbackOrFail(remaining: SequenceItem[], err: unknown): void {
       setLoadingId(null);
       if (browserSpeechSupported()) {
-        setSpeechError(t("app-tts-fallback-browser"));
+        // See playFromSource's catch block for why this surfaces `err`
+        // instead of just the generic notice.
+        logTtsFailureDiagnostics(err);
+        const detail = localizeNetworkError(err, "");
+        setSpeechError(detail ? `${t("app-tts-fallback-browser")} (${detail})` : t("app-tts-fallback-browser"));
         playSequenceWithBrowser(remaining, lang, id);
         return;
       }
