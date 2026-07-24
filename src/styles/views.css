@@ -499,6 +499,15 @@ button:disabled {
   font-weight: 600;
 }
 
+/* Subtle word-count hint next to the cloze instruction line, shown only when
+   expandClozeBlank capped a too-long single blank instead of expanding it
+   per-word (see ReviewView.tsx). Deliberately quieter than
+   .review-recall-instruction itself. */
+.review-cloze-word-count {
+  font-size: 0.78rem;
+  color: var(--text-subtle);
+}
+
 .review-answer-form {
   display: flex;
   align-items: center;
@@ -549,6 +558,16 @@ button:disabled {
 .review-answer-reading {
   color: var(--text-muted);
   font-weight: 400;
+}
+
+.review-answer-in-sentence {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+.review-rewrite {
+  color: var(--text-muted);
+  font-size: 0.9rem;
 }
 
 .review-answer-meaning {
