@@ -1,11 +1,42 @@
 import { useEffect } from "preact/hooks";
 import { emptyLlmConfig, ensurePreset, ensureProvider, loadLlmConfig, normalizeBaseUrl, saveLlmConfig } from "../lib/llmConfig";
+import type { SharedLlmConfigV1 } from "../lib/llmConfig";
 import { notifyLlmConfigChanged } from "../lib/llmConfigSync";
 import { consolidateNetworkMirror } from "../lib/networkMirrorSync";
-import { NETWORK_PROVIDER_LABEL, networkProviderBaseUrl } from "../lib/networkModels";
+import { NETWORK_PROVIDER_LABEL, isNetworkProviderBaseUrl, networkProviderBaseUrl } from "../lib/networkModels";
 import { remapPresetIdReferences } from "../lib/settings";
 import type { ConsumerStatus } from "../lib/network";
 import type { LingoSettings } from "../types";
+
+/**
+ * Picks a safe replacement for `config.defaultPresetId` once its previous
+ * target preset has just been removed (room un-shared everything, or this
+ * one preset's model is no longer advertised) - the first preset that is
+ * NOT sitting under any `mist-network://` mirror provider (this room's or
+ * any other room's), never an arbitrary `config.presets[0]`.
+ *
+ * Why this matters: `deriveVoiceEngine`/`resolveVoice` (lib/voice.ts /
+ * lib/llmConfig.ts) fall back to `resolvePreset(config)` - i.e.
+ * `defaultPresetId` - for ANY task (chat, and TTS/STT too) whose own
+ * `providerId` is left unset, which is the documented, legitimate way to
+ * configure them ("providerId 省略時は defaultPreset の provider にフォール
+ * バック" - lib/llmConfig.ts's `VoiceConfigV1` doc comment). Blindly reusing
+ * `config.presets[0]` here would silently promote whatever preset happens to
+ * be array-first - very plausibly this same room's OTHER still-advertised
+ * mirror preset, or another app's/room's leftover network preset - to "the
+ * default", flipping every unset-providerId task (most commonly a TTS setup
+ * that was never given its own explicit provider) from the user's actual API
+ * provider onto the AI Network transport with no user action at all. Falls
+ * back to "" (unset) when every remaining preset happens to be
+ * network-owned, rather than picking one anyway.
+ */
+function safeDefaultPresetFallback(config: SharedLlmConfigV1): string {
+  const nonNetwork = config.presets.find((p) => {
+    const provider = config.providers.find((pr) => pr.id === p.providerId);
+    return provider !== undefined && !isNetworkProviderBaseUrl(provider.baseUrl);
+  });
+  return nonNetwork?.id ?? "";
+}
 
 /**
  * Mirrors the model names advertised by AI Network room providers (their
@@ -121,7 +152,7 @@ export function useNetworkModelSync(settings: LingoSettings, consumerStatus: Con
       if (!provider) return;
       config.presets = config.presets.filter((p) => p.providerId !== provider.id);
       if (config.defaultPresetId && !config.presets.some((p) => p.id === config.defaultPresetId)) {
-        config.defaultPresetId = config.presets[0]?.id ?? "";
+        config.defaultPresetId = safeDefaultPresetFallback(config);
       }
       config.providers = config.providers.filter((p) => p.id !== provider.id);
       saveLlmConfig(config);
@@ -139,7 +170,7 @@ export function useNetworkModelSync(settings: LingoSettings, consumerStatus: Con
     if (stalePresetIds.size > 0) {
       config.presets = config.presets.filter((p) => !stalePresetIds.has(p.id));
       if (config.defaultPresetId && stalePresetIds.has(config.defaultPresetId)) {
-        config.defaultPresetId = config.presets[0]?.id ?? "";
+        config.defaultPresetId = safeDefaultPresetFallback(config);
       }
     }
     saveLlmConfig(config);

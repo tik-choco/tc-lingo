@@ -103,6 +103,11 @@ function isTaskReasoningEfforts(value: unknown): value is Partial<Record<string,
   return Object.values(value as Record<string, unknown>).every(isReasoningEffortValue);
 }
 
+function isVoiceByLanguageMap(value: unknown): value is Record<string, string> {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
+  return Object.values(value as Record<string, unknown>).every((v) => typeof v === "string");
+}
+
 /** Current `LingoSettings` shape (post auto-organize-cards change — see
  * `isPreCardOrganizeSettings` for the shape immediately before it). */
 function isLingoSettings(value: unknown): value is LingoSettings {
@@ -123,7 +128,8 @@ function isLingoSettings(value: unknown): value is LingoSettings {
     isTaskReasoningEfforts(r.taskReasoningEfforts) &&
     isReasoningEffortValue(r.defaultReasoningEffort) &&
     typeof r.autoOrganizeCards === "boolean" &&
-    typeof r.lastCardAutoOrganizeAt === "string"
+    typeof r.lastCardAutoOrganizeAt === "string" &&
+    (r.ttsVoiceByLanguage === undefined || isVoiceByLanguageMap(r.ttsVoiceByLanguage))
   );
 }
 
@@ -643,6 +649,25 @@ export function setDefaultReasoningEffort(effort: ReasoningEffort): LingoSetting
   const next: LingoSettings = { ...current, defaultReasoningEffort: effort };
   saveSettings(next);
   return next;
+}
+
+/** Sets (or, with `""`/whitespace-only, clears) the TTS voice override for
+ * one language — `subtag` is a BCP-47 primary subtag, e.g. "en"/"ja"/"zh" (see
+ * lib/ttsVoiceByLanguage.ts's `primaryLangSubtag`; SettingsView derives it
+ * from each configured target/native language before calling this). Clearing
+ * removes the key entirely rather than storing an empty string, so the map
+ * only ever holds real overrides. */
+export function setTtsVoiceOverride(subtag: string, voice: string): LingoSettings {
+  const current = loadSettings();
+  const next: Record<string, string> = { ...current.ttsVoiceByLanguage };
+  if (voice.trim()) {
+    next[subtag] = voice.trim();
+  } else {
+    delete next[subtag];
+  }
+  const settings: LingoSettings = { ...current, ttsVoiceByLanguage: next };
+  saveSettings(settings);
+  return settings;
 }
 
 /** Toggles lib/cardAutoOrganize.ts's silent background merge pass. */

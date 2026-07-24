@@ -22,6 +22,7 @@ import { advertisedModelName, isNetworkProviderBaseUrl } from "../lib/networkMod
 import { OAI_TUNNEL_SERVICE } from "../lib/p2p/protocol";
 import { OaiTunnelProvider, type OaiUpstreamResolver } from "../lib/p2p/tunnel";
 import { synthesizeSpeechApi } from "../lib/tts";
+import { resolveVoiceOverride } from "../lib/ttsVoiceByLanguage";
 import type { LingoSettings } from "../types";
 import { useMistaiNetworkProvider } from "./useMistaiProvider";
 
@@ -244,7 +245,7 @@ export function useNetworkProvider(settings: LingoSettings, llmConfig: SharedLlm
     advertisedModels: advertisedModels.length ? advertisedModels : undefined,
     advertisedVoices: advertisedVoices.length ? advertisedVoices : undefined,
     synthesize: ttsConfigured
-      ? async (text, model, voice) => {
+      ? async (text, model, voice, lang) => {
           const voiceTarget = resolveVoice(llmConfigRef.current, "tts");
           // Config may have changed since ttsConfigured was computed (e.g.
           // the resolved model got unset, falling back to the network
@@ -260,11 +261,36 @@ export function useNetworkProvider(settings: LingoSettings, llmConfig: SharedLlm
           // model; anything else falls back to that own model instead of
           // erroring.
           const ownTtsModel = voiceTarget.model;
+          // Voice precedence: whatever the consumer explicitly requested
+          // (voice) wins outright - it's an intentional pick (e.g. from the
+          // room's advertised provider_hello.voices list), never second-
+          // guessed here. Only when the consumer left it unset does this
+          // provider's own per-language override (settingsRef.current.
+          // ttsVoiceByLanguage, keyed by `lang`'s BCP-47 primary subtag - see
+          // lib/ttsVoiceByLanguage.ts) apply, falling back to this provider's
+          // plain configured voice when neither is present.
+          //
+          // Deliberately NOT running voiceTarget.voice through
+          // isLangMismatchedKokoroVoice/resolveNetworkVoice the way
+          // hooks/useSpeech.ts's network engine does for its own global
+          // fallback: there, suppressing a mismatched voice just omits it from
+          // the wire request, and the ROOM'S PROVIDER (this same code, for
+          // some other peer) still gets `lang` to pick a same-language voice
+          // on its own. Here there is no further hop - `voiceTarget.voice`
+          // going missing falls straight into synthesizeSpeechApi's hardcoded
+          // `|| "alloy"` default, with no `lang` ever forwarded to
+          // voiceTarget.baseUrl (the OpenAI-compatible request shape has no
+          // lang field). For an upstream that's itself a kokoro-only server
+          // (no "alloy" voice at all), that swap would trade "possibly wrong
+          // language" for "likely broken request" - worse, not better. So this
+          // provider-side fallback intentionally keeps sending its configured
+          // voice unconditionally, mismatch or not.
+          const langVoice = resolveVoiceOverride(settingsRef.current.ttsVoiceByLanguage, lang);
           const blob = await synthesizeSpeechApi(text, {
             baseUrl: voiceTarget.baseUrl,
             apiKey: voiceTarget.apiKey,
             model: model === ownTtsModel ? model : ownTtsModel,
-            voice: voice || voiceTarget.voice,
+            voice: voice || langVoice || voiceTarget.voice,
             speed: voiceTarget.speed,
           });
           return { blob, mime: blob.type || "audio/mpeg" };

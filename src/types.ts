@@ -324,4 +324,17 @@ export interface LingoSettings {
    * never run. Device-local bookkeeping (not synced) that paces automatic
    * merging — see lib/cardAutoOrganize.ts's cooldown check. */
   lastCardAutoOrganizeAt: string;
+  /** Per-language TTS voice override, keyed by BCP-47 *primary subtag* (e.g.
+   * "en", "ja", "zh" — see lib/ttsVoiceByLanguage.ts), value = a voice id for
+   * that language. Read-aloud (hooks/useSpeech.ts, "api"/"network" engines
+   * only) uses this ahead of falling back to the shared config's single
+   * `tts.voice` (lib/llmConfig.ts) whenever the text being spoken is in that
+   * language; this app's own AI Network provider (hooks/useNetworkProvider.ts)
+   * consults the same map for an incoming `tts_request.lang` before falling
+   * back to its own configured voice. Optional/absent key means "no
+   * override" — omitting this field entirely (fresh installs, or before this
+   * feature existed) reproduces the exact prior single-voice behavior, so no
+   * settings migration is needed for it (see lib/settings.ts's
+   * `isLingoSettings`). */
+  ttsVoiceByLanguage?: Record<string, string>;
 }
