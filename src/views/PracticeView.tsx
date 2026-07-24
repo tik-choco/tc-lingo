@@ -824,6 +824,56 @@ export function PracticeView() {
               showRetryPrompt={false}
             />
 
+            {autoAddedCards.length > 0 && (
+              <p class="hint-text status-ok">
+                {t("practice-auto-cards-added", {
+                  count: autoAddedCards.length,
+                  fronts: autoAddedCards.map((c) => c.front).join(", "),
+                })}
+              </p>
+            )}
+
+            <SpellingDrill
+              key={currentAttempt.id}
+              words={misspelledWords(currentAttempt.original, currentAttempt.corrected)}
+              sentences={correctedSentences(currentAttempt.original, currentAttempt.corrected)}
+            />
+
+            {changedCorrectedSentences(currentAttempt.original, currentAttempt.corrected).length > 0 &&
+              (!sentenceCardsSaved ? (
+                <div class="button-row">
+                  <button type="button" onClick={saveMainSentenceCards} disabled={savingSentenceCards}>
+                    <Save size={16} />
+                    {savingSentenceCards ? t("practice-saving-sentence-cards") : t("practice-save-sentence-cards")}
+                  </button>
+                </div>
+              ) : (
+                <p class={sentenceCardsSavedCount > 0 ? "hint-text status-ok" : "hint-text"}>
+                  {sentenceCardsSavedCount > 0
+                    ? t("practice-sentence-cards-saved", { count: sentenceCardsSavedCount })
+                    : t("practice-sentence-cards-duplicate")}
+                </p>
+              ))}
+
+            {/* Manual extraction is the fallback for when auto-extraction
+                (above) is off — see lib/autoExtract.ts / settings.autoExtractCards. */}
+            {!settings.autoExtractCards && (
+              <>
+                {candidates === null ? (
+                  <div class="button-row">
+                    <button type="button" onClick={extractCards} disabled={extracting}>
+                      {extracting ? t("practice-extracting") : t("practice-extract-cards")}
+                    </button>
+                  </div>
+                ) : candidates.length > 0 ? (
+                  <MistakeCardPicker candidates={candidates} onAdd={addSelectedCards} onClose={() => setCandidates(null)} />
+                ) : (
+                  <p class="hint-text">{t("practice-no-cards-found")}</p>
+                )}
+                {cardsAdded > 0 && <p class="hint-text status-ok">{t("practice-cards-added", { count: cardsAdded })}</p>}
+              </>
+            )}
+
             {currentAttempt.retryPrompt && (
               <div class="retry-block">
                 <RetryPromptField
@@ -902,56 +952,6 @@ export function PracticeView() {
                   </p>
                 )}
               </div>
-            )}
-
-            {autoAddedCards.length > 0 && (
-              <p class="hint-text status-ok">
-                {t("practice-auto-cards-added", {
-                  count: autoAddedCards.length,
-                  fronts: autoAddedCards.map((c) => c.front).join(", "),
-                })}
-              </p>
-            )}
-
-            <SpellingDrill
-              key={currentAttempt.id}
-              words={misspelledWords(currentAttempt.original, currentAttempt.corrected)}
-              sentences={correctedSentences(currentAttempt.original, currentAttempt.corrected)}
-            />
-
-            {changedCorrectedSentences(currentAttempt.original, currentAttempt.corrected).length > 0 &&
-              (!sentenceCardsSaved ? (
-                <div class="button-row">
-                  <button type="button" onClick={saveMainSentenceCards} disabled={savingSentenceCards}>
-                    <Save size={16} />
-                    {savingSentenceCards ? t("practice-saving-sentence-cards") : t("practice-save-sentence-cards")}
-                  </button>
-                </div>
-              ) : (
-                <p class={sentenceCardsSavedCount > 0 ? "hint-text status-ok" : "hint-text"}>
-                  {sentenceCardsSavedCount > 0
-                    ? t("practice-sentence-cards-saved", { count: sentenceCardsSavedCount })
-                    : t("practice-sentence-cards-duplicate")}
-                </p>
-              ))}
-
-            {/* Manual extraction is the fallback for when auto-extraction
-                (above) is off — see lib/autoExtract.ts / settings.autoExtractCards. */}
-            {!settings.autoExtractCards && (
-              <>
-                {candidates === null ? (
-                  <div class="button-row">
-                    <button type="button" onClick={extractCards} disabled={extracting}>
-                      {extracting ? t("practice-extracting") : t("practice-extract-cards")}
-                    </button>
-                  </div>
-                ) : candidates.length > 0 ? (
-                  <MistakeCardPicker candidates={candidates} onAdd={addSelectedCards} onClose={() => setCandidates(null)} />
-                ) : (
-                  <p class="hint-text">{t("practice-no-cards-found")}</p>
-                )}
-                {cardsAdded > 0 && <p class="hint-text status-ok">{t("practice-cards-added", { count: cardsAdded })}</p>}
-              </>
             )}
 
             {error && <p class="error-text">{error}</p>}
