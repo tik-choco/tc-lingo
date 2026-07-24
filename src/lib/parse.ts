@@ -111,18 +111,29 @@ export type AnswerVerdictKind = "correct" | "near" | "wrong";
 export interface AnswerVerdict {
   verdict: AnswerVerdictKind;
   note: string;
+  /** The displayed cloze sentence rewritten so the LEARNER's own typed
+   * expression is used correctly (fixed inflection/collocation/word order),
+   * in the target language — constructive correction even for a "wrong"
+   * verdict, same spirit as the practice tab's `corrected` text. "" when
+   * there's no cloze sentence to rewrite, or the typed answer isn't a usable
+   * expression attempt (gibberish/unrelated) to build a rewrite from. */
+  rewrite: string;
 }
 
 /** For the review tab's LLM second-opinion judge (llm.ts judgeReviewAnswer):
  * a missing/invalid "verdict" is a parse failure — the caller catches and
- * falls back to the strict string judgement — while a missing note is just
- * "". */
+ * falls back to the strict string judgement — while a missing note/rewrite is
+ * just "". */
 export function parseAnswerVerdict(content: string): AnswerVerdict {
   const parsed = extractJson(content) as Record<string, unknown>;
   if (parsed.verdict !== "correct" && parsed.verdict !== "near" && parsed.verdict !== "wrong") {
     throw new Error(t("error-parse-json"));
   }
-  return { verdict: parsed.verdict, note: typeof parsed.note === "string" ? parsed.note : "" };
+  return {
+    verdict: parsed.verdict,
+    note: typeof parsed.note === "string" ? parsed.note : "",
+    rewrite: typeof parsed.rewrite === "string" ? parsed.rewrite : "",
+  };
 }
 
 /** lib/llm.ts's requestCardConsistencyCheck: whether a card's `cloze` blank,
@@ -179,14 +190,29 @@ export function parseCardCandidates(content: string): CardCandidate[] {
     .filter((c) => c.front && c.meaning);
 }
 
-/** lib/llm.ts's requestClozeVariation: a missing/empty "cloze" is a parse
- * failure — the caller catches and falls back to the card's own stored
- * cloze rather than surfacing one. */
-export function parseClozeVariation(content: string): string {
+/** lib/llm.ts's requestClozeVariation: the model returns its new sentence
+ * plus which contiguous span of it fills the blank ("answer"), rather than a
+ * pre-blanked cloze — `cloze` is then built deterministically by blanking
+ * that span out of `sentence`, so cloze/answer alignment can never drift the
+ * way a model-authored cloze string could. A missing/empty "sentence" or
+ * "answer", or an "answer" that doesn't actually occur in "sentence", is a
+ * parse failure — the caller catches and falls back to the card's own stored
+ * cloze rather than surfacing one. An "answer" occurring more than once is
+ * also a failure: blanking only the first match would leave the answer
+ * visible elsewhere in the sentence (or blank a substring inside an
+ * unrelated word), so an ambiguous match is dropped, not guessed at.
+ * `translation` (a native-language translation of the new "sentence", for
+ * ReviewView's question-phase translation toggle) is optional — "" when the
+ * model omitted it, never a parse failure on its own. */
+export function parseClozeVariation(content: string): { cloze: string; answer: string; translation: string } {
   const parsed = extractJson(content) as Record<string, unknown>;
-  const cloze = typeof parsed.cloze === "string" ? parsed.cloze.trim() : "";
-  if (!cloze) throw new Error(t("error-parse-json"));
-  return cloze;
+  const sentence = typeof parsed.sentence === "string" ? parsed.sentence.trim() : "";
+  const answer = typeof parsed.answer === "string" ? parsed.answer.trim() : "";
+  const translation = typeof parsed.translation === "string" ? parsed.translation.trim() : "";
+  if (!sentence || !answer || sentence.indexOf(answer) === -1 || sentence.indexOf(answer) !== sentence.lastIndexOf(answer)) {
+    throw new Error(t("error-parse-json"));
+  }
+  return { cloze: sentence.replace(answer, "___"), answer, translation };
 }
 
 export interface CardMergeGroup {
