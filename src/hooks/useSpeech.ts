@@ -21,6 +21,26 @@
 //     "let the room decide" option) is stripped from the wire request by
 //     lib/networkModels.ts's `networkVoiceModelParam`, so the room's
 //     provider falls back to its own configured TTS model.
+// Both "api" and "network" also send the spoken text's BCP-47 language tag
+// (languageBcp47Tag(language) — the same tag "browser" sets on
+// SpeechSynthesisUtterance.lang): "network" forwards it as `tts_request.lang`
+// so the room's provider (and mistai's provider-selection) can favor a
+// same-language voice/model instead of whatever it happens to be configured
+// for by default (see tc-docs' AI Network TTS lang-hint fix); "api" doesn't
+// send it over the wire (no such field in the OpenAI TTS request shape) but
+// both engines use it locally to resolve a per-language voice override, if
+// the learner set one — see lib/ttsVoiceByLanguage.ts's `resolveVoiceOverride`
+// and LingoSettings.ttsVoiceByLanguage — ahead of falling back to
+// config.tts?.voice. "network" additionally guards that global fallback
+// against a stale-voice trap the "explicit voice beats the lang hint" wire
+// contract would otherwise fall into: if config.tts?.voice is a kokoro-style
+// voice id (e.g. "jf_alpha") whose self-encoded language doesn't match the
+// text's lang, it's omitted from the request instead of sent — see
+// lib/ttsVoiceByLanguage.ts's `resolveNetworkVoice`/
+// `isLangMismatchedKokoroVoice`. "api" never applies this guard (no `lang` on
+// the wire there for a provider to react to anyway), nor does a per-language
+// override (the learner picked that one specifically for this language, so
+// it's trusted outright regardless of its shape).
 // "api"/"network" both fall back to the browser voice: silently if they were
 // simply unconfigured (no resolved voice / no room id), or with
 // `speechError` set to a localized notice if a configured attempt actually
@@ -40,11 +60,13 @@
 // as speak() so a stop() or a new speak()/speakSequence() call cleanly
 // supersedes whatever is in flight.
 import { useEffect, useRef, useState } from "preact/hooks";
-import { emptyLlmConfig, loadLlmConfig, resolveVoice } from "../lib/llmConfig";
+import { emptyLlmConfig, loadLlmConfig, resolvePreset, resolveVoice } from "../lib/llmConfig";
+import type { SharedLlmConfigV1 } from "../lib/llmConfig";
 import { languageBcp47Tag } from "../lib/languages";
 import { localizeNetworkError, networkClient, requestNetworkTts } from "../lib/network";
-import { networkVoiceModelParam } from "../lib/networkModels";
-import { subscribeSettings } from "../lib/settings";
+import { isNetworkProviderBaseUrl, networkVoiceModelParam } from "../lib/networkModels";
+import { loadSettings, subscribeSettings } from "../lib/settings";
+import { resolveNetworkVoice, resolveVoiceOverride, type NetworkVoiceResolution } from "../lib/ttsVoiceByLanguage";
 import { synthesizeSpeechApi } from "../lib/tts";
 import { deriveVoiceEngine } from "../lib/voice";
 import { t } from "../i18n";
@@ -91,6 +113,113 @@ function browserSpeechSupported(): boolean {
 function logTtsFailureDiagnostics(err: unknown): void {
   console.warn("[useSpeech] TTS request failed; falling back to the browser voice.", err, {
     consumerStatus: networkClient.status,
+  });
+}
+
+/** How `deriveVoiceEngine`'s underlying provider lookup (lib/voice.ts /
+ * `resolveVoice`, lib/llmConfig.ts) actually resolved a provider for the
+ * `[lingo tts]` diagnostic log below — the "why" behind the logged `engine`,
+ * for exactly the report that's hardest to debug from the UI alone: "I picked
+ * my own API endpoint but it's speaking in [some other provider]'s voice".
+ * `config[kind].providerId` is optional by design (lib/llmConfig.ts's
+ * `VoiceConfigV1` doc comment: "providerId 省略時は defaultPreset の
+ * provider にフォールバック") — a TTS target with no explicit providerId
+ * silently rides on `config.defaultPresetId` instead, so if that ever points
+ * at an AI-Network mirror preset (see hooks/useNetworkModelSync.ts), every
+ * such target flips to the network engine with no configuration change
+ * visible in the TTS row itself. */
+type VoiceProviderSource = "explicit" | "defaultPreset" | "unresolved";
+
+interface VoiceProviderResolution {
+  providerSource: VoiceProviderSource;
+  /** Hostname only (never the apiKey, never the full URL/query) — safe to
+   * log. `mist-network://<roomId>` isn't a real host; logged verbatim since
+   * the room id itself isn't a secret and is exactly the useful bit here. */
+  baseUrlHost?: string;
+}
+
+function baseUrlHostForLog(baseUrl: string): string {
+  if (isNetworkProviderBaseUrl(baseUrl)) return baseUrl;
+  try {
+    return new URL(baseUrl).host || baseUrl;
+  } catch {
+    return "(unparseable-url)";
+  }
+}
+
+function describeVoiceProviderResolution(config: SharedLlmConfigV1, kind: "tts" | "stt"): VoiceProviderResolution {
+  const cfg = config[kind];
+  if (!cfg || !cfg.model) return { providerSource: "unresolved" };
+
+  if (cfg.providerId) {
+    const provider = config.providers.find((p) => p.id === cfg.providerId);
+    return provider
+      ? { providerSource: "explicit", baseUrlHost: baseUrlHostForLog(provider.baseUrl) }
+      : { providerSource: "unresolved" };
+  }
+
+  const defaultTarget = resolvePreset(config);
+  const provider = defaultTarget ? config.providers.find((p) => p.id === defaultTarget.providerId) : undefined;
+  return provider
+    ? { providerSource: "defaultPreset", baseUrlHost: baseUrlHostForLog(provider.baseUrl) }
+    : { providerSource: "unresolved" };
+}
+
+/** DevTools-only diagnostic for exactly what's about to go out over the AI
+ * Network room for a "network" engine TTS request — the single most useful
+ * thing to check when a learner reports "it's reading English in a Japanese
+ * voice" (or vice versa): was a per-language override in play, was the global
+ * voice suppressed for a lang mismatch, and what actually got sent. See
+ * lib/ttsVoiceByLanguage.ts's `resolveNetworkVoice` for the source values.
+ * `providerSource`/`baseUrlHost` (see `describeVoiceProviderResolution`)
+ * explain HOW `engine: "network"` was even reached — most usefully,
+ * `providerSource: "defaultPreset"` means this room ended up in the request
+ * only because `tts.providerId` was left unset, not because the learner
+ * explicitly chose it. */
+function logNetworkTtsRequest(
+  lang: string,
+  voice: string | undefined,
+  voiceSource: NetworkVoiceResolution["source"],
+  model: string | undefined,
+  text: string,
+  providerResolution: VoiceProviderResolution,
+): void {
+  console.info("[lingo tts]", {
+    engine: "network",
+    lang,
+    voice,
+    voiceSource,
+    model,
+    providerSource: providerResolution.providerSource,
+    baseUrlHost: providerResolution.baseUrlHost,
+    textPreview: text.slice(0, 30),
+  });
+}
+
+/** DevTools-only diagnostic for an "api" engine TTS request, mirroring
+ * `logNetworkTtsRequest`'s shape (see its doc comment) so the two engines'
+ * log lines read the same way — this is the one to check for "I'm sure I
+ * configured my own API endpoint, but it's speaking in the wrong
+ * voice/language": `baseUrlHost` says which endpoint the request is actually
+ * going to, and `providerSource` says whether that came from an explicit
+ * `tts.providerId` or (silently) from `config.defaultPresetId` — see
+ * `describeVoiceProviderResolution`. Deliberately logs only the hostname,
+ * never the apiKey or full URL. */
+function logApiTtsRequest(
+  lang: string,
+  voice: string | undefined,
+  model: string,
+  text: string,
+  providerResolution: VoiceProviderResolution,
+): void {
+  console.info("[lingo tts]", {
+    engine: "api",
+    lang,
+    voice,
+    model,
+    providerSource: providerResolution.providerSource,
+    baseUrlHost: providerResolution.baseUrlHost,
+    textPreview: text.slice(0, 30),
   });
 }
 
@@ -371,13 +500,23 @@ export function useSpeech(): SpeechController {
     const config = loadLlmConfig() ?? emptyLlmConfig();
     const engine = deriveVoiceEngine(config, "tts");
     const lang = languageBcp47Tag(language);
+    const ttsVoiceByLanguage = loadSettings().ttsVoiceByLanguage;
+    const voiceOverride = resolveVoiceOverride(ttsVoiceByLanguage, lang);
 
     if (engine === "network") {
       const roomId = config.network.roomId;
       if (roomId.trim()) {
+        const model = networkVoiceModelParam(config.tts?.model ?? "");
+        const resolved = resolveNetworkVoice(ttsVoiceByLanguage, config.tts?.voice, lang);
+        logNetworkTtsRequest(lang, resolved.voice, resolved.source, model, text, describeVoiceProviderResolution(config, "tts"));
         void playFromSource(
           () =>
-            requestNetworkTts(roomId, { text, model: networkVoiceModelParam(config.tts?.model ?? ""), voice: config.tts?.voice }),
+            requestNetworkTts(roomId, {
+              text,
+              model,
+              voice: resolved.voice,
+              lang,
+            }),
           text,
           lang,
           id,
@@ -392,7 +531,9 @@ export function useSpeech(): SpeechController {
     if (engine === "api") {
       const target = resolveVoice(config, "tts");
       if (target) {
-        void playFromSource(() => synthesizeSpeechApi(text, target), text, lang, id);
+        const resolvedTarget = voiceOverride ? { ...target, voice: voiceOverride } : target;
+        logApiTtsRequest(lang, resolvedTarget.voice, resolvedTarget.model, text, describeVoiceProviderResolution(config, "tts"));
+        void playFromSource(() => synthesizeSpeechApi(text, resolvedTarget), text, lang, id);
         return;
       }
       // Not configured (no resolved voice) — fall back silently.
@@ -421,13 +562,34 @@ export function useSpeech(): SpeechController {
     const config = loadLlmConfig() ?? emptyLlmConfig();
     const engine = deriveVoiceEngine(config, "tts");
     const lang = languageBcp47Tag(language);
+    const ttsVoiceByLanguage = loadSettings().ttsVoiceByLanguage;
+    const voiceOverride = resolveVoiceOverride(ttsVoiceByLanguage, lang);
 
     if (engine === "network") {
       const roomId = config.network.roomId;
       if (roomId.trim()) {
+        const model = networkVoiceModelParam(config.tts?.model ?? "");
+        const resolved = resolveNetworkVoice(ttsVoiceByLanguage, config.tts?.voice, lang);
+        // voice/lang/model are constant across every chunk of the sequence —
+        // only the text itself changes per request — so one log line here
+        // (previewing the first chunk) covers the whole sequence instead of
+        // repeating per chunk.
+        logNetworkTtsRequest(
+          lang,
+          resolved.voice,
+          resolved.source,
+          model,
+          items[0]?.text ?? "",
+          describeVoiceProviderResolution(config, "tts"),
+        );
         void playSequenceFromSource(
           (text) =>
-            requestNetworkTts(roomId, { text, model: networkVoiceModelParam(config.tts?.model ?? ""), voice: config.tts?.voice }),
+            requestNetworkTts(roomId, {
+              text,
+              model,
+              voice: resolved.voice,
+              lang,
+            }),
           items,
           lang,
           id,
@@ -442,7 +604,17 @@ export function useSpeech(): SpeechController {
     if (engine === "api") {
       const target = resolveVoice(config, "tts");
       if (target) {
-        void playSequenceFromSource((text) => synthesizeSpeechApi(text, target), items, lang, id);
+        const resolvedTarget = voiceOverride ? { ...target, voice: voiceOverride } : target;
+        // See speak()'s equivalent log call: one line covers the whole
+        // sequence since voice/model/provider are constant across chunks.
+        logApiTtsRequest(
+          lang,
+          resolvedTarget.voice,
+          resolvedTarget.model,
+          items[0]?.text ?? "",
+          describeVoiceProviderResolution(config, "tts"),
+        );
+        void playSequenceFromSource((text) => synthesizeSpeechApi(text, resolvedTarget), items, lang, id);
         return;
       }
       // Not configured (no resolved voice) — fall back silently.

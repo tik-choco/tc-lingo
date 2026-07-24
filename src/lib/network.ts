@@ -86,10 +86,14 @@ export function requestNetworkChat(
   return networkClient.requestChat(roomId, messages, { model, onDelta });
 }
 
-/** Requests speech synthesis over the LLM Network room; resolves with the audio Blob. */
+/** Requests speech synthesis over the LLM Network room; resolves with the audio Blob.
+ * `lang` is a BCP-47 hint (see hooks/useSpeech.ts's `languageBcp47Tag`) so the
+ * room's provider can pick a same-language voice/model instead of defaulting
+ * to whatever it's configured for locally — see mistai's `selectProvider`
+ * voice-aware routing and `SynthesizeFn`'s `lang` parameter. */
 export function requestNetworkTts(
   roomId: string,
-  params: { text: string; model?: string; voice?: string },
+  params: { text: string; model?: string; voice?: string; lang?: string },
 ): Promise<Blob> {
   return networkClient.requestTts(roomId, params);
 }

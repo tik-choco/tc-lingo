@@ -27,12 +27,14 @@ import {
   setShowReadingAids,
   setTaskPresetId,
   setTaskReasoningEffort,
+  setTtsVoiceOverride,
   subscribeSettings,
 } from "../lib/settings";
 import { LLM_TASKS, setSharedNetworkRoomId } from "../lib/llmConnection";
 import { localizeConsumerError } from "../lib/network";
 import type { ConsumerStatus } from "../lib/network";
-import { isNetworkProviderBaseUrl, NETWORK_VOICE_AUTO_MODEL } from "../lib/networkModels";
+import { isNetworkProviderBaseUrl, networkProviderBaseUrl, NETWORK_VOICE_AUTO_MODEL } from "../lib/networkModels";
+import { languageVoiceRows } from "../lib/ttsVoiceByLanguage";
 import { deriveVoiceEngine } from "../lib/voice";
 import { useNetworkProviderStatus } from "../hooks/useNetworkProvider";
 import { NetworkProviderStatusPanel } from "../components/NetworkStatusPanel";
@@ -290,6 +292,31 @@ export function SettingsView() {
   function isNetworkPresetProvider(providerId: string): boolean {
     const provider = sharedConfig.providers.find((p) => p.id === providerId);
     return provider ? isNetworkProviderBaseUrl(provider.baseUrl) : false;
+  }
+
+  // A network preset is only "live" if its pseudo-provider matches the room
+  // we're currently configured for — pruning (see llmConfigOps) only ever
+  // touches the *current* roomId's pseudo-provider, so mirror presets from a
+  // room you've since left/changed stick around in sharedConfig.presets
+  // forever otherwise. Non-network presets are always visible.
+  function isPresetVisibleForCurrentRoom(preset: ModelPresetV1): boolean {
+    if (!isNetworkPresetProvider(preset.providerId)) return true;
+    const provider = sharedConfig.providers.find((p) => p.id === preset.providerId);
+    return provider ? provider.baseUrl === networkProviderBaseUrl(sharedConfig.network.roomId) : false;
+  }
+
+  // Task/default/TTS preset selects: room-scoped preset list, plus (per the
+  // "read-only current value" convention — tc-docs/drafts/llm-settings-common-v1.md
+  // §3.2.4) the currently-assigned preset re-added if it would otherwise be
+  // filtered out, so an existing selection never renders as a blank/mismatched
+  // <select> value. It naturally drops back out once the selection changes.
+  function getSelectablePresets(currentPresetId: string): ModelPresetV1[] {
+    const visible = sharedConfig.presets.filter(isPresetVisibleForCurrentRoom);
+    if (currentPresetId && !visible.some((preset) => preset.id === currentPresetId)) {
+      const current = sharedConfig.presets.find((preset) => preset.id === currentPresetId);
+      if (current) return [...visible, current];
+    }
+    return visible;
   }
 
   // Badges shown on a preset card: default preset, each task currently
@@ -888,6 +915,16 @@ export function SettingsView() {
   const networkTtsVoices = status.phase === "connected" ? (status.voices ?? []) : [];
   const voiceOptions = ttsEngine === "network" ? networkTtsVoices : ttsEngine === "api" ? (ttsApiVoices ?? OPENAI_TTS_VOICES) : [];
 
+  // Per-language voice override rows (see lib/ttsVoiceByLanguage.ts): one per
+  // distinct BCP-47 primary subtag across every target language plus the
+  // native language, so e.g. the native language's UI-translation readback
+  // (if ever added) and any target language studied can each pin their own
+  // voice. Datalist candidates reuse the same voiceOptions the main voice
+  // picker above offers (empty for "browser", where this whole block doesn't
+  // apply either - see the engine check on the section around it).
+  const voiceOverrideRows = languageVoiceRows([...settings.targetLanguages, settings.nativeLanguage]);
+  const voiceOverrideDatalistId = "settings-tts-voice-override-options";
+
   return (
     <div class="view-container settings-view">
       <div class="settings-tab-bar" role="tablist" aria-label={t("settings-tabs-aria-label")}>
@@ -1199,17 +1236,15 @@ export function SettingsView() {
                     aria-label={t("settings-task-default-label")}
                   >
                     <option value="">{t("settings-preset-unset-option")}</option>
-                    {sharedConfig.presets
-                      .filter((preset) => networkConnected || !isNetworkPresetProvider(preset.providerId))
-                      .map((preset) => (
-                        <option
-                          key={preset.id}
-                          value={preset.id}
-                          class={isNetworkPresetProvider(preset.providerId) ? "option-network" : undefined}
-                        >
-                          {preset.label || preset.id}
-                        </option>
-                      ))}
+                    {getSelectablePresets(sharedConfig.defaultPresetId).map((preset) => (
+                      <option
+                        key={preset.id}
+                        value={preset.id}
+                        class={isNetworkPresetProvider(preset.providerId) ? "option-network" : undefined}
+                      >
+                        {preset.label || preset.model || preset.id}
+                      </option>
+                    ))}
                   </select>
                   {networkConnected &&
                   isNetworkPresetProvider(sharedConfig.presets.find((p) => p.id === sharedConfig.defaultPresetId)?.providerId ?? "") ? (
@@ -1244,17 +1279,15 @@ export function SettingsView() {
                       aria-label={t(TASK_LABEL_KEYS[task])}
                     >
                       <option value="">{t("settings-task-follow-default-option")}</option>
-                      {sharedConfig.presets
-                        .filter((preset) => networkConnected || !isNetworkPresetProvider(preset.providerId))
-                        .map((preset) => (
-                          <option
-                            key={preset.id}
-                            value={preset.id}
-                            class={isNetworkPresetProvider(preset.providerId) ? "option-network" : undefined}
-                          >
-                            {preset.label || preset.id}
-                          </option>
-                        ))}
+                      {getSelectablePresets(settings.taskPresetIds[task] ?? "").map((preset) => (
+                        <option
+                          key={preset.id}
+                          value={preset.id}
+                          class={isNetworkPresetProvider(preset.providerId) ? "option-network" : undefined}
+                        >
+                          {preset.label || preset.model || preset.id}
+                        </option>
+                      ))}
                     </select>
                     {networkConnected &&
                     isNetworkPresetProvider(sharedConfig.presets.find((p) => p.id === settings.taskPresetIds[task])?.providerId ?? "") ? (
@@ -1319,17 +1352,15 @@ export function SettingsView() {
                     {ttsSettings.model.trim() && !matchedTtsPreset && !isTtsNetworkAuto ? (
                       <option value="__current__">{ttsSettings.model}</option>
                     ) : null}
-                    {sharedConfig.presets
-                      .filter((preset) => networkConnected || !isNetworkPresetProvider(preset.providerId))
-                      .map((preset) => (
-                        <option
-                          key={preset.id}
-                          value={preset.id}
-                          class={isNetworkPresetProvider(preset.providerId) ? "option-network" : undefined}
-                        >
-                          {preset.label || preset.model || preset.id}
-                        </option>
-                      ))}
+                    {getSelectablePresets(matchedTtsPreset?.id ?? "").map((preset) => (
+                      <option
+                        key={preset.id}
+                        value={preset.id}
+                        class={isNetworkPresetProvider(preset.providerId) ? "option-network" : undefined}
+                      >
+                        {preset.label || preset.model || preset.id}
+                      </option>
+                    ))}
                   </select>
                   {networkConnected && (isTtsNetworkAuto || (matchedTtsPreset && isNetworkPresetProvider(matchedTtsPreset.providerId))) ? (
                     <span class="task-badge-network">{t("settings-badge-network")}</span>
@@ -1370,6 +1401,41 @@ export function SettingsView() {
             </div>
             {!speech.supported ? <p class="hint-text">{t("settings-tts-test-unsupported")}</p> : null}
             {speech.speechError ? <p class="error-text">{speech.speechError}</p> : null}
+
+            {ttsEngine !== "browser" && voiceOverrideRows.length > 0 ? (
+              <div class="field-grid">
+                <h3 class="settings-subheading">{t("settings-tts-per-language-heading")}</h3>
+                <p class="hint-text">{t("settings-tts-per-language-hint")}</p>
+                {voiceOptions.length > 0 ? (
+                  <datalist id={voiceOverrideDatalistId}>
+                    {voiceOptions.map((voice) => (
+                      <option key={voice} value={voice} />
+                    ))}
+                  </datalist>
+                ) : null}
+                <div class="level-panel">
+                  {voiceOverrideRows.map((row) => {
+                    const label = row.languages.map((language) => languageDisplayName(language)).join(" / ");
+                    return (
+                      <div class="level-row" key={row.subtag}>
+                        <span class="level-row-language">{label}</span>
+                        <input
+                          type="text"
+                          list={voiceOptions.length > 0 ? voiceOverrideDatalistId : undefined}
+                          value={settings.ttsVoiceByLanguage?.[row.subtag] ?? ""}
+                          placeholder={t("settings-tts-per-language-voice-placeholder")}
+                          aria-label={t("settings-tts-per-language-voice-aria-label", { language: label })}
+                          onBlur={(e) => setTtsVoiceOverride(row.subtag, (e.target as HTMLInputElement).value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                          }}
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : null}
           </section>
         </div>
       )}

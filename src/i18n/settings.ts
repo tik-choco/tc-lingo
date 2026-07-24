@@ -126,6 +126,11 @@ export const settingsMessages = {
     "settings-tts-test-stop": "Stop",
     "settings-tts-test-loading": "Loading…",
     "settings-tts-test-unsupported": "Read-aloud isn't supported in this browser.",
+    "settings-tts-per-language-heading": "Voice per language",
+    "settings-tts-per-language-hint":
+      "Optional: pin a specific voice for a language, overriding the voice picked above whenever text in that language is read aloud.",
+    "settings-tts-per-language-voice-placeholder": "Same as above",
+    "settings-tts-per-language-voice-aria-label": "Voice override for {language}",
     "settings-sync-heading": "Device sync",
     "settings-sync-done-heading": "Sync complete",
     "settings-sync-intro":
@@ -282,6 +287,10 @@ export const settingsMessages = {
     "settings-tts-test-stop": "停止",
     "settings-tts-test-loading": "読み込み中…",
     "settings-tts-test-unsupported": "このブラウザでは読み上げに対応していません。",
+    "settings-tts-per-language-heading": "言語別のボイス",
+    "settings-tts-per-language-hint": "任意設定: 特定の言語で読み上げるとき、上のボイス設定より優先して使うボイスを指定できます。",
+    "settings-tts-per-language-voice-placeholder": "上の設定と同じ",
+    "settings-tts-per-language-voice-aria-label": "{language}のボイス指定",
     "settings-sync-heading": "端末間同期",
     "settings-sync-done-heading": "同期が完了しました",
     "settings-sync-intro":
@@ -432,6 +441,10 @@ export const settingsMessages = {
     "settings-tts-test-stop": "停止",
     "settings-tts-test-loading": "加载中…",
     "settings-tts-test-unsupported": "此浏览器不支持朗读功能。",
+    "settings-tts-per-language-heading": "按语言设置语音",
+    "settings-tts-per-language-hint": "可选:为特定语言指定一个语音,朗读该语言文本时会优先于上面选择的语音。",
+    "settings-tts-per-language-voice-placeholder": "与上面相同",
+    "settings-tts-per-language-voice-aria-label": "{language}的语音设置",
     "settings-sync-heading": "设备同步",
     "settings-sync-done-heading": "同步完成",
     "settings-sync-intro":
@@ -582,6 +595,10 @@ export const settingsMessages = {
     "settings-tts-test-stop": "停止",
     "settings-tts-test-loading": "載入中…",
     "settings-tts-test-unsupported": "此瀏覽器不支援朗讀功能。",
+    "settings-tts-per-language-heading": "按語言設定語音",
+    "settings-tts-per-language-hint": "可選:為特定語言指定一個語音,朗讀該語言文字時會優先於上面選擇的語音。",
+    "settings-tts-per-language-voice-placeholder": "與上面相同",
+    "settings-tts-per-language-voice-aria-label": "{language}的語音設定",
     "settings-sync-heading": "裝置同步",
     "settings-sync-done-heading": "同步完成",
     "settings-sync-intro":
