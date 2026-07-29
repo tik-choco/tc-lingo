@@ -19,7 +19,11 @@
 // backlog), so a future backup publisher doesn't need to re-derive this
 // module from scratch.
 
-import init, * as mistWasm from '../vendor/mistlib/pkg/mistlib_wasm.js'
+// The engine comes from npm, the same specifier the vendored wrapper imports.
+// Importing the vendored pkg/ copy here instead would put a *second*, separately
+// versioned wasm instance in the bundle, and storage written through one
+// instance is invisible to the MistNode running in the other.
+import init, * as mistWasm from '@tik-choco/mistlib'
 import { NODE_ID_STORAGE_KEY } from './network'
 
 const textEncoder = new TextEncoder()
