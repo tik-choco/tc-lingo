@@ -33,6 +33,7 @@
 
 import type { MistNodeLike } from '@tik-choco/mistai'
 import { MistNode } from '../vendor/mistlib/wrappers/web/index.js'
+import { mistSignalingConfig } from './mistSignaling'
 
 let realNode: MistNode | null = null
 let realNodeId: string | null = null
@@ -41,7 +42,10 @@ const roomRefCounts = new Map<string, number>()
 
 function ensureRealNode(nodeId: string): MistNode {
   if (!realNode) {
-    realNode = new MistNode(nodeId)
+    // Family-wide signaling namespace: peers only find each other when
+    // inviteSalt/inviteCode match, so this must use the shared config, not a
+    // default (the wrapper now throws without one anyway).
+    realNode = new MistNode(nodeId, mistSignalingConfig())
     realNodeId = nodeId
     realNode.onEvent((eventType, fromId, payload, roomId) => {
       // Copy: a handler may add/remove handles (e.g. reconnect) mid-dispatch.
