@@ -13,7 +13,7 @@
   },
   "dependencies": {
     "@tik-choco/mistai": "github:tik-choco-lab/mistai",
-    "@tik-choco/mistlib": "0.6.0",
+    "@tik-choco/mistlib": "0.6.1",
     "lucide-preact": "^0.577.0",
     "preact": "^10.29.3"
   },
