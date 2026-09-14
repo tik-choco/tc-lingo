@@ -1,3 +1,4 @@
+import { captureMistBuildInfo, markMistLoadError } from "./mistBuildInfo";
 // mistlib-wasm supports exactly ONE active MistNode per page (a module-level
 // `activeNode` guard plus one global event callback in the vendored wrapper),
 // but that single node is multi-room: joinRoom(roomId) can be called for any
@@ -70,7 +71,13 @@ class SharedMistNodeHandle implements MistNodeLike {
   }
 
   async init(): Promise<void> {
-    await ensureRealNode(this.nodeId).init()
+    try {
+      await ensureRealNode(this.nodeId).init()
+    } catch (error) {
+      markMistLoadError()
+      throw error
+    }
+    captureMistBuildInfo()
     liveHandles.add(this)
   }
 

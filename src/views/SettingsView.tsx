@@ -1,3 +1,4 @@
+import { MistBuildBanner } from "../components/MistBuildBanner";
 import { useEffect, useRef, useState } from "preact/hooks";
 import { Network, Plus, Server, Sparkles, Volume2, X } from "lucide-preact";
 import { OPENAI_TTS_VOICES, fetchModels, fetchVoices } from "@tik-choco/mistai";
@@ -1445,6 +1446,7 @@ export function SettingsView() {
           <SyncPanel />
         </div>
       )}
+      <footer style={{ padding: "12px 0" }}><MistBuildBanner view="settings" /></footer>
     </div>
   );
 }

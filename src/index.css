@@ -522,3 +522,8 @@ a:hover {
     justify-content: center;
   }
 }
+
+/* Keep the shared diagnostics band inside the viewport. */
+.mist-app-frame { display: flex; flex-direction: column; height: 100dvh; min-height: 0; }
+.mist-app-content { flex: 1; min-height: 0; }
+.mist-app-content > .app-shell { height: 100%; }

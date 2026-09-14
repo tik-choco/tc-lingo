@@ -1,3 +1,4 @@
+import { captureMistBuildInfo, markMistLoadError } from "./mistBuildInfo";
 // Thin storage-only path into the vendored mistlib wasm module, used to pull
 // down CID-addressed payloads published by other apps (e.g. tc-translate's
 // `lingo-card-inbox` topic — see lib/cardInbox.ts). Deliberately independent
@@ -51,11 +52,13 @@ async function ensureStorageNodeInit(): Promise<void> {
   if (!initPromise) {
     initPromise = (async () => {
       await init()
+      captureMistBuildInfo()
       mistWasm.init_with_config(
         loadOrCreateNodeId(),
         JSON.stringify({ signaling: { mode: 'nostr', nostr: { relays: [] } } }),
       )
     })().catch((err) => {
+      markMistLoadError()
       initPromise = null
       throw err
     })
