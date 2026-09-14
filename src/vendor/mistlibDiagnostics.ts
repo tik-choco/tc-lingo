@@ -109,6 +109,9 @@ export function mountMistlibDiagnostics(host: HTMLElement, store: MistlibDiagnos
     details.append(summary, body); root.append(details);
     update = () => {
       const build = store.getSnapshot();
+      // Hide the host child as well: no production banner or reserved space.
+      container.hidden = !store.isDevelopment();
+      container.style.display = container.hidden ? 'none' : '';
       title.textContent = store.isDevelopment() ? 'DEVELOPMENT' : 'MISTLIB';
       version.textContent = `mistlib ${build.info?.version ?? 'version 不明'} · ${build.source}`;
       commit.textContent = build.info ? build.info.commit.slice(0, 8) + (build.info.dirty ? '+dirty' : '') : '';
