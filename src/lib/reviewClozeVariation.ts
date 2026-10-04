@@ -26,7 +26,7 @@ export async function generateClozeVariation(
   // for that first exposure, and only vary on repeat reviews.
   if (card.reps <= 0 || !card.cloze.trim() || !card.exampleSentence.trim()) return null;
 
-  const connection = connectionForTask("generation");
+  const connection = connectionForTask("review");
   if (!connection) return null;
 
   try {

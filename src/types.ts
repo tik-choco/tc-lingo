@@ -1,3 +1,4 @@
+import type { LlmLocalSettings } from "@tik-choco/mistai/preact";
 // Central domain types for TC Lingo. See CLAUDE.md for the design rationale
 // (retrieval practice + structured output/feedback + same-topic repetition).
 
@@ -198,143 +199,18 @@ export interface LanguageLevelRecord {
   updatedAt: string;
 }
 
-/** Which transport the app's LLM calls should use: a direct API preset from
- * the shared llm config (see lib/llmConfig.ts), or the P2P AI Network room
- * (mistllm-wire v1) configured at `llmConfig.network.roomId`. See
- * lib/llmConnection.ts for how this is resolved into an actual connection. */
-export type LlmConnectionMode = "api" | "network";
-
-/** How hard the model should "think" on a request — sent to the upstream API
- * as `reasoning_effort` on every LLM call, including the "none" case (it is a
- * value the caller chose, not the absence of one). See
- * lib/llmConnection.ts's `connectionForTask`, which resolves the effective
- * value per task (`LingoSettings.taskReasoningEfforts`, falling back to
- * `defaultReasoningEffort`). Same union as tc-translate's `ReasoningEffort` —
- * see tc-docs/drafts/llm-settings-common-v1.md §2.3. */
-export type ReasoningEffort = "none" | "minimal" | "low" | "medium" | "high";
-
-/** Which engine "read this aloud" (hooks/useSpeech.ts) should use: the
- * browser's built-in Web Speech API, an OpenAI-compatible `/audio/speech`
- * endpoint (the shared llm config's `tts` entry, see lib/llmConfig.ts's
- * resolveVoice), or the same endpoint reached over the AI Network room
- * (lib/network.ts's requestNetworkTts). All three degrade to "browser" when
- * unconfigured/unreachable — see useSpeech for the fallback chain. Unlike the
- * other fields on this type, this is never stored in `LingoSettings` — it is
- * always DERIVED from the shared llm config by `lib/voice.ts`'s
- * `deriveVoiceEngine` (see tc-docs/drafts/llm-settings-common-v1.md §4.1). */
+export type ReasoningEffort = import("@tik-choco/mistai/preact").ReasoningEffort;
 export type TtsEngine = "browser" | "api" | "network";
+export type LlmTask = "practice" | "topic" | "cards" | "review" | "reading" | "conversation" | "grammar" | "ui-translation" | "card-organize";
 
-/** Which app task an LLM call is for, so a per-task preset override
- * (`LingoSettings.taskPresetIds`) can pick a different shared preset (and
- * therefore a different model/provider) than the default for that one task.
- * Grouped into three by "same nature of model" rather than one entry per
- * feature — a flat one-per-feature list grew unwieldy (9 rows in Settings)
- * without most learners actually wanting a different model per feature:
- *
- * - "correction": the accuracy-critical judgment calls — practice's
- *   requestFeedback/requestRetryFeedback (練習の添削) and review's
- *   judgeReviewAnswer (復習の解答判定). Worth a stronger model, since a wrong
- *   correction or a wrongly-accepted review answer teaches the learner
- *   something false.
- * - "generation": every other chat-completion call — requestTopicSuggestion/
- *   planTopicFanOut (トピック提案), requestMistakeCards/
- *   requestTranslationCards/requestSentenceCardInfo/autoExtract/
- *   requestCardMerges (カード抽出・統合判断), lib/reading.ts's passage
- *   generation (読解教材の生成), lib/conversation.ts (会話), lib/grammar.ts
- *   (文法解説), and lib/uiTranslation.ts's runtime UI-string translation (UI
- *   文言のLLM翻訳) — all generation/extraction tasks a learner would
- *   reasonably point at the same (often cheaper) model.
- * - "card-organize": the embedding model lib/cardAutoOrganize.ts's
- *   background similar-card detection uses to cheaply pre-filter merge
- *   candidates before confirming them with the "generation" task's chat
- *   model (類似カード検出用モデル) — kept separate because it's categorically a
- *   different kind of model (embeddings, not chat completions), unlike
- *   "correction" vs "generation" which is purely a quality/cost split. A
- *   preset resolving to a `mist-network://` pseudo-provider (or any AI
- *   Network room connection) can't serve this one, since embeddings aren't
- *   supported over that transport.
- *
- * See lib/llmConnection.ts's `connectionForTask` for how the preset id (and
- * the paired `taskReasoningEfforts` entry) resolve into an actual connection
- * — a task preset that itself resolves to a `mist-network://` pseudo-provider
- * routes over the AI Network room even when `connectionMode` is "api" (see
- * tc-docs/drafts/llm-settings-common-v1.md §2.3/§6). lib/settings.ts's
- * `loadSettings` folds any pre-consolidation per-feature override
- * (`practice`/`topic`/`cards`/`review`/`reading`/`conversation`/`grammar`/
- * `ui-translation` keys) into these three on load, so existing installs
- * don't silently lose a customization they'd already made. */
-export type LlmTask = "correction" | "generation" | "card-organize";
-
-/** Supports studying more than one language at once: `targetLanguages` is
- * the full set the learner is juggling, `activeLanguage` (always a member of
- * `targetLanguages`) is which one Practice/Review/Cards/History currently
- * filter to. See lib/settings.ts for the CRUD + migration from the old
- * single-`targetLanguage` shape. */
-export interface LingoSettings {
+export interface LingoSettings extends LlmLocalSettings {
   targetLanguages: string[];
   activeLanguage: string;
   nativeLanguage: string;
-  connectionMode: LlmConnectionMode;
-  /** Whether corrections (practice feedback, talk replies) automatically
-   * extract mistake cards in the background (lib/autoExtract.ts) instead of
-   * waiting for the learner to press the manual extract button. */
   autoExtractCards: boolean;
-  /** Whether target-language text shows its always-visible reading aid line
-   * (e.g. pinyin for Chinese — see lib/languages.ts readingAid). Also gates
-   * furigana ruby display (kana above the kanji, instead of the usual
-   * "front (reading)" parenthetical) for Japanese card fronts — see
-   * components/CardFront.tsx. Display-only: readings are still generated and
-   * stored while this is off. */
   showReadingAids: boolean;
-  /** Whether this app participates in the AI Network room as a *provider*
-   * (serving llm_request/tts_request traffic from other peers), independent
-   * of `connectionMode` (a device can consume via direct API while also
-   * serving others, or vice versa). See hooks/useNetworkProvider.ts. */
-  networkProviderEnabled: boolean;
-  /** Ids (into the shared llm config's `presets`) of the presets this app
-   * shares when acting as an AI Network provider. Presets backed by a
-   * `mist-network://` pseudo-provider are excluded even if listed here (no
-   * re-sharing — see hooks/useNetworkProvider.ts's `resolveSharedTargets`). */
-  networkProviderPresetIds: string[];
-  /** Per-task preset override: which shared llm config preset
-   * (lib/llmConfig.ts) an LLM task should use instead of the shared
-   * `defaultPresetId`. Missing key or "" for a task means "follow the
-   * default preset" (see lib/llmConfig.ts's `resolvePreset` fallback). A
-   * task preset that itself resolves to a `mist-network://` pseudo-provider
-   * routes that task over the AI Network room even when `connectionMode` is
-   * "api" — see lib/llmConnection.ts's `connectionForTask`. */
-  taskPresetIds: Partial<Record<LlmTask, string>>;
-  /** Per-task `reasoning_effort` override, sent on every request for that
-   * task (including "none" — it is always sent, never omitted). Missing key
-   * for a task means "follow `defaultReasoningEffort`". Only meaningful for
-   * "api"-resolved connections — an AI Network room's provider picks its own
-   * reasoning effort regardless. See lib/llmConnection.ts's
-   * `connectionForTask`. */
-  taskReasoningEfforts: Partial<Record<LlmTask, ReasoningEffort>>;
-  /** `reasoning_effort` used for any task without its own
-   * `taskReasoningEfforts` entry. */
-  defaultReasoningEffort: ReasoningEffort;
-  /** Whether lib/cardAutoOrganize.ts's background pass silently merges
-   * near-duplicate/redundant cards it's confident about (embedding
-   * pre-filter + "cards"-task chat confirmation, no approval UI — see that
-   * module's header comment). Independent of the manual "類似カードを整理"
-   * button in CardsView, which always asks first regardless of this flag. */
   autoOrganizeCards: boolean;
-  /** ISO timestamp of the last runCardAutoOrganize pass, or "" if it has
-   * never run. Device-local bookkeeping (not synced) that paces automatic
-   * merging — see lib/cardAutoOrganize.ts's cooldown check. */
   lastCardAutoOrganizeAt: string;
-  /** Per-language TTS voice override, keyed by BCP-47 *primary subtag* (e.g.
-   * "en", "ja", "zh" — see lib/ttsVoiceByLanguage.ts), value = a voice id for
-   * that language. Read-aloud (hooks/useSpeech.ts, "api"/"network" engines
-   * only) uses this ahead of falling back to the shared config's single
-   * `tts.voice` (lib/llmConfig.ts) whenever the text being spoken is in that
-   * language; this app's own AI Network provider (hooks/useNetworkProvider.ts)
-   * consults the same map for an incoming `tts_request.lang` before falling
-   * back to its own configured voice. Optional/absent key means "no
-   * override" — omitting this field entirely (fresh installs, or before this
-   * feature existed) reproduces the exact prior single-voice behavior, so no
-   * settings migration is needed for it (see lib/settings.ts's
-   * `isLingoSettings`). */
-  ttsVoiceByLanguage?: Record<string, string>;
+  // Each model ref owns its language voices, so changing models cannot reuse stale voice IDs.
+  ttsVoicesByRef: Record<string, Record<string, string>>;
 }

@@ -5,6 +5,7 @@
 // lib/uiTranslation.ts, wired in app.tsx) and cached in localStorage. Until
 // that overlay exists the UI shows English.
 import { loadSettings } from "../lib/settings";
+import { aiMessages } from "./ai";
 import { appMessages } from "./app";
 import { cardsMessages } from "./cards";
 import { domainMessages } from "./domain";
@@ -26,6 +27,7 @@ const UI_LANGUAGES: UiLanguage[] = ["en", "ja", "zh-CN", "zh-TW"];
 // literal tables directly trips TS2590 ("union type too complex").
 const BUNDLES: MessageBundle[] = [
   appMessages,
+  aiMessages,
   practiceMessages,
   readingMessages,
   talkMessages,

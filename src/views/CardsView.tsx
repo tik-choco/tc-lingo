@@ -98,7 +98,7 @@ function InboxItemRow({
 
   async function extractWithAi() {
     if (!connection || resolution.kind !== "ok") return;
-    const conn = connectionForTask("generation");
+    const conn = connectionForTask("cards");
     if (!conn) return;
     setExtracting(true);
     setError("");
@@ -215,7 +215,7 @@ export function CardsView() {
   const [settings, setSettings] = useState(loadSettings);
   useEffect(() => subscribeSettings(() => setSettings(loadSettings())), []);
 
-  const { connection } = useLlmConnection();
+  const { connection } = useLlmConnection("cards");
 
   // "類似カードを整理" — LLM-assisted merge cleanup (lib/llm.ts
   // requestCardMerges / lib/cards.ts mergeCards). Scoped to the current
@@ -381,7 +381,7 @@ export function CardsView() {
   const cardsById = new Map(cards.map((c) => [c.id, c]));
 
   async function scanForMerges() {
-    const conn = connectionForTask("generation");
+    const conn = connectionForTask("cards");
     if (!conn) return;
     setMergeScanning(true);
     setMergeError("");

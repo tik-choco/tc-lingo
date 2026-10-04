@@ -2,7 +2,7 @@
 // dictionary (see i18n/index.ts): the English source strings are translated
 // once by the configured LLM and cached. Ported from tc-translate's
 // lib/uiTranslation.ts, using this app's resolved LlmConnection (direct API
-// preset or AI Network room — see lib/llmConnection.ts).
+// endpoint or room — see lib/llmConnection.ts).
 import { streamChatCompletion } from "@tik-choco/mistai";
 import type { ChatMessage } from "@tik-choco/mistai";
 import type { MessageTable } from "../i18n/types";
@@ -49,15 +49,12 @@ export async function translateUiMessages(params: {
   ];
   const content =
     connection.kind === "network"
-      ? // See lib/llm.ts's chatJson for why no model is passed here.
-        await requestNetworkChat(connection.roomId, chatMessages, undefined)
+      ? await requestNetworkChat(connection.roomId, chatMessages, connection.model, connection.reasoningEffort)
       : await streamChatCompletion(
           {
             baseUrl: connection.target.baseUrl.trim().replace(/\/+$/, ""),
             apiKey: connection.target.apiKey,
-            model: connection.target.model,
-            temperature: connection.target.temperature,
-            reasoningEffort: connection.target.reasoningEffort,
+            model: connection.target.model,            reasoningEffort: connection.target.reasoningEffort,
           },
           chatMessages,
         );

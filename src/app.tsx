@@ -36,13 +36,8 @@ import { languageDisplayName } from "./lib/languages";
 import { applyUiLanguageForNative, getUiSourceMessages, setUiOverlay, subscribeUiMessages, t } from "./i18n";
 import { translateUiMessages } from "./lib/uiTranslation";
 import { useLlmConnection } from "./hooks/useLlmConnection";
-import { connectionForTask } from "./lib/llmConnection";
-import { emptyLlmConfig } from "./lib/llmConfig";
-import { deriveVoiceEngine } from "./lib/voice";
-import { useNetworkConsumerConnection } from "./hooks/useNetworkConsumerConnection";
-import { useNetworkConsumerStatus } from "./hooks/useNetworkConsumerStatus";
-import { useNetworkProvider } from "./hooks/useNetworkProvider";
-import { useNetworkModelSync } from "./hooks/useNetworkModelSync";
+import { useLlmConfig, useRoomProviders } from "@tik-choco/mistai/preact";
+import { rooms } from "./lib/network";
 import { isEditableTarget, SHORTCUT_PRIORITY } from "./lib/keyboard";
 import { useShortcuts } from "./hooks/useShortcuts";
 import { runCardAutoOrganize } from "./lib/cardAutoOrganize";
@@ -87,31 +82,18 @@ export function App() {
   // The UI language follows the native language (i18n/index.ts). Re-render
   // the whole tree whenever the active message table changes (language
   // switch, or an LLM-translated overlay arriving).
-  const { target, mode, roomId, config } = useLlmConnection();
+  const { connection: uiConnection } = useLlmConnection("ui-translation");
+  const uiConnectionKey = JSON.stringify(uiConnection);
+  const { config } = useLlmConfig();
   const [, setMessagesVersion] = useState(0);
   useEffect(() => subscribeUiMessages(() => setMessagesVersion((v) => v + 1)), []);
 
-  // Eagerly (re)connects the AI Network consumer session whenever that's the
-  // configured transport for chat/correction (connectionMode) OR for
-  // read-aloud (the TTS engine — always DERIVED from the shared config, see
-  // lib/voice.ts's deriveVoiceEngine — never a stored setting), instead of
-  // waiting for the first LLM/TTS call to join the room lazily. Reconnects on
-  // a room id change, disconnects once neither feature is pointed at the
-  // network and the room id is cleared.
-  useNetworkConsumerConnection({
-    enabled: (mode === "network" || deriveVoiceEngine(config ?? emptyLlmConfig(), "tts") === "network") && roomId !== "",
-    roomId,
-  });
+  // The onboarding wizard includes the same AI settings surface.
+  const [showOnboarding, setShowOnboarding] = useState(() => shouldShowOnboarding());
+  useEffect(() => subscribeOnboardingRequests(() => setShowOnboarding(true)), []);
 
-  // "Participate as an AI Network provider" (settings.networkProviderEnabled)
-  // and "mirror the room's advertised models into the shared config as
-  // presets" (see hooks/useNetworkModelSync.ts) both need to run regardless
-  // of which tab is open, same as the consumer connection above — there's no
-  // per-app orchestrating hook like tc-translate's useTranslator.ts here
-  // (views are self-contained, see CLAUDE.md), so this shell owns both.
-  useNetworkProvider(settings, config ?? emptyLlmConfig());
-  const consumerStatus = useNetworkConsumerStatus();
-  useNetworkModelSync(settings, consumerStatus, roomId);
+  useRoomProviders({ config, roomProvide: settings.roomProvide, consumers: rooms,
+    taskRefs: Object.values(settings.tasks).map(task => task.ref), settingsOpen: tab === "settings" || showOnboarding });
 
   // Silent background card-deck cleanup (settings.autoOrganizeCards) — see
   // lib/cardAutoOrganize.ts's header comment. Fire-and-forget: the function
@@ -128,7 +110,7 @@ export function App() {
   const uiTranslationInFlight = useRef("");
   useEffect(() => {
     if (applyUiLanguageForNative(settings.nativeLanguage) !== "needs-translation") return;
-    const conn = connectionForTask("generation");
+    const conn = uiConnection;
     if (!conn) return;
     const language = settings.nativeLanguage;
     if (uiTranslationInFlight.current === language) return;
@@ -141,11 +123,9 @@ export function App() {
       .finally(() => {
         if (uiTranslationInFlight.current === language) uiTranslationInFlight.current = "";
       });
-    // `connection` is a freshly-allocated object on every resolve, so depend
-    // on its stable identity fields instead (mode + which target/room it
-    // points at) to avoid re-running this effect on every unrelated
-    // re-resolve (e.g. an unrelated settings change firing subscribeSettings).
-  }, [settings.nativeLanguage, mode, target?.presetId, roomId]);
+    // Compare the resolved task's value so changes to its ref or endpoint
+    // retry translation without reacting to unrelated settings edits.
+  }, [settings.nativeLanguage, uiConnectionKey]);
 
   useEffect(() => {
     if (mainRef.current) mainRef.current.scrollTop = 0;
@@ -167,9 +147,6 @@ export function App() {
 
   // First-run wizard: shown once on a fresh install, and re-openable from the
   // settings screen. Closing it (any path) marks onboarding done.
-  const [showOnboarding, setShowOnboarding] = useState(() => shouldShowOnboarding());
-  useEffect(() => subscribeOnboardingRequests(() => setShowOnboarding(true)), []);
-
   function closeOnboarding() {
     markOnboardingDone();
     setShowOnboarding(false);

@@ -29,7 +29,6 @@ import {
   subscribeConversations,
   updateConversation,
 } from "../lib/conversation";
-import type { LlmConnection } from "../lib/llmConnection";
 import { addCard } from "../lib/cards";
 import { autoExtractMistakeCards } from "../lib/autoExtract";
 import { effectiveBand, recordOutputSample, subscribeLevels } from "../lib/level";
@@ -359,7 +358,8 @@ function TalkBubble({
 export function TalkView() {
   const [settings, setSettings] = useState(loadSettings);
   useEffect(() => subscribeSettings(() => setSettings(loadSettings())), []);
-  const { connection } = useLlmConnection();
+  const { connection } = useLlmConnection("conversation");
+  const cardsConnection = connectionForTask("cards");
   const speech = useSpeech();
 
   const [sessions, setSessions] = useState<ConversationSession[]>(() => loadConversations(settings.activeLanguage));
@@ -458,7 +458,7 @@ export function TalkView() {
       setStartError(t("talk-need-llm"));
       return;
     }
-    const conn = connectionForTask("generation");
+    const conn = connectionForTask("conversation");
     if (!conn) return;
     setStartError("");
     setStarting(true);
@@ -497,7 +497,6 @@ export function TalkView() {
   function buildReplyTurns(
     result: ConversationReplyResult,
     learnerText: string,
-    cardsConn: LlmConnection,
   ): [ConversationTurn, ConversationTurn] {
     const learnerTurn = newTurn({
       role: "learner",
@@ -522,7 +521,8 @@ export function TalkView() {
     // never awaited, so it can't block the chat flow or the typing
     // indicator. Gates on settings.autoExtractCards itself; the resolved
     // notice is attached to this learner turn's correction block.
-    if (result.corrected.trim()) {
+    const cardsConn = connectionForTask("cards");
+    if (result.corrected.trim() && cardsConn) {
       autoExtractMistakeCards({
         connection: cardsConn,
         targetLanguage: sessionLanguage,
@@ -546,7 +546,7 @@ export function TalkView() {
       setSendError(t("talk-need-llm"));
       return;
     }
-    const conn = connectionForTask("generation");
+    const conn = connectionForTask("conversation");
     if (!conn) return;
     setSendError("");
     setSending(true);
@@ -560,7 +560,7 @@ export function TalkView() {
         turns: activeSession.turns,
         learnerText,
       });
-      const [learnerTurn, assistantTurn] = buildReplyTurns(result, learnerText, conn);
+      const [learnerTurn, assistantTurn] = buildReplyTurns(result, learnerText);
       updateConversation(activeSession.id, { turns: [...activeSession.turns, learnerTurn, assistantTurn] });
       setText("");
     } catch (e) {
@@ -598,7 +598,7 @@ export function TalkView() {
       setEditError(t("talk-need-llm"));
       return;
     }
-    const conn = connectionForTask("generation");
+    const conn = connectionForTask("conversation");
     if (!conn) return;
     setEditError("");
     setEditSubmitting(true);
@@ -612,7 +612,7 @@ export function TalkView() {
         turns: historyTurns,
         learnerText,
       });
-      const [learnerTurn, assistantTurn] = buildReplyTurns(result, learnerText, conn);
+      const [learnerTurn, assistantTurn] = buildReplyTurns(result, learnerText);
       updateConversation(activeSession.id, { turns: [...historyTurns, learnerTurn, assistantTurn] });
       cancelEdit();
     } catch (e) {
@@ -627,8 +627,8 @@ export function TalkView() {
    * auto-extraction above: learner-triggered, per-turn, and always offered
    * regardless of settings.autoExtractCards. */
   async function saveTurnSentenceCards(turn: ConversationTurn) {
-    if (!connection || !turn.corrected) return;
-    const conn = connectionForTask("generation");
+    if (!cardsConnection || !turn.corrected) return;
+    const conn = connectionForTask("cards");
     if (!conn) return;
     setSentenceCardsByTurn((prev) => ({ ...prev, [turn.id]: { kind: "saving" } }));
     try {
@@ -667,8 +667,8 @@ export function TalkView() {
       : null;
 
   async function extractCards() {
-    if (!activeSession || !connection || correctedTurns.length === 0) return;
-    const conn = connectionForTask("generation");
+    if (!activeSession || !cardsConnection || correctedTurns.length === 0) return;
+    const conn = connectionForTask("cards");
     if (!conn) return;
     setExtractError("");
     setExtracting(true);
@@ -778,7 +778,7 @@ export function TalkView() {
               autoAdded={autoAddedByTurn[turn.id]}
               sentenceCardsState={sentenceCardsByTurn[turn.id]}
               onSaveSentenceCards={() => saveTurnSentenceCards(turn)}
-              canSaveSentenceCards={!!connection}
+              canSaveSentenceCards={!!cardsConnection}
               showReadingAids={settings.showReadingAids}
               translationRevealed={revealedTranslations.has(turn.id)}
               onToggleTranslation={() => toggleTranslation(turn.id)}
@@ -836,7 +836,7 @@ export function TalkView() {
           <div class="talk-extract">
             {candidates === null ? (
               <div class="button-row">
-                <button type="button" onClick={extractCards} disabled={extracting || !connection}>
+                <button type="button" onClick={extractCards} disabled={extracting || !cardsConnection}>
                   {extracting ? t("talk-extracting") : t("talk-extract-cards")}
                 </button>
               </div>

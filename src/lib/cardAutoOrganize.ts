@@ -141,7 +141,7 @@ export async function runCardAutoOrganize(now: Date = new Date()): Promise<void>
     // the pre-filter stage requires a direct API connection specifically.
     const embeddingConn = connectionForTask("card-organize");
     if (!embeddingConn || embeddingConn.kind !== "api") return;
-    const mergeConn = connectionForTask("generation");
+    const mergeConn = connectionForTask("cards");
     if (!mergeConn) return;
 
     const allCards = loadCards();

@@ -108,6 +108,14 @@
      re-defined per theme below. */
   --mistai-border: var(--border);
   --mistai-surface: var(--surface);
+  --mistai-surface-2: var(--surface-2);
+  --mistai-border-strong: var(--border-strong);
+  --mistai-primary: var(--primary);
+  --mistai-primary-soft: var(--primary-soft);
+  --mistai-focus: var(--primary-hover);
+  --mistai-focus-ring: var(--ring);
+  --mistai-danger-text: var(--danger-text);
+  --mistai-font-family: var(--sans);
   --mistai-text: var(--text);
   --mistai-text-muted: var(--text-muted);
   --mistai-text-strong: var(--text);
@@ -527,3 +535,8 @@ a:hover {
 .mist-app-frame { display: flex; flex-direction: column; height: 100dvh; min-height: 0; }
 .mist-app-content { flex: 1; min-height: 0; }
 .mist-app-content > .app-shell { height: 100%; }
+
+.lingo-voice-settings { margin-top: var(--space-4); }
+.lingo-voice-row { display: grid; grid-template-columns: minmax(100px, 1fr) minmax(120px, 2fr); gap: var(--space-3); align-items: center; }
+.lingo-voice-row input { min-width: 0; width: 100%; }
+.ob-card:has(.mistai-settings) { width: min(760px, calc(100vw - 32px)); }

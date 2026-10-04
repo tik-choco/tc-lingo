@@ -36,7 +36,7 @@ export async function checkCardConsistency(card: Card, targetLanguage: string): 
     return null;
   }
 
-  const connection = connectionForTask("generation");
+  const connection = connectionForTask("review");
   if (!connection) return null;
 
   try {

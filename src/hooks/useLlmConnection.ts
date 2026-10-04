@@ -1,35 +1,36 @@
-// Resolves the LLM connection this app should use right now — a direct API
-// preset or the AI Network room, depending on settings.connectionMode (see
-// lib/llmConnection.ts) — and re-resolves whenever the shared llm config or
-// local settings change. Same storage-event + subscribeSettings pattern as
-// useLlmPreset.ts.
+// Re-resolve the selected task when shared or local settings change.
 import { useEffect, useState } from "preact/hooks";
-import { resolveLlmConnection } from "../lib/llmConnection";
+import { resolveLlmConnection, connectionForTask } from "../lib/llmConnection";
 import type { LlmConnection } from "../lib/llmConnection";
 import type { ResolvedLlmTargetV1, SharedLlmConfigV1 } from "../lib/llmConfig";
-import type { LlmConnectionMode } from "../types";
+import { subscribeLlmConfig } from "../lib/llmConfig";
 import { subscribeSettings } from "../lib/settings";
 
-export function useLlmConnection(): {
+import type { LlmTask } from "../types";
+
+export function useLlmConnection(task?: LlmTask): {
   config: SharedLlmConfigV1 | null;
   target: ResolvedLlmTargetV1 | null;
-  mode: LlmConnectionMode;
+  mode: "api" | "network";
   roomId: string;
   connection: LlmConnection | null;
 } {
-  const [state, setState] = useState(resolveLlmConnection);
+  const resolve = () => ({ ...resolveLlmConnection(), ...(task ? { connection: connectionForTask(task) } : {}) });
+  const [state, setState] = useState(resolve);
 
   useEffect(() => {
     function refresh() {
-      setState(resolveLlmConnection());
+      setState(resolve());
     }
     window.addEventListener("storage", refresh);
     const unsubscribeSettings = subscribeSettings(refresh);
+    const unsubscribeConfig = subscribeLlmConfig(refresh);
     return () => {
       window.removeEventListener("storage", refresh);
       unsubscribeSettings();
+      unsubscribeConfig();
     };
-  }, []);
+  }, [task]);
 
   return state;
 }
