@@ -1,21 +1,10 @@
-// App-local settings: which languages the user is studying (possibly several
-// at once — see `targetLanguages`/`activeLanguage`), which is their native
-// language, the AI Network participation flags, and the per-task LLM
-// preset/reasoning-effort overrides (see lib/llmConnection.ts's
-// `connectionForTask`). Persisted at tc-lingo:settings-v1 — NOT the shared
-// LLM connection details themselves (providers/presets/tts/network.roomId),
-// those live in the co-owned tc-shared-llm-config-v1 key (lib/llmConfig.ts).
-import type { LingoSettings, LlmConnectionMode, LlmTask, ReasoningEffort } from "../types";
-import { loadLlmConfig, saveLlmConfig } from "./llmConfig";
-import type { SharedLlmConfigV1 } from "./llmConfig";
-import { isNetworkProviderBaseUrl } from "./networkModels";
+import type { LingoSettings, LlmTask, ReasoningEffort } from "../types";
+import type { LlmLocalSettings, TaskModelV1 } from "@tik-choco/mistai/preact";
+import { loadLlmConfig, emptyLlmConfig, presetIdToRef, providerKind, roomIdFromBaseUrl, isModelRef, setDefaultModel, saveLlmConfig } from "./llmConfig";
 import { loadJson, saveJson, subscribeStorage } from "./storage";
 
 const STORAGE_NAME = "settings-v1";
-
-// Browser-language → canonical language name (subset of lib/languages.ts
-// languageOptions; kept inline to avoid a settings → languages → i18n →
-// settings import cycle).
+const TASKS: LlmTask[] = ["practice", "topic", "cards", "review", "reading", "conversation", "grammar", "ui-translation", "card-organize"];
 const browserLanguageNames: Record<string, string> = {
   ja: "Japanese",
   en: "English",
@@ -47,504 +36,74 @@ function detectNativeLanguage(): string {
   return browserLanguageNames[tag.split("-")[0]] ?? "English";
 }
 
-/** Fresh-install defaults: the native language follows the browser language
- * (so the app — whose UI language tracks the native language, see
- * i18n/index.ts — is usable worldwide on first launch), and the default study
- * target is English, or Japanese for English natives. No AI Network
- * participation, no per-task overrides, and `reasoning_effort: "none"` sent
- * by default (see types.ts's `ReasoningEffort`). */
-function defaultSettings(): LingoSettings {
-  const nativeLanguage = detectNativeLanguage();
-  const target = nativeLanguage === "English" ? "Japanese" : "English";
-  return {
-    targetLanguages: [target],
-    activeLanguage: target,
-    nativeLanguage,
-    connectionMode: "api",
-    autoExtractCards: true,
-    showReadingAids: true,
-    networkProviderEnabled: false,
-    networkProviderPresetIds: [],
-    taskPresetIds: {},
-    taskReasoningEfforts: {},
-    defaultReasoningEffort: "none",
-    autoOrganizeCards: true,
-    lastCardAutoOrganizeAt: "",
+
+function effort(value: unknown): ReasoningEffort | undefined {
+  return ["none", "minimal", "low", "medium", "high", "xhigh", "max"].includes(value as string) ? value as ReasoningEffort : undefined;
+}
+
+export function voiceRefKey(ref: { providerId: string; model: string }): string {
+  return JSON.stringify([ref.providerId, ref.model]);
+}
+
+// The presence of tasks marks completion. Never re-import retired IDs on later loads.
+export function loadSettings(): LingoSettings {
+  const raw = loadJson<Record<string, any>>(STORAGE_NAME, {}) ?? {};
+  const nativeLanguage = typeof raw.nativeLanguage === "string" ? raw.nativeLanguage : detectNativeLanguage();
+  const fallback = nativeLanguage === "English" ? "Japanese" : "English";
+  const targetLanguages = Array.isArray(raw.targetLanguages) ? raw.targetLanguages.filter((v: unknown) => typeof v === "string") :
+    typeof raw.targetLanguage === "string" ? [raw.targetLanguage] : [fallback];
+  if (!targetLanguages.length) targetLanguages.push(fallback);
+  const base = {
+    targetLanguages, activeLanguage: targetLanguages.includes(raw.activeLanguage) ? raw.activeLanguage : targetLanguages[0],
+    nativeLanguage, autoExtractCards: raw.autoExtractCards !== false, showReadingAids: raw.showReadingAids !== false,
+    autoOrganizeCards: raw.autoOrganizeCards !== false, lastCardAutoOrganizeAt: typeof raw.lastCardAutoOrganizeAt === "string" ? raw.lastCardAutoOrganizeAt : "",
+    ttsVoicesByRef: raw.ttsVoicesByRef ?? {},
   };
-}
-
-/** Re-points `activeLanguage`/`targetLanguages` at a valid combination
- * (falling back to the default target if the list is somehow empty, or to
- * the first remaining target if `activeLanguage` fell out of the list) —
- * shared by every migration path below so each one doesn't have to repeat
- * the same fixup. */
-function withValidLanguages(settings: LingoSettings): LingoSettings {
-  if (settings.targetLanguages.length === 0) {
-    const fallback = defaultSettings().targetLanguages[0];
-    return { ...settings, targetLanguages: [fallback], activeLanguage: fallback };
+  if (raw.tasks && typeof raw.tasks === "object") {
+    return { ...base, tasks: raw.tasks, roomProvide: raw.roomProvide ?? {}, recentModels: (raw.recentModels ?? []).filter(isModelRef).slice(0, 8) };
   }
-  if (!settings.targetLanguages.includes(settings.activeLanguage)) {
-    return { ...settings, activeLanguage: settings.targetLanguages[0] };
+  const config = loadLlmConfig() ?? emptyLlmConfig();
+  if (!config.defaultModel && typeof raw.presetId === "string") {
+    const ref = presetIdToRef(config, raw.presetId);
+    if (ref) { setDefaultModel(config, ref); saveLlmConfig(config); }
   }
-  return settings;
-}
-
-function isTaskPresetIds(value: unknown): value is Partial<Record<string, string>> {
-  if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
-  return Object.values(value as Record<string, unknown>).every((v) => typeof v === "string");
-}
-
-function isReasoningEffortValue(value: unknown): value is ReasoningEffort {
-  return value === "none" || value === "minimal" || value === "low" || value === "medium" || value === "high";
-}
-
-function isTaskReasoningEfforts(value: unknown): value is Partial<Record<string, ReasoningEffort>> {
-  if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
-  return Object.values(value as Record<string, unknown>).every(isReasoningEffortValue);
-}
-
-function isVoiceByLanguageMap(value: unknown): value is Record<string, string> {
-  if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
-  return Object.values(value as Record<string, unknown>).every((v) => typeof v === "string");
-}
-
-/** Current `LingoSettings` shape (post auto-organize-cards change — see
- * `isPreCardOrganizeSettings` for the shape immediately before it). */
-function isLingoSettings(value: unknown): value is LingoSettings {
-  if (value === null || typeof value !== "object") return false;
-  const r = value as Record<string, unknown>;
-  return (
-    Array.isArray(r.targetLanguages) &&
-    r.targetLanguages.every((l) => typeof l === "string") &&
-    typeof r.activeLanguage === "string" &&
-    typeof r.nativeLanguage === "string" &&
-    (r.connectionMode === "api" || r.connectionMode === "network") &&
-    typeof r.autoExtractCards === "boolean" &&
-    typeof r.showReadingAids === "boolean" &&
-    typeof r.networkProviderEnabled === "boolean" &&
-    Array.isArray(r.networkProviderPresetIds) &&
-    r.networkProviderPresetIds.every((id) => typeof id === "string") &&
-    isTaskPresetIds(r.taskPresetIds) &&
-    isTaskReasoningEfforts(r.taskReasoningEfforts) &&
-    isReasoningEffortValue(r.defaultReasoningEffort) &&
-    typeof r.autoOrganizeCards === "boolean" &&
-    typeof r.lastCardAutoOrganizeAt === "string" &&
-    (r.ttsVoiceByLanguage === undefined || isVoiceByLanguageMap(r.ttsVoiceByLanguage))
-  );
-}
-
-/** Shape used just before the auto-organize-cards change (post
- * AI-Network-participation + per-task-preset/reasoning-effort change — see
- * tc-docs/drafts/llm-settings-common-v1.md §2.3/§5): identical to
- * `LingoSettings` minus `autoOrganizeCards`/`lastCardAutoOrganizeAt`.
- * Migrated in-place on load — the missing flag defaults to true (auto-organize
- * on, matching `autoExtractCards`'s existing "on by default, opt out in
- * settings" precedent) and the missing timestamp to "" (never run) — so
- * existing installs pick the feature up without a settings reset. */
-function isPreCardOrganizeSettings(value: unknown): value is Omit<LingoSettings, "autoOrganizeCards" | "lastCardAutoOrganizeAt"> {
-  if (value === null || typeof value !== "object") return false;
-  const r = value as Record<string, unknown>;
-  return (
-    Array.isArray(r.targetLanguages) &&
-    r.targetLanguages.every((l) => typeof l === "string") &&
-    typeof r.activeLanguage === "string" &&
-    typeof r.nativeLanguage === "string" &&
-    (r.connectionMode === "api" || r.connectionMode === "network") &&
-    typeof r.autoExtractCards === "boolean" &&
-    typeof r.showReadingAids === "boolean" &&
-    typeof r.networkProviderEnabled === "boolean" &&
-    Array.isArray(r.networkProviderPresetIds) &&
-    r.networkProviderPresetIds.every((id) => typeof id === "string") &&
-    isTaskPresetIds(r.taskPresetIds) &&
-    isTaskReasoningEfforts(r.taskReasoningEfforts) &&
-    isReasoningEffortValue(r.defaultReasoningEffort)
-  );
-}
-
-function isTaskModels(value: unknown): value is Partial<Record<string, string>> {
-  if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
-  return Object.values(value as Record<string, unknown>).every((v) => typeof v === "string");
-}
-
-/** Shape used just before the AI-Network-participation +
- * per-task-preset/reasoning-effort change: a single app-local `presetId` +
- * `ttsEngine`, and `taskModels` (a bare model-name string per task instead of
- * a shared preset id). Migrated in-place on load (see
- * `migrateToTaskPresetIds`): `taskModels`' model names are matched against
- * the shared config's presets (an override is dropped, not guessed at, when
- * no preset uses that exact model — see tc-docs/drafts/llm-settings-common-v1.md
- * §5's porting notes), a non-empty `presetId` seeds the shared config's
- * `defaultPresetId` if that's still empty, and `ttsEngine` is simply
- * dropped — the TTS engine is now always derived from the shared config
- * (see lib/voice.ts's `deriveVoiceEngine`), never stored locally. */
-function isPreCommonSettingsShape(value: unknown): value is {
-  targetLanguages: string[];
-  activeLanguage: string;
-  nativeLanguage: string;
-  presetId: string;
-  connectionMode: LlmConnectionMode;
-  ttsEngine: string;
-  autoExtractCards: boolean;
-  showReadingAids: boolean;
-  taskModels: Partial<Record<string, string>>;
-} {
-  if (value === null || typeof value !== "object") return false;
-  const r = value as Record<string, unknown>;
-  return (
-    Array.isArray(r.targetLanguages) &&
-    r.targetLanguages.every((l) => typeof l === "string") &&
-    typeof r.activeLanguage === "string" &&
-    typeof r.nativeLanguage === "string" &&
-    typeof r.presetId === "string" &&
-    (r.connectionMode === "api" || r.connectionMode === "network") &&
-    (r.ttsEngine === "browser" || r.ttsEngine === "api" || r.ttsEngine === "network") &&
-    typeof r.autoExtractCards === "boolean" &&
-    typeof r.showReadingAids === "boolean" &&
-    isTaskModels(r.taskModels)
-  );
-}
-
-/** Pre-task-models shape (same fields as `isPreCommonSettingsShape` minus
- * `taskModels`). Migrated in-place on load — the missing map defaults to `{}`
- * (no per-task overrides) before continuing into `migrateToTaskPresetIds`. */
-function isPreTaskModelsSettings(value: unknown): value is {
-  targetLanguages: string[];
-  activeLanguage: string;
-  nativeLanguage: string;
-  presetId: string;
-  connectionMode: LlmConnectionMode;
-  ttsEngine: string;
-  autoExtractCards: boolean;
-  showReadingAids: boolean;
-} {
-  if (value === null || typeof value !== "object") return false;
-  const r = value as Record<string, unknown>;
-  return (
-    Array.isArray(r.targetLanguages) &&
-    r.targetLanguages.every((l) => typeof l === "string") &&
-    typeof r.activeLanguage === "string" &&
-    typeof r.nativeLanguage === "string" &&
-    typeof r.presetId === "string" &&
-    (r.connectionMode === "api" || r.connectionMode === "network") &&
-    (r.ttsEngine === "browser" || r.ttsEngine === "api" || r.ttsEngine === "network") &&
-    typeof r.autoExtractCards === "boolean" &&
-    typeof r.showReadingAids === "boolean"
-  );
-}
-
-/** Pre-reading-aid shape (same fields as `isPreTaskModelsSettings` minus
- * `showReadingAids`). Migrated in-place on load — the missing flag defaults
- * to true (reading aids shown) — so existing installs pick the feature up
- * without a reset. */
-function isPreReadingAidsSettings(value: unknown): value is {
-  targetLanguages: string[];
-  activeLanguage: string;
-  nativeLanguage: string;
-  presetId: string;
-  connectionMode: LlmConnectionMode;
-  ttsEngine: string;
-  autoExtractCards: boolean;
-} {
-  if (value === null || typeof value !== "object") return false;
-  const r = value as Record<string, unknown>;
-  return (
-    Array.isArray(r.targetLanguages) &&
-    r.targetLanguages.every((l) => typeof l === "string") &&
-    typeof r.activeLanguage === "string" &&
-    typeof r.nativeLanguage === "string" &&
-    typeof r.presetId === "string" &&
-    (r.connectionMode === "api" || r.connectionMode === "network") &&
-    (r.ttsEngine === "browser" || r.ttsEngine === "api" || r.ttsEngine === "network") &&
-    typeof r.autoExtractCards === "boolean"
-  );
-}
-
-/** Pre-auto-extract shape (same fields as `isPreReadingAidsSettings` minus
- * `autoExtractCards`). Migrated in-place on load — the missing flag defaults
- * to true (auto-extraction on) — so existing installs pick the feature up
- * without a reset. */
-function isPreAutoExtractSettings(value: unknown): value is {
-  targetLanguages: string[];
-  activeLanguage: string;
-  nativeLanguage: string;
-  presetId: string;
-  connectionMode: LlmConnectionMode;
-  ttsEngine: string;
-} {
-  if (value === null || typeof value !== "object") return false;
-  const r = value as Record<string, unknown>;
-  return (
-    Array.isArray(r.targetLanguages) &&
-    r.targetLanguages.every((l) => typeof l === "string") &&
-    typeof r.activeLanguage === "string" &&
-    typeof r.nativeLanguage === "string" &&
-    typeof r.presetId === "string" &&
-    (r.connectionMode === "api" || r.connectionMode === "network") &&
-    (r.ttsEngine === "browser" || r.ttsEngine === "api" || r.ttsEngine === "network")
-  );
-}
-
-/** Pre-TTS shape (same fields as `isPreAutoExtractSettings` minus
- * `ttsEngine`). Migrated in-place on load — the (now-unused) engine simply
- * isn't reintroduced, since the TTS engine is always derived, never stored
- * (see `isPreCommonSettingsShape`'s doc comment). */
-function isPreTtsEngineSettings(value: unknown): value is {
-  targetLanguages: string[];
-  activeLanguage: string;
-  nativeLanguage: string;
-  presetId: string;
-  connectionMode: LlmConnectionMode;
-} {
-  if (value === null || typeof value !== "object") return false;
-  const r = value as Record<string, unknown>;
-  return (
-    Array.isArray(r.targetLanguages) &&
-    r.targetLanguages.every((l) => typeof l === "string") &&
-    typeof r.activeLanguage === "string" &&
-    typeof r.nativeLanguage === "string" &&
-    typeof r.presetId === "string" &&
-    (r.connectionMode === "api" || r.connectionMode === "network")
-  );
-}
-
-/** Pre-AI-Network shape (same fields as `isPreTtsEngineSettings` minus
- * `connectionMode`). Migrated in-place on load — missing `connectionMode`
- * defaults to "api" — so existing installs keep behaving as direct API
- * connections instead of silently falling back to the defaults. */
-function isPreConnectionModeSettings(
-  value: unknown,
-): value is { targetLanguages: string[]; activeLanguage: string; nativeLanguage: string; presetId: string } {
-  if (value === null || typeof value !== "object") return false;
-  const r = value as Record<string, unknown>;
-  return (
-    Array.isArray(r.targetLanguages) &&
-    r.targetLanguages.every((l) => typeof l === "string") &&
-    typeof r.activeLanguage === "string" &&
-    typeof r.nativeLanguage === "string" &&
-    typeof r.presetId === "string"
-  );
-}
-
-/** Pre-multi-language shape (a single `targetLanguage: string`). Migrated
- * in-place on load so existing installs keep their language pair instead of
- * silently falling back to the defaults. */
-function isLegacySettings(value: unknown): value is { targetLanguage: string; nativeLanguage: string; presetId: string } {
-  if (value === null || typeof value !== "object") return false;
-  const r = value as Record<string, unknown>;
-  return typeof r.targetLanguage === "string" && typeof r.nativeLanguage === "string" && typeof r.presetId === "string";
-}
-
-/** Finds a shared-config preset whose `model` matches `model` exactly,
- * preferring one backed by a real HTTP provider over one imported from an AI
- * Network room (`mist-network://` pseudo-provider — see networkModels.ts):
- * a legacy per-task model-name override almost always meant "call this exact
- * model at my regular endpoint", and a network-mirrored preset with the same
- * model name could vanish the moment the room's provider un-shares it. */
-function findPresetIdForModel(config: SharedLlmConfigV1, model: string): string | undefined {
-  const matches = config.presets.filter((p) => p.model === model);
-  if (matches.length === 0) return undefined;
-  const nonNetwork = matches.find((p) => {
-    const provider = config.providers.find((pr) => pr.id === p.providerId);
-    return provider !== undefined && !isNetworkProviderBaseUrl(provider.baseUrl);
-  });
-  return (nonNetwork ?? matches[0]).id;
-}
-
-/**
- * Migrates the pre-AI-Network-participation settings shape (see
- * `isPreCommonSettingsShape`) into the current `LingoSettings`:
- * - `taskModels` (a bare model name per task) becomes `taskPresetIds` (a
- *   shared-config preset id per task), via `findPresetIdForModel`. A task
- *   whose model no longer matches any preset is simply dropped (falls back
- *   to the default preset — see lib/llmConfig.ts's `resolvePreset`) rather
- *   than guessed at.
- * - A non-empty legacy `presetId` seeds the shared config's
- *   `defaultPresetId`, but only if that's still empty (append-only —
- *   never overwrites a `defaultPresetId` another app or an earlier install
- *   already set) — and only has an effect once: after the first successful
- *   write `defaultPresetId` is non-empty, so this is a no-op on every
- *   subsequent load even though it re-runs every time (settings migrations
- *   aren't flag-gated, see loadSettings's chain).
- * - `ttsEngine` is dropped (no replacement field - see
- *   `isPreCommonSettingsShape`'s doc comment).
- * - `networkProviderEnabled`/`networkProviderPresetIds` start at their
- *   fresh-install defaults (off / none shared) - there's no prior local
- *   setting to carry forward.
- */
-function migrateToTaskPresetIds(pre: {
-  targetLanguages: string[];
-  activeLanguage: string;
-  nativeLanguage: string;
-  presetId: string;
-  connectionMode: LlmConnectionMode;
-  autoExtractCards: boolean;
-  showReadingAids: boolean;
-  taskModels: Partial<Record<string, string>>;
-}): LingoSettings {
-  const config = loadLlmConfig();
-
-  if (pre.presetId && config && !config.defaultPresetId) {
-    saveLlmConfig({ ...config, defaultPresetId: pre.presetId });
-  }
-
-  const taskPresetIds: Partial<Record<LlmTask, string>> = {};
-  if (config) {
-    for (const [task, model] of Object.entries(pre.taskModels)) {
-      if (!model) continue;
-      const presetId = findPresetIdForModel(config, model);
-      if (presetId) taskPresetIds[task as LlmTask] = presetId;
+  const tasks: Record<string, TaskModelV1> = {};
+  for (const id of TASKS) {
+    const group = id === "practice" || id === "review" ? "correction" : id === "card-organize" ? id : "generation";
+    const presetId = raw.taskPresetIds?.[id] ?? raw.taskPresetIds?.[group] ?? raw.presetId;
+    const preset = config.presets.find(p => p.id === presetId);
+    let ref = presetId ? presetIdToRef(config, presetId) : undefined;
+    if (!ref && typeof raw.taskModels?.[id] === "string") {
+      const old = config.presets.find(p => p.model === raw.taskModels[id] && config.providers.some(pr => pr.id === p.providerId && providerKind(pr) === "http"));
+      if (old) ref = presetIdToRef(config, old.id);
     }
+    tasks[id] = { ...(ref ? { ref } : {}), reasoningEffort: effort(raw.taskReasoningEfforts?.[id] ?? raw.taskReasoningEfforts?.[group]) ?? effort(preset?.reasoningEffort) ?? effort(raw.defaultReasoningEffort) ?? "none" };
   }
-
-  return {
-    targetLanguages: pre.targetLanguages,
-    activeLanguage: pre.activeLanguage,
-    nativeLanguage: pre.nativeLanguage,
-    connectionMode: pre.connectionMode,
-    autoExtractCards: pre.autoExtractCards,
-    showReadingAids: pre.showReadingAids,
-    networkProviderEnabled: false,
-    networkProviderPresetIds: [],
-    taskPresetIds,
-    taskReasoningEfforts: {},
-    defaultReasoningEffort: "none",
-    autoOrganizeCards: true,
-    lastCardAutoOrganizeAt: "",
-  };
-}
-
-const LEGACY_CORRECTION_TASKS = ["practice", "review"];
-const LEGACY_GENERATION_TASKS = ["topic", "cards", "reading", "conversation", "grammar", "ui-translation"];
-
-/** Folds a pre-task-consolidation per-feature override
- * (`practice`/`topic`/`cards`/`review`/`reading`/`conversation`/`grammar`/
- * `ui-translation` keys — see types.ts's `LlmTask` doc comment for why the
- * task list collapsed to three) into the current shape, preferring a value
- * already stored under a current task name. Runs on every load (cheap,
- * idempotent) rather than as a one-time flagged migration: taskPresetIds/
- * taskReasoningEfforts are untyped string-keyed records at the storage
- * layer, so a stale legacy key would otherwise just sit there unused
- * forever instead of being picked up. Lossy by nature when a learner had
- * set *different* overrides across several now-folded-together tasks (e.g.
- * a different preset for "topic" than for "cards") — only one survives,
- * picked by LEGACY_*_TASKS priority order. */
-function foldLegacyTaskKeys<T>(record: Partial<Record<string, T>>): Partial<Record<LlmTask, T>> {
-  const next: Partial<Record<LlmTask, T>> = {};
-  if (record.correction !== undefined) next.correction = record.correction;
-  if (record.generation !== undefined) next.generation = record.generation;
-  if (record["card-organize"] !== undefined) next["card-organize"] = record["card-organize"];
-
-  if (next.correction === undefined) {
-    for (const legacy of LEGACY_CORRECTION_TASKS) {
-      if (record[legacy] !== undefined) {
-        next.correction = record[legacy];
-        break;
-      }
-    }
-  }
-  if (next.generation === undefined) {
-    for (const legacy of LEGACY_GENERATION_TASKS) {
-      if (record[legacy] !== undefined) {
-        next.generation = record[legacy];
-        break;
-      }
-    }
-  }
+  const room = config.providers.find(p => providerKind(p) === "room" && roomIdFromBaseUrl(p.baseUrl) === config.network.roomId.trim());
+  const shared = (raw.networkProviderPresetIds ?? []).map((id: string) => presetIdToRef(config, id)).filter((ref: unknown) => isModelRef(ref) && config.providers.some(p => p.id === ref.providerId && providerKind(p) === "http"));
+  const voiceProviderId = config.tts?.providerId ?? config.defaultModel?.providerId;
+  const voiceRef = config.tts && voiceProviderId ? { providerId: voiceProviderId, model: config.tts.model } : undefined;
+  const next: LingoSettings = { ...base, tasks, roomProvide: room ? { [room.id]: { enabled: raw.networkProviderEnabled === true, shared } } : {}, recentModels: [] };
+  if (voiceRef && raw.ttsVoiceByLanguage) next.ttsVoicesByRef[voiceRefKey(voiceRef)] = { ...raw.ttsVoiceByLanguage };
+  // Persist before consumers subscribe; raw migration fields are no longer app-local settings.
+  saveJson(STORAGE_NAME, next);
   return next;
 }
 
-function withConsolidatedTaskOverrides(settings: LingoSettings): LingoSettings {
-  return {
-    ...settings,
-    taskPresetIds: foldLegacyTaskKeys(settings.taskPresetIds),
-    taskReasoningEfforts: foldLegacyTaskKeys(settings.taskReasoningEfforts),
-  };
-}
+export function saveSettings(settings: LingoSettings): void { saveJson(STORAGE_NAME, settings); }
+export function subscribeSettings(cb: () => void): () => void { return subscribeStorage(cb); }
+export const llmLocalAdapter = {
+  get: (): LlmLocalSettings => { const { tasks, roomProvide, recentModels } = loadSettings(); return { tasks, roomProvide, recentModels }; },
+  set: (next: LlmLocalSettings) => saveSettings({ ...loadSettings(), ...next }),
+  subscribe: subscribeSettings,
+};
 
-export function loadSettings(): LingoSettings {
-  return withConsolidatedTaskOverrides(loadResolvedSettings());
-}
-
-function loadResolvedSettings(): LingoSettings {
-  const raw = loadJson<unknown>(STORAGE_NAME, null);
-  if (isLingoSettings(raw)) return withValidLanguages(raw);
-  if (isPreCardOrganizeSettings(raw)) {
-    return withValidLanguages({ ...raw, autoOrganizeCards: true, lastCardAutoOrganizeAt: "" });
-  }
-  if (isPreCommonSettingsShape(raw)) return withValidLanguages(migrateToTaskPresetIds(raw));
-  if (isPreTaskModelsSettings(raw)) return withValidLanguages(migrateToTaskPresetIds({ ...raw, taskModels: {} }));
-  if (isPreReadingAidsSettings(raw)) {
-    return withValidLanguages(migrateToTaskPresetIds({ ...raw, showReadingAids: true, taskModels: {} }));
-  }
-  if (isPreAutoExtractSettings(raw)) {
-    return withValidLanguages(migrateToTaskPresetIds({ ...raw, autoExtractCards: true, showReadingAids: true, taskModels: {} }));
-  }
-  if (isPreTtsEngineSettings(raw)) {
-    return withValidLanguages(migrateToTaskPresetIds({ ...raw, autoExtractCards: true, showReadingAids: true, taskModels: {} }));
-  }
-  if (isPreConnectionModeSettings(raw)) {
-    return withValidLanguages(
-      migrateToTaskPresetIds({ ...raw, connectionMode: "api", autoExtractCards: true, showReadingAids: true, taskModels: {} }),
-    );
-  }
-  if (isLegacySettings(raw)) {
-    return withValidLanguages(
-      migrateToTaskPresetIds({
-        targetLanguages: [raw.targetLanguage],
-        activeLanguage: raw.targetLanguage,
-        nativeLanguage: raw.nativeLanguage,
-        presetId: raw.presetId,
-        connectionMode: "api",
-        autoExtractCards: true,
-        showReadingAids: true,
-        taskModels: {},
-      }),
-    );
-  }
-  return defaultSettings();
-}
-
-export function saveSettings(settings: LingoSettings): void {
-  saveJson(STORAGE_NAME, settings);
-}
-
-export function subscribeSettings(cb: () => void): () => void {
-  return subscribeStorage(cb);
-}
-
-/**
- * Repoints any `taskPresetIds`/`networkProviderPresetIds` entry naming a
- * preset id in `remap`'s keys at its mapped surviving id instead. Used by
- * `useNetworkModelSync`'s mirror self-heal
- * (`lib/networkMirrorSync.ts#consolidateNetworkMirror`) after it merges
- * duplicate mist-network:// presets for the same advertised model into one
- * survivor: without this, a per-task override that had been pointing at one
- * of the now-removed duplicates would silently degrade to the shared
- * config's default preset (see `resolvePreset`'s fallback) instead of
- * continuing to point at the same model under its surviving id. A no-op
- * (never calls `saveSettings`) when nothing in the current settings actually
- * names a remapped id.
- */
-export function remapPresetIdReferences(remap: ReadonlyMap<string, string>): void {
-  if (remap.size === 0) return;
+export function setTtsVoiceOverride(ref: { providerId: string; model: string }, subtag: string, voice: string): void {
   const current = loadSettings();
-  let changed = false;
-
-  const taskPresetIds = { ...current.taskPresetIds };
-  for (const task of Object.keys(taskPresetIds) as LlmTask[]) {
-    const id = taskPresetIds[task];
-    const remapped = id ? remap.get(id) : undefined;
-    if (remapped) {
-      taskPresetIds[task] = remapped;
-      changed = true;
-    }
-  }
-
-  const networkProviderPresetIds = current.networkProviderPresetIds.map((id) => remap.get(id) ?? id);
-  if (networkProviderPresetIds.some((id, i) => id !== current.networkProviderPresetIds[i])) changed = true;
-
-  if (!changed) return;
-  saveSettings({ ...current, taskPresetIds, networkProviderPresetIds });
+  const key = voiceRefKey(ref);
+  const map = { ...current.ttsVoicesByRef[key] };
+  if (voice.trim()) map[subtag] = voice.trim(); else delete map[subtag];
+  saveSettings({ ...current, ttsVoicesByRef: { ...current.ttsVoicesByRef, [key]: map } });
 }
 
 /** Adds a target language (no-op if already present) and makes it active. */
@@ -580,15 +139,6 @@ export function setActiveLanguage(language: string): LingoSettings {
   return next;
 }
 
-/** Switches this app's LLM transport between a direct API preset and the AI
- * Network room (see lib/llmConnection.ts for how this is resolved). */
-export function setConnectionMode(mode: LlmConnectionMode): LingoSettings {
-  const current = loadSettings();
-  const next: LingoSettings = { ...current, connectionMode: mode };
-  saveSettings(next);
-  return next;
-}
-
 /** Toggles background mistake-card auto-extraction (lib/autoExtract.ts). */
 export function setAutoExtractCards(enabled: boolean): LingoSettings {
   const current = loadSettings();
@@ -605,69 +155,6 @@ export function setShowReadingAids(enabled: boolean): LingoSettings {
   const next: LingoSettings = { ...current, showReadingAids: enabled };
   saveSettings(next);
   return next;
-}
-
-/** Toggles this app's participation as an AI Network provider (see
- * hooks/useNetworkProvider.ts). Independent of `connectionMode`. */
-export function setNetworkProviderEnabled(enabled: boolean): LingoSettings {
-  const current = loadSettings();
-  const next: LingoSettings = { ...current, networkProviderEnabled: enabled };
-  saveSettings(next);
-  return next;
-}
-
-/** Replaces the full set of shared-config preset ids this app advertises
- * when acting as an AI Network provider. */
-export function setNetworkProviderPresetIds(ids: string[]): LingoSettings {
-  const current = loadSettings();
-  const next: LingoSettings = { ...current, networkProviderPresetIds: ids };
-  saveSettings(next);
-  return next;
-}
-
-/** Sets (or, with `""`, clears) a per-task preset override. See
- * lib/llmConnection.ts's `connectionForTask`. */
-export function setTaskPresetId(task: LlmTask, presetId: string): LingoSettings {
-  const current = loadSettings();
-  const next: LingoSettings = { ...current, taskPresetIds: { ...current.taskPresetIds, [task]: presetId } };
-  saveSettings(next);
-  return next;
-}
-
-/** Sets a per-task `reasoning_effort` override. See
- * lib/llmConnection.ts's `connectionForTask`. */
-export function setTaskReasoningEffort(task: LlmTask, effort: ReasoningEffort): LingoSettings {
-  const current = loadSettings();
-  const next: LingoSettings = { ...current, taskReasoningEfforts: { ...current.taskReasoningEfforts, [task]: effort } };
-  saveSettings(next);
-  return next;
-}
-
-/** Sets the `reasoning_effort` used for any task without its own override. */
-export function setDefaultReasoningEffort(effort: ReasoningEffort): LingoSettings {
-  const current = loadSettings();
-  const next: LingoSettings = { ...current, defaultReasoningEffort: effort };
-  saveSettings(next);
-  return next;
-}
-
-/** Sets (or, with `""`/whitespace-only, clears) the TTS voice override for
- * one language — `subtag` is a BCP-47 primary subtag, e.g. "en"/"ja"/"zh" (see
- * lib/ttsVoiceByLanguage.ts's `primaryLangSubtag`; SettingsView derives it
- * from each configured target/native language before calling this). Clearing
- * removes the key entirely rather than storing an empty string, so the map
- * only ever holds real overrides. */
-export function setTtsVoiceOverride(subtag: string, voice: string): LingoSettings {
-  const current = loadSettings();
-  const next: Record<string, string> = { ...current.ttsVoiceByLanguage };
-  if (voice.trim()) {
-    next[subtag] = voice.trim();
-  } else {
-    delete next[subtag];
-  }
-  const settings: LingoSettings = { ...current, ttsVoiceByLanguage: next };
-  saveSettings(settings);
-  return settings;
 }
 
 /** Toggles lib/cardAutoOrganize.ts's silent background merge pass. */

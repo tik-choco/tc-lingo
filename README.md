@@ -28,8 +28,12 @@ npm run preview   # ビルド結果のプレビュー
 
 ## LLM接続
 
-接続情報(baseUrl / APIキー / モデル / temperature)は tik-choco ファミリーで共有される `tc-shared-llm-config-v1` に保存されます。同一オリジンで動く他の tik-choco アプリ(tc-translate など)で設定済みの接続があれば、TC Lingo でもそのまま選択できます。
+AI設定は `@tik-choco/mistai` v0.9.0 の「接続先 / タスク / 提供」を使います。HTTP接続とルーム接続は同じ一覧で管理し、各タスクは `{providerId, model}` でモデルを選択します。推論の強さはタスクごとに保存し、temperature は送信しません。提供はルームごとに有効化し、共有するHTTPモデルを選びます。
+
+接続情報と既定モデル、TTSは tik-choco ファミリーで共有される `tc-shared-llm-config-v1` に保存されます。旧プリセットとルーム設定は読み込み時に移行し、他の未移行アプリのために旧共有フィールドも保持します。タスク、提供設定、最近使ったモデルと言語別ボイスはアプリ内に保存します。言語別ボイスはTTSの接続先・モデルごとに保持します。
+
+検証は `node --test scripts/llm-settings.test.mjs` と `node scripts/check-i18n.mjs`、`npm run build` で実行できます。
 
 ## tik-choco ファミリーとの連携
 
-同一オリジンにデプロイされた他のアプリと `localStorage` ベースで連携するための共有コントラクト(`src/lib/sharedBus.ts` / `appManifest.ts` / `llmConfig.ts`)を [`protocol`](../protocol) リポジトリからベンダリングしています。詳細は `CLAUDE.md` を参照してください。
+同一オリジンにデプロイされた他のアプリと `localStorage` ベースで連携します。`src/lib/sharedBus.ts` / `appManifest.ts` は [`protocol`](../protocol) リポジトリの共有コントラクトです。LLM設定のスキーマ・保存・モデル解決は `@tik-choco/mistai/llm-config` に委譲します。

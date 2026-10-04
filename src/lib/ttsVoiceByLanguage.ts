@@ -1,26 +1,8 @@
 import { languageBcp47Tag } from "./languages";
 
-// Per-language TTS voice override: `LingoSettings.ttsVoiceByLanguage` lets a
-// learner pin a specific voice id for a given spoken language, overriding the
-// single global `config.tts?.voice` (lib/llmConfig.ts) whenever the text
-// being read is in that language. This matters once more than one language is
-// in play (see types.ts's `LingoSettings.targetLanguages`) and/or the AI
-// Network room mixes providers that each do better with a different voice for
-// a given language — see tc-docs' AI Network TTS lang-hint fix
-// (mistai v0.7.0, `tts_request.lang`).
-//
-// Keyed by BCP-47 *primary subtag* (e.g. "en", "ja", "zh" — never the full
-// tag), not the canonical language name (lib/languages.ts's `languageOptions`
-// values): this is the same coarse granularity `tts_request.lang` carries
-// across the wire, so a provider matching an incoming request's `lang` against
-// its own `ttsVoiceByLanguage` (hooks/useNetworkProvider.ts) uses the exact
-// same key scheme as the consumer side resolving its own playback voice
-// (hooks/useSpeech.ts) — no separate mapping table needed. One consequence:
-// "Chinese (Simplified)" and "Chinese (Traditional)" share the "zh" key (both
-// reduce to that primary subtag), so they can't have independently overridden
-// voices — an acceptable minimal-implementation tradeoff (see the settings UI
-// in SettingsView.tsx, which already collapses same-subtag languages into one
-// row for this reason).
+// A language map belongs to one exact TTS ref in LingoSettings.ttsVoicesByRef.
+// Its keys use BCP-47 primary subtags, shared with the room's language hint.
+// Simplified and Traditional Chinese therefore share the same "zh" override.
 export function primaryLangSubtag(bcp47: string): string {
   return bcp47.trim().split("-")[0].toLowerCase();
 }

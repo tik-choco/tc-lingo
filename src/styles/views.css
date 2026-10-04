@@ -165,10 +165,7 @@ button:disabled {
    (see index.css). Keep `background-color` (not the `background` shorthand)
    in any later per-select override, or it will wipe the chevron image. */
 .field-grid select,
-.llm-edit-fields select,
-.llm-model-field select,
-.level-row-select,
-.task-model-field select {
+.level-row-select {
   appearance: none;
   padding: var(--space-2) calc(var(--space-3) + 20px) var(--space-2) var(--space-3);
   border: 1px solid var(--border);
@@ -184,35 +181,23 @@ button:disabled {
 }
 
 :root[data-theme="dark"] .field-grid select,
-:root[data-theme="dark"] .llm-edit-fields select,
-:root[data-theme="dark"] .llm-model-field select,
-:root[data-theme="dark"] .level-row-select,
-:root[data-theme="dark"] .task-model-field select {
+:root[data-theme="dark"] .level-row-select {
   background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%239aa7b5' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
 }
 
 .field-grid select:hover:not(:disabled),
-.llm-edit-fields select:hover:not(:disabled),
-.llm-model-field select:hover:not(:disabled),
-.level-row-select:hover:not(:disabled),
-.task-model-field select:hover:not(:disabled) {
+.level-row-select:hover:not(:disabled) {
   border-color: var(--border-strong);
 }
 
 .field-grid select:focus,
-.llm-edit-fields select:focus,
-.llm-model-field select:focus,
-.level-row-select:focus,
-.task-model-field select:focus {
+.level-row-select:focus {
   border-color: var(--primary-border);
 }
 
 /* The auto-fetch loading placeholders render as disabled selects. */
 .field-grid select:disabled,
-.llm-edit-fields select:disabled,
-.llm-model-field select:disabled,
-.level-row-select:disabled,
-.task-model-field select:disabled {
+.level-row-select:disabled {
   opacity: 0.55;
   cursor: not-allowed;
 }
@@ -856,396 +841,6 @@ button:disabled {
 
 /* ---------------- Settings view ---------------- */
 
-/* Flat provider/model card grids (接続先 / モデル), each cell either a
-   compact display card or, while being added/edited, expanded to the full
-   grid width with its input fields. Ported from tc-pdf-viewer's
-   .model-row-list design, adapted to tc-lingo's tokens. */
-
-.llm-flat-section {
-  margin-bottom: var(--space-4);
-}
-
-.llm-row-list {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-  gap: var(--space-2);
-}
-
-.llm-row {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 2px;
-  padding: 10px 52px 10px 10px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-s);
-  background: var(--surface);
-  box-shadow: var(--shadow-1);
-  transition: background var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease),
-    transform var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
-}
-
-.llm-row:hover {
-  box-shadow: var(--shadow-2);
-  transform: translateY(-1px);
-}
-
-.llm-flat-section-providers .llm-row {
-  background: var(--primary-soft);
-}
-
-.llm-flat-section-models .llm-row {
-  background: var(--surface-3);
-}
-
-.llm-flat-section-models .llm-row.llm-row-active {
-  border-color: var(--primary-border);
-  background: var(--primary-soft);
-}
-
-.llm-row-main {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 2px;
-  width: 100%;
-  min-width: 0;
-  padding: 0;
-  border: none;
-  background: transparent;
-  color: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-
-.llm-row-label {
-  font-size: 0.82rem;
-  font-weight: 600;
-  max-width: 100%;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.llm-row-model {
-  font-size: 0.72rem;
-  color: var(--text-muted);
-  max-width: 100%;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.llm-row-provider {
-  font-size: 0.68rem;
-  color: var(--text-muted);
-  font-style: italic;
-  max-width: 100%;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.llm-row-badge {
-  background: var(--primary-soft-strong);
-  color: var(--primary);
-  font-size: 0.62rem;
-  font-weight: 600;
-  padding: 2px 6px;
-  border-radius: var(--radius-pill);
-  white-space: nowrap;
-}
-
-.llm-row-icons {
-  position: absolute;
-  top: 6px;
-  right: 6px;
-  display: flex;
-  gap: 2px;
-}
-
-.llm-icon-button {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 20px;
-  height: 20px;
-  padding: 0;
-  border: none;
-  background: transparent;
-  border-radius: 50%;
-  color: var(--text-muted);
-  cursor: pointer;
-  transition: color var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease);
-}
-
-.llm-icon-button:hover {
-  color: var(--text);
-  background: var(--surface-2);
-}
-
-.llm-row-remove:hover {
-  color: var(--danger-text);
-  background: var(--danger-soft);
-}
-
-.llm-row.llm-row-editing {
-  grid-column: 1 / -1;
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: var(--space-2);
-  padding: 10px;
-  background: var(--surface-2);
-  box-shadow: none;
-  transform: none;
-  cursor: default;
-}
-
-.llm-edit-fields {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-}
-
-/* Selects in these rows are covered by the shared styled-select block near
-   .field-grid (don't re-add them here with a `background:` shorthand — it
-   would wipe the chevron image). */
-.llm-edit-fields input {
-  padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-s);
-  background: var(--surface-2);
-  color: var(--text);
-}
-
-.llm-edit-fields input:focus {
-  border-color: var(--primary-border);
-}
-
-.llm-model-field {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-
-.llm-model-field select,
-.llm-model-field input {
-  flex: 1 1 auto;
-  min-width: 0;
-}
-
-.llm-add-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-  margin-top: var(--space-2);
-}
-
-.llm-form-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  padding: 8px 12px;
-  border-radius: var(--radius-s);
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  color: var(--text-muted);
-  font-size: 0.78rem;
-  cursor: pointer;
-  transition: color var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease);
-}
-
-.llm-form-btn:hover:not(:disabled) {
-  color: var(--text);
-}
-
-.llm-form-btn-primary {
-  background: var(--primary);
-  border-color: var(--primary);
-  color: var(--on-primary);
-}
-
-.llm-form-btn-primary:hover:not(:disabled) {
-  background: var(--primary-hover);
-  border-color: var(--primary-hover);
-  color: var(--on-primary);
-}
-
-.llm-form-btn:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
-.llm-add-tile {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  min-height: 64px;
-  border: 1px dashed var(--border-strong);
-  border-radius: var(--radius-s);
-  background: transparent;
-  color: var(--text-muted);
-  font-size: 0.72rem;
-  cursor: pointer;
-  transition: border-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
-}
-
-.llm-add-tile:hover:not(:disabled) {
-  border-color: var(--primary);
-  color: var(--primary);
-}
-
-.llm-add-tile:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-  border-color: var(--border-strong);
-  color: var(--text-muted);
-}
-
-.llm-form-warning {
-  font-style: italic;
-  margin-top: calc(-1 * var(--space-1));
-}
-
-/* Connection mode segmented toggle (直接API接続 / AI Network). */
-.connection-mode-toggle {
-  display: inline-flex;
-  align-self: flex-start;
-  padding: 2px;
-  gap: 2px;
-  border-radius: var(--radius-pill);
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-}
-
-.connection-mode-button {
-  border: none;
-  background: transparent;
-  border-radius: var(--radius-pill);
-  padding: var(--space-1) var(--space-3);
-  font-size: 0.85rem;
-  font-weight: 600;
-  color: var(--text-muted);
-}
-
-.connection-mode-button:hover:not(:disabled) {
-  background: var(--surface-3);
-  border-color: transparent;
-  color: var(--text);
-}
-
-.connection-mode-button-active {
-  background: var(--primary);
-  color: var(--on-primary);
-}
-
-.connection-mode-button-active:hover:not(:disabled) {
-  background: var(--primary-hover);
-  color: var(--on-primary);
-}
-
-/* AI Network room id + connection status (Settings, network mode only). */
-.network-panel {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-}
-
-.network-status {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  padding: var(--space-3);
-  background: var(--surface-2);
-  border-radius: var(--radius-m);
-  border: 1px solid transparent;
-}
-
-.network-status-error {
-  border-color: var(--danger-border);
-}
-
-.network-status-steps {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-}
-
-.network-status-step {
-  position: relative;
-  padding: var(--space-1) var(--space-3) var(--space-1) var(--space-5);
-  border-radius: var(--radius-pill);
-  border: 1px solid var(--border);
-  background: transparent;
-  color: var(--text-subtle);
-  font-size: 0.8rem;
-  font-weight: 600;
-}
-
-.network-status-step::before {
-  content: "";
-  position: absolute;
-  left: var(--space-3);
-  top: 50%;
-  width: 6px;
-  height: 6px;
-  border-radius: var(--radius-pill);
-  background: var(--text-subtle);
-  transform: translateY(-50%);
-}
-
-/* "done" (already-passed) steps get a light tint so they read as complete
-   without competing with the "current" step below — see .current for why
-   the two need to look clearly different, not just a shade apart. */
-.network-status-step.done {
-  border-color: var(--primary-border);
-  background: var(--primary-soft);
-  color: var(--primary);
-}
-
-.network-status-step.done::before {
-  background: var(--primary);
-}
-
-/* The step the user actually needs to notice: filled solid instead of
-   tinted, bold, and on-primary text so it reads unmistakably differently
-   from "done" (soft tint) and "not yet reached" (outline only) — those two
-   used to share the same text color and a ~6% alpha difference in
-   background, which made the active step blend into the rest of the row. */
-.network-status-step.current {
-  border-color: var(--primary);
-  background: var(--primary);
-  color: var(--on-primary);
-  font-weight: 700;
-}
-
-.network-status-step.current::before {
-  background: var(--on-primary);
-  animation: network-status-pulse 1.4s var(--ease) infinite;
-}
-
-@keyframes network-status-pulse {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.35;
-  }
-}
-
-.network-status-timestamp {
-  font-size: 0.75rem;
-}
-
 /* ---------------- History view ---------------- */
 
 .history-topic-toggle {
@@ -1634,10 +1229,10 @@ button:disabled {
 }
 
 /* ---------------- Settings view: tab bar (全般/AI接続/AI Network/タスク) ----------------
-   Modeled on tc-translate's .settings-tab-bar/.settings-tab (its
+   Modeled on tc-translate's .lingo-settings-tab-bar/.lingo-settings-tab (its
    src/components/SettingsModal.tsx), re-themed to this app's tokens. */
 
-.settings-tab-bar {
+.lingo-settings-tab-bar {
   display: flex;
   flex-wrap: nowrap;
   gap: 2px;
@@ -1650,7 +1245,7 @@ button:disabled {
   overflow-x: auto;
 }
 
-.settings-tab {
+.lingo-settings-tab {
   flex-shrink: 0;
   border: none;
   background: transparent;
@@ -1662,17 +1257,17 @@ button:disabled {
   white-space: nowrap;
 }
 
-.settings-tab:hover:not(:disabled) {
+.lingo-settings-tab:hover:not(:disabled) {
   background: var(--surface-3);
   color: var(--text);
 }
 
-.settings-tab.active {
+.lingo-settings-tab.active {
   background: var(--primary);
   color: var(--on-primary);
 }
 
-.settings-tab.active:hover:not(:disabled) {
+.lingo-settings-tab.active:hover:not(:disabled) {
   background: var(--primary-hover);
   color: var(--on-primary);
 }
@@ -1765,193 +1360,4 @@ button:disabled {
 .sync-summary-counts {
   color: var(--text-muted);
   font-size: 0.85rem;
-}
-
-/* ---------------- Settings view: タスク tab rows ----------------
-   One row per LLM task (既定 + LLM_TASKS + TTS): a short label (with a hover
-   tooltip carrying the fuller description, see the [data-tip] rule below)
-   plus a 2-column field group (preset select + reasoning_effort select, or
-   the TTS model/voice pair). Modeled on tc-translate's .task-model-item. */
-
-.task-model-item {
-  display: grid;
-  grid-template-columns: 90px minmax(0, 1fr);
-  align-items: start;
-  gap: var(--space-3);
-  padding-bottom: var(--space-3);
-  margin-bottom: var(--space-3);
-  border-bottom: 1px solid var(--border);
-}
-
-.task-model-item:last-of-type {
-  margin-bottom: 0;
-  padding-bottom: 0;
-  border-bottom: none;
-}
-
-.task-model-item > span {
-  font-size: 0.8rem;
-  font-weight: 600;
-  color: var(--text-muted);
-  min-width: 0;
-  padding-top: var(--space-2);
-}
-
-/* Hover tooltip carrying the one-sentence task description — see
-   tc-docs/drafts/llm-settings-common-v1.md §3.2: labels stay short, detail
-   moves to this tooltip instead of an always-visible hint paragraph. */
-.task-model-item > span[data-tip] {
-  position: relative;
-  cursor: help;
-  text-decoration: underline dotted;
-  text-underline-offset: 2px;
-  width: fit-content;
-}
-
-.task-model-item > span[data-tip]:hover::after {
-  content: attr(data-tip);
-  position: absolute;
-  left: 0;
-  top: calc(100% + 4px);
-  z-index: 10;
-  width: max-content;
-  max-width: 240px;
-  padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-s);
-  background: var(--surface-3);
-  color: var(--text);
-  font-size: 0.75rem;
-  line-height: 1.5;
-  box-shadow: var(--shadow-2);
-}
-
-.task-model-fields {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  min-width: 0;
-}
-
-.task-model-field {
-  display: flex;
-  align-items: center;
-  gap: var(--space-1);
-  min-width: 0;
-}
-
-.task-model-field select {
-  width: 100%;
-  min-width: 0;
-  flex: 1 1 auto;
-}
-
-/* AI Networkルーム提供のプリセットが選ばれているタスクselectに添える印。
-   .llm-row-badgeと同じ見た目で統一する。 */
-.task-model-field .task-badge-network {
-  flex-shrink: 0;
-  background: var(--primary-soft-strong);
-  color: var(--primary);
-  font-size: 0.62rem;
-  font-weight: 600;
-  padding: 2px 6px;
-  border-radius: var(--radius-pill);
-  white-space: nowrap;
-}
-
-/* select内、AI Networkルーム由来のoptionをテキスト色で区別する。ネイティブ
-   optionはbackground/borderなど装飾がほぼ効かないブラウザが多いため、
-   colorのみ .llm-row-network / .task-badge-network と同じprimaryトーンで
-   当てる。 */
-option.option-network {
-  color: var(--primary);
-}
-
-/* ---------------- Settings view: AI接続 tab — Network-derived rows ----------------
-   Highlights a provider/preset card mirrored in from the AI Network room
-   (mist-network:// pseudo-provider — see lib/networkModels.ts) against the
-   regular .llm-flat-section-providers/-models tints. */
-.llm-row.llm-row-network {
-  border: 1px dashed var(--primary);
-  background: var(--primary-soft);
-}
-
-.llm-row-badges {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-}
-
-/* ---------------- Settings view: AI Network tab — share-models checklist ----------------
-   Checkbox list of presets advertised to the room when acting as a
-   provider — same responsive card-grid pattern as .llm-row-list above
-   (narrower cells since each card is just a checkbox + two short lines),
-   rather than one full-width row per item. */
-
-.network-share-models {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-}
-
-.network-share-models > label {
-  margin-bottom: 0;
-  color: var(--text-muted);
-  font-size: 0.8rem;
-  font-weight: 700;
-}
-
-.network-share-list {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-  gap: var(--space-2);
-  margin-top: var(--space-1);
-}
-
-.network-share-item {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  column-gap: var(--space-3);
-  row-gap: 1px;
-  align-items: center;
-  min-width: 0;
-  padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-s);
-  background: var(--surface);
-  cursor: pointer;
-  transition: background var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
-}
-
-.network-share-item:hover {
-  background: var(--surface-2);
-}
-
-.network-share-item:has(input:checked) {
-  background: var(--primary-soft);
-  border-color: var(--primary-border);
-}
-
-.network-share-item input[type="checkbox"] {
-  grid-row: 1 / 3;
-  margin: 0;
-}
-
-.network-share-item-label {
-  min-width: 0;
-  color: var(--text);
-  font-size: 0.85rem;
-  font-weight: 600;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.network-share-item-model {
-  min-width: 0;
-  color: var(--text-muted);
-  font-size: 0.75rem;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }

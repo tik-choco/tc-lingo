@@ -124,7 +124,7 @@ const MIN_INSUFFICIENT_CUE_FILL_WORDS = 5;
 export function ReviewView() {
   const [settings, setSettings] = useState(loadSettings);
   useEffect(() => subscribeSettings(() => setSettings(loadSettings())), []);
-  const { connection } = useLlmConnection();
+  const { connection } = useLlmConnection("review");
 
   const [queue, setQueue] = useState<Card[]>(() => dueCards(new Date(), settings.activeLanguage));
   const [index, setIndex] = useState(0);
@@ -320,7 +320,7 @@ export function ReviewView() {
     let llmAccepted = false;
     let llmNote = "";
     let llmRewrite = "";
-    const reviewConn = connection ? connectionForTask("correction") : null;
+    const reviewConn = connection ? connectionForTask("review") : null;
     // Ask for a second opinion on a strict "wrong", and also on a strict
     // "near" that ISN'T the deterministic lemmaMatch case (that one already
     // has its own note — see review-lemma-form-note below — and skipping the

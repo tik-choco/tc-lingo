@@ -24,7 +24,7 @@ export interface GrammarExplainProps {
 type FetchState = "idle" | "loading" | "loaded" | "error";
 
 export function GrammarExplain({ sentence, targetLanguage }: GrammarExplainProps) {
-  const { connection } = useLlmConnection();
+  const { connection } = useLlmConnection("grammar");
   const [expanded, setExpanded] = useState(false);
   const [state, setState] = useState<FetchState>("idle");
   const [points, setPoints] = useState<GrammarPoint[]>([]);
@@ -46,7 +46,7 @@ export function GrammarExplain({ sentence, targetLanguage }: GrammarExplainProps
 
   async function fetchExplanation() {
     if (!connection) return;
-    const conn = connectionForTask("generation");
+    const conn = connectionForTask("grammar");
     if (!conn) return;
     setState("loading");
     setError("");

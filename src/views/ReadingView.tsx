@@ -30,7 +30,8 @@ function formatDate(createdAt: string): string {
 }
 
 export function ReadingView() {
-  const { connection } = useLlmConnection();
+  const { connection } = useLlmConnection("reading");
+  const cardsConnection = connectionForTask("cards");
   const speech = useSpeech();
 
   const [settings, setSettings] = useState(loadSettings);
@@ -76,7 +77,7 @@ export function ReadingView() {
       setError(t("reading-need-llm"));
       return;
     }
-    const conn = connectionForTask("generation");
+    const conn = connectionForTask("reading");
     if (!conn) return;
     setError("");
     setGenerating(true);
@@ -114,8 +115,8 @@ export function ReadingView() {
   }
 
   async function extractCards() {
-    if (!openPassage || !connection) return;
-    const conn = connectionForTask("generation");
+    if (!openPassage || !cardsConnection) return;
+    const conn = connectionForTask("cards");
     if (!conn) return;
     setError("");
     setExtracting(true);
@@ -297,7 +298,7 @@ export function ReadingView() {
 
           {candidates === null ? (
             <div class="button-row">
-              <button type="button" onClick={extractCards} disabled={extracting || !connection}>
+              <button type="button" onClick={extractCards} disabled={extracting || !cardsConnection}>
                 {extracting ? t("reading-extracting") : t("reading-extract-cards")}
               </button>
             </div>

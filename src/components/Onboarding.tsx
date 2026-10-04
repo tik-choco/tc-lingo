@@ -8,31 +8,22 @@ import {
   ArrowLeft,
   ArrowRight,
   Check,
-  Cpu,
   History,
   Languages,
   Layers,
-  Network,
   PenLine,
-  Plug,
   Repeat2,
   Sparkles,
   X,
 } from "lucide-preact";
-import { fetchModels } from "@tik-choco/mistai";
-import { ensurePreset, ensureProvider, loadLlmConfig, saveLlmConfig } from "../lib/llmConfig";
-import { testConnection, testNetworkConnection } from "../lib/llm";
-import { setSharedNetworkRoomId } from "../lib/llmConnection";
-import { localizeNetworkError } from "../lib/network";
+import { AiSettings } from "../views/SettingsView";
 import { isEditableTarget, SHORTCUT_PRIORITY } from "../lib/keyboard";
 import { useShortcuts } from "../hooks/useShortcuts";
-import type { LlmConnectionMode } from "../types";
 import {
   addTargetLanguage,
   loadSettings,
   removeTargetLanguage,
   saveSettings,
-  setConnectionMode,
 } from "../lib/settings";
 import { languageDisplayName } from "../lib/languages";
 import { LanguageSelect } from "./LanguageSelect";
@@ -52,112 +43,13 @@ function getFocusableElements(container: HTMLElement): HTMLElement[] {
 
 const STEP_COUNT = 4;
 
-interface LlmDraft {
-  baseUrl: string;
-  apiKey: string;
-  model: string;
-}
-
-type TestState = { phase: "idle" } | { phase: "busy" } | { phase: "ok" } | { phase: "error"; message: string };
-
-function inputValue(event: Event): string {
-  return (event.target as HTMLInputElement).value;
-}
-
 export function Onboarding(props: { onClose: () => void }) {
   const [step, setStep] = useState(0);
 
   const cardRef = useRef<HTMLDivElement>(null);
   const previouslyFocused = useRef<Element | null>(null);
 
-  const [connectionModeDraft, setConnectionModeDraft] = useState<LlmConnectionMode>(
-    () => loadSettings().connectionMode,
-  );
-
-  const [llm, setLlm] = useState<LlmDraft>({ baseUrl: "https://api.openai.com/v1", apiKey: "", model: "" });
-  const [testState, setTestState] = useState<TestState>({ phase: "idle" });
-  const [modelOptions, setModelOptions] = useState<string[]>([]);
-  const [fetchingModels, setFetchingModels] = useState(false);
-
-  const [roomId, setRoomId] = useState(() => loadLlmConfig()?.network.roomId ?? "");
-  const [networkTestState, setNetworkTestState] = useState<TestState>({ phase: "idle" });
-
   const [langSettings, setLangSettings] = useState(loadSettings);
-
-  function selectConnectionMode(mode: LlmConnectionMode) {
-    setConnectionModeDraft(mode);
-    setTestState({ phase: "idle" });
-    setNetworkTestState({ phase: "idle" });
-  }
-
-  function updateLlm(patch: Partial<LlmDraft>) {
-    setLlm((prev) => ({ ...prev, ...patch }));
-    setTestState({ phase: "idle" });
-  }
-
-  async function loadModelOptions() {
-    setFetchingModels(true);
-    try {
-      const ids = await fetchModels({ baseUrl: llm.baseUrl, apiKey: llm.apiKey });
-      setModelOptions(ids);
-      if (!llm.model && ids.length > 0) updateLlm({ model: ids[0] });
-    } catch {
-      // Non-fatal — the model field stays free text either way.
-    } finally {
-      setFetchingModels(false);
-    }
-  }
-
-  async function handleTest() {
-    if (testState.phase === "busy") return;
-    setTestState({ phase: "busy" });
-    try {
-      await testConnection(llm);
-      setTestState({ phase: "ok" });
-    } catch (error) {
-      setTestState({ phase: "error", message: error instanceof Error ? error.message : String(error) });
-    }
-  }
-
-  async function handleTestNetwork() {
-    if (networkTestState.phase === "busy") return;
-    setNetworkTestState({ phase: "busy" });
-    try {
-      await testNetworkConnection(roomId);
-      setNetworkTestState({ phase: "ok" });
-    } catch (error) {
-      setNetworkTestState({ phase: "error", message: localizeNetworkError(error, t("ob-network-test-error-fallback")) });
-    }
-  }
-
-  /** Persists the draft as (or into) the shared config's default preset —
-   * this is the connection every tik-choco app on the origin will offer by
-   * default afterwards. */
-  function saveLlmDraft() {
-    if (!llm.baseUrl.trim() || !llm.model.trim()) return;
-    const current = loadLlmConfig() ?? {
-      v: 1 as const,
-      providers: [],
-      presets: [],
-      defaultPresetId: "",
-      network: { roomId: "" },
-      updatedAt: "",
-    };
-    const providerId = ensureProvider(current, { baseUrl: llm.baseUrl, apiKey: llm.apiKey });
-    const presetId = ensurePreset(current, { providerId, model: llm.model });
-    if (!current.defaultPresetId) current.defaultPresetId = presetId;
-    saveLlmConfig(current);
-  }
-
-  function handleLlmNext() {
-    if (connectionModeDraft === "network") {
-      if (roomId.trim()) setSharedNetworkRoomId(roomId.trim());
-    } else {
-      saveLlmDraft();
-    }
-    setConnectionMode(connectionModeDraft);
-    setStep(2);
-  }
 
   function handleLanguageNext() {
     setStep(3);
@@ -207,7 +99,7 @@ export function Onboarding(props: { onClose: () => void }) {
           return true;
         }
         if (step === 1) {
-          handleLlmNext();
+          setStep(2);
           return true;
         }
         if (step === 2) {
@@ -264,151 +156,7 @@ export function Onboarding(props: { onClose: () => void }) {
           </div>
         )}
 
-        {step === 1 && (
-          <div class="ob-body">
-            <div class="ob-step-head">
-              <Cpu size={22} />
-              <h2 class="ob-title">{t("ob-llm-title")}</h2>
-            </div>
-
-            <div class="ob-mode-toggle" role="radiogroup" aria-label={t("ob-llm-mode-label")}>
-              <button
-                type="button"
-                role="radio"
-                aria-checked={connectionModeDraft === "api"}
-                class={`ob-mode-option${connectionModeDraft === "api" ? " is-active" : ""}`}
-                onClick={() => selectConnectionMode("api")}
-              >
-                <Plug size={16} />
-                {t("ob-llm-mode-api")}
-              </button>
-              <button
-                type="button"
-                role="radio"
-                aria-checked={connectionModeDraft === "network"}
-                class={`ob-mode-option${connectionModeDraft === "network" ? " is-active" : ""}`}
-                onClick={() => selectConnectionMode("network")}
-              >
-                <Network size={16} />
-                {t("ob-llm-mode-network")}
-              </button>
-            </div>
-
-            {connectionModeDraft === "api" ? (
-              <>
-                <p class="ob-text">{t("ob-llm-body")}</p>
-
-                <div class="ob-field">
-                  <label class="ob-label">{t("ob-llm-base-url-label")}</label>
-                  <input
-                    class="ob-input"
-                    type="text"
-                    placeholder={t("ob-llm-base-url-placeholder")}
-                    value={llm.baseUrl}
-                    onInput={(e) => updateLlm({ baseUrl: inputValue(e) })}
-                  />
-                </div>
-                <div class="ob-field">
-                  <label class="ob-label">{t("ob-llm-api-key-label")}</label>
-                  <input
-                    class="ob-input"
-                    type="password"
-                    placeholder={t("ob-llm-api-key-placeholder")}
-                    value={llm.apiKey}
-                    onInput={(e) => updateLlm({ apiKey: inputValue(e) })}
-                  />
-                </div>
-                <div class="ob-field">
-                  <label class="ob-label">{t("ob-llm-model-label")}</label>
-                  <div class="ob-model-row">
-                    <input
-                      class="ob-input"
-                      type="text"
-                      list="ob-model-options"
-                      placeholder={t("ob-llm-model-placeholder")}
-                      value={llm.model}
-                      onInput={(e) => updateLlm({ model: inputValue(e) })}
-                    />
-                    <datalist id="ob-model-options">
-                      {modelOptions.map((id) => (
-                        <option key={id} value={id} />
-                      ))}
-                    </datalist>
-                    <button
-                      class="ob-icon-btn"
-                      type="button"
-                      onClick={loadModelOptions}
-                      disabled={fetchingModels || !llm.baseUrl.trim()}
-                      title={t("ob-llm-fetch-title")}
-                    >
-                      {fetchingModels ? t("ob-llm-fetch-busy") : t("ob-llm-fetch-label")}
-                    </button>
-                  </div>
-                </div>
-
-                <div class="ob-test-row">
-                  <button
-                    class="ob-btn"
-                    type="button"
-                    onClick={() => void handleTest()}
-                    disabled={testState.phase === "busy" || !llm.baseUrl.trim() || !llm.model.trim()}
-                  >
-                    {testState.phase === "busy" ? <span class="spinner" /> : <Plug size={16} />}
-                    {testState.phase === "busy" ? t("ob-llm-test-busy") : t("ob-llm-test-button")}
-                  </button>
-                  {testState.phase === "ok" && (
-                    <span class="ob-test-ok">
-                      <Check size={16} />
-                      {t("ob-llm-test-ok")}
-                    </span>
-                  )}
-                </div>
-                {testState.phase === "error" && (
-                  <p class="ob-error">{t("ob-llm-test-error", { message: testState.message })}</p>
-                )}
-              </>
-            ) : (
-              <>
-                <p class="ob-text">{t("ob-network-body")}</p>
-
-                <div class="ob-field">
-                  <label class="ob-label">{t("ob-network-room-id-label")}</label>
-                  <input
-                    class="ob-input"
-                    type="text"
-                    placeholder={t("ob-network-room-id-placeholder")}
-                    value={roomId}
-                    onInput={(e) => {
-                      setRoomId(inputValue(e));
-                      setNetworkTestState({ phase: "idle" });
-                    }}
-                  />
-                </div>
-
-                <div class="ob-test-row">
-                  <button
-                    class="ob-btn"
-                    type="button"
-                    onClick={() => void handleTestNetwork()}
-                    disabled={networkTestState.phase === "busy" || !roomId.trim()}
-                  >
-                    {networkTestState.phase === "busy" ? <span class="spinner" /> : <Network size={16} />}
-                    {networkTestState.phase === "busy" ? t("ob-llm-test-busy") : t("ob-llm-test-button")}
-                  </button>
-                  {networkTestState.phase === "ok" && (
-                    <span class="ob-test-ok">
-                      <Check size={16} />
-                      {t("ob-llm-test-ok")}
-                    </span>
-                  )}
-                </div>
-                {networkTestState.phase === "error" && (
-                  <p class="ob-error">{t("ob-llm-test-error", { message: networkTestState.message })}</p>
-                )}
-              </>
-            )}
-          </div>
-        )}
+        {step === 1 && <div class="ob-body"><AiSettings /></div>}
 
         {step === 2 && (
           <div class="ob-body">
@@ -520,7 +268,7 @@ export function Onboarding(props: { onClose: () => void }) {
               </button>
             )}
             {step === 1 && (
-              <button class="ob-btn ob-btn-accent" type="button" onClick={handleLlmNext}>
+              <button class="ob-btn ob-btn-accent" type="button" onClick={() => setStep(2)}>
                 {t("ob-save-next")}
                 <ArrowRight size={16} />
               </button>

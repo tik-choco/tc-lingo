@@ -113,7 +113,9 @@ function roundLabel(round: AttemptRound): string {
 }
 
 export function PracticeView() {
-  const { connection } = useLlmConnection();
+  const { connection } = useLlmConnection("practice");
+  const topicConnection = connectionForTask("topic");
+  const cardsConnection = connectionForTask("cards");
   const speech = useSpeech();
   const [settings, setSettings] = useState(loadSettings);
   useEffect(() => subscribeSettings(() => setSettings(loadSettings())), []);
@@ -281,11 +283,11 @@ export function PracticeView() {
   }
 
   async function generateTopic() {
-    if (!connection) {
+    if (!topicConnection) {
       setError(t("practice-need-llm"));
       return;
     }
-    const conn = connectionForTask("generation");
+    const conn = connectionForTask("topic");
     if (!conn) return;
     setError("");
     setGeneratingTopic(true);
@@ -317,11 +319,11 @@ export function PracticeView() {
   }
 
   async function generateAllTopics() {
-    if (!connection) {
+    if (!topicConnection) {
       setError(t("practice-need-llm"));
       return;
     }
-    const conn = connectionForTask("generation");
+    const conn = connectionForTask("topic");
     if (!conn) return;
     setError("");
     setGeneratingAllTopics(true);
@@ -386,10 +388,9 @@ export function PracticeView() {
       setError(t("practice-need-llm"));
       return;
     }
-    const practiceConn = connectionForTask("correction");
+    const practiceConn = connectionForTask("practice");
     if (!practiceConn) return;
-    const cardsConn = connectionForTask("generation");
-    if (!cardsConn) return;
+    const cardsConn = connectionForTask("cards");
     setError("");
     setAutoAddedCards([]);
     setSubmitting(true);
@@ -417,7 +418,7 @@ export function PracticeView() {
       recordOutputSample(settings.activeLanguage, text, feedback.corrected);
       // Fire-and-forget: never blocks feedback rendering. Gates on
       // settings.autoExtractCards itself, so it's safe to always call.
-      autoExtractMistakeCards({
+      if (cardsConn) autoExtractMistakeCards({
         connection: cardsConn,
         targetLanguage: settings.activeLanguage,
         nativeLanguage: settings.nativeLanguage,
@@ -445,10 +446,9 @@ export function PracticeView() {
       setError(t("practice-need-llm"));
       return;
     }
-    const practiceConn = connectionForTask("correction");
+    const practiceConn = connectionForTask("practice");
     if (!practiceConn) return;
-    const cardsConn = connectionForTask("generation");
-    if (!cardsConn) return;
+    const cardsConn = connectionForTask("cards");
     setError("");
     setAutoAddedRetryCards([]);
     setCheckingRetry(true);
@@ -480,7 +480,7 @@ export function PracticeView() {
       // Same fire-and-forget auto-extraction as submitAttempt, but only when
       // the retry actually needed a correction (a "" corrected means the
       // retry answer was already natural — nothing to extract).
-      if (result.corrected.trim()) {
+      if (result.corrected.trim() && cardsConn) {
         autoExtractMistakeCards({
           connection: cardsConn,
           targetLanguage: settings.activeLanguage,
@@ -506,11 +506,11 @@ export function PracticeView() {
   // (recalled from their translation in review), not word/meaning pairs.
   async function saveMainSentenceCards() {
     if (!currentAttempt || !activeTopic) return;
-    if (!connection) {
+    if (!cardsConnection) {
       setError(t("practice-need-llm"));
       return;
     }
-    const conn = connectionForTask("generation");
+    const conn = connectionForTask("cards");
     if (!conn) return;
     setError("");
     setSavingSentenceCards(true);
@@ -537,11 +537,11 @@ export function PracticeView() {
   // save/disable independently.
   async function saveRetrySentenceCards() {
     if (!currentAttempt?.retryCorrected) return;
-    if (!connection) {
+    if (!cardsConnection) {
       setError(t("practice-need-llm"));
       return;
     }
-    const conn = connectionForTask("generation");
+    const conn = connectionForTask("cards");
     if (!conn) return;
     setError("");
     setSavingRetrySentenceCards(true);
@@ -564,8 +564,8 @@ export function PracticeView() {
   }
 
   async function extractCards() {
-    if (!currentAttempt || !connection) return;
-    const conn = connectionForTask("generation");
+    if (!currentAttempt || !cardsConnection) return;
+    const conn = connectionForTask("cards");
     if (!conn) return;
     setError("");
     setExtracting(true);
@@ -898,7 +898,7 @@ export function PracticeView() {
                   placeholder={t("practice-retry-placeholder")}
                 />
                 <div class="button-row">
-                  <button type="button" onClick={checkRetryAnswer} disabled={checkingRetry || !retryAnswer.trim() || !connection}>
+                  <button type="button" onClick={checkRetryAnswer} disabled={checkingRetry || !retryAnswer.trim() || !cardsConnection}>
                     {checkingRetry ? (
                       t("practice-retry-checking")
                     ) : (
