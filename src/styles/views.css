@@ -87,7 +87,7 @@ button {
   transition: background var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
 }
 
-button:hover:not(:disabled) {
+button:hover:not(:disabled):not(.mistai-switch) {
   background: var(--surface-2);
   border-color: var(--border-strong);
 }
@@ -1164,13 +1164,7 @@ button:disabled {
   font-weight: 700;
 }
 
-/* `.field-grid label` (0,1,1) beats a bare `.toggle-row` (0,1,0) and forces
-   flex-direction: column, so `.toggle-row` is always used as
-   `<label class="toggle-row">` inside `.field-grid` — re-declare it qualified
-   as `.field-grid label.toggle-row` (0,2,1) to win, and restate row direction
-   explicitly since the unqualified rule alone can't override the column set above. */
-.toggle-row,
-.field-grid label.toggle-row {
+.toggle-row {
   display: flex;
   flex-direction: row;
   align-items: center;

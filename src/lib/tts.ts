@@ -7,6 +7,8 @@
 // Modeled on tc-news's lib/openaiTts.ts synthesizeSpeech and tc-translate's
 // lib/voice.ts synthesizeSpeech.
 
+import { isTtsSpeed } from "@tik-choco/mistai";
+
 export interface TtsVoiceTarget {
   baseUrl: string;
   apiKey: string;
@@ -27,7 +29,7 @@ export async function synthesizeSpeechApi(text: string, target: TtsVoiceTarget):
     input: text,
     response_format: "mp3",
   };
-  if (target.speed !== undefined) body.speed = target.speed;
+  if (isTtsSpeed(target.speed)) body.speed = target.speed;
 
   const response = await fetch(url, {
     method: "POST",

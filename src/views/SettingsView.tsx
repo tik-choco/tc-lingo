@@ -1,7 +1,7 @@
 import { MistBuildBanner } from "../components/MistBuildBanner";
 import { useEffect, useState } from "preact/hooks";
 import { Sparkles, Volume2, X } from "lucide-preact";
-import { LlmSettings, useLlmConfig } from "@tik-choco/mistai/preact";
+import { LlmSettings, Switch, useLlmConfig } from "@tik-choco/mistai/preact";
 import { loadSettings, subscribeSettings, llmLocalAdapter, addTargetLanguage, removeTargetLanguage,
   saveSettings, setAutoExtractCards, setShowReadingAids, setAutoOrganizeCards, setTtsVoiceOverride, voiceRefKey } from "../lib/settings";
 import { resolveVoice } from "../lib/llmConfig";
@@ -152,38 +152,26 @@ export function SettingsView() {
             <h2>{t("settings-automation-heading")}</h2>
 
             <div class="field-grid">
-              <label class="toggle-row">
-                <input
-                  type="checkbox"
-                  checked={settings.autoExtractCards}
-                  onChange={(e) => setAutoExtractCards((e.target as HTMLInputElement).checked)}
-                />
+              <div class="toggle-row">
+                <Switch label={t("settings-auto-extract-label")} checked={settings.autoExtractCards} onChange={setAutoExtractCards} />
                 {t("settings-auto-extract-label")}
-              </label>
+              </div>
               <p class="hint-text">{t("settings-auto-extract-hint")}</p>
             </div>
 
             <div class="field-grid">
-              <label class="toggle-row">
-                <input
-                  type="checkbox"
-                  checked={settings.showReadingAids}
-                  onChange={(e) => setShowReadingAids((e.target as HTMLInputElement).checked)}
-                />
+              <div class="toggle-row">
+                <Switch label={t("settings-reading-aids-label")} checked={settings.showReadingAids} onChange={setShowReadingAids} />
                 {t("settings-reading-aids-label")}
-              </label>
+              </div>
               <p class="hint-text">{t("settings-reading-aids-hint")}</p>
             </div>
 
             <div class="field-grid">
-              <label class="toggle-row">
-                <input
-                  type="checkbox"
-                  checked={settings.autoOrganizeCards}
-                  onChange={(e) => setAutoOrganizeCards((e.target as HTMLInputElement).checked)}
-                />
+              <div class="toggle-row">
+                <Switch label={t("settings-auto-organize-label")} checked={settings.autoOrganizeCards} onChange={setAutoOrganizeCards} />
                 {t("settings-auto-organize-label")}
-              </label>
+              </div>
               <p class="hint-text">{t("settings-auto-organize-hint")}</p>
             </div>
 
