@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { afterEach, test } from 'node:test';
 import { registerHooks } from 'node:module';
 import { encode, decode, RoomProviderService } from '@tik-choco/mistai';
+import { emptyLlmConfig, saveLlmConfig } from '@tik-choco/mistai/llm-config';
 
 // Exercise real mistai consumers/providers with an in-memory transport; only
 // replace the browser WASM wrapper and Vite-specific build diagnostics.
@@ -14,7 +15,7 @@ class TestMistNode {
   onEvent(handler) { this.handler = handler; }
   joinRoom(roomId) {
     queueMicrotask(() => this.receive(roomId, {
-      v: 1, type: 'provider_hello', models: ['m-42'], services: ['chat', 'oai'],
+      v: 1, type: 'provider_hello', models: ['m-42'], services: ['chat', 'oai', 'tts'],
     }));
   }
   leaveRoom() {}
@@ -53,12 +54,13 @@ globalThis.localStorage = {
   getItem: key => storage.get(key) ?? null,
   setItem: (key, value) => storage.set(key, String(value)),
 };
-const { rooms, requestNetworkChat, requestNetworkOpenAi } = await import('../src/lib/network.ts');
+const { rooms, requestNetworkChat, requestNetworkOpenAi, requestNetworkTts } = await import('../src/lib/network.ts');
 const { chatJson } = await import('../src/lib/llm.ts');
 const { translateUiMessages } = await import('../src/lib/uiTranslation.ts');
 
 afterEach(() => {
-  for (const room of ['chat-room', 'vision-room', 'provider-room']) rooms.disconnectRoom(room);
+  for (const room of ['chat-room', 'vision-room', 'provider-room', 'tts-room', 'tts-provider-room']) rooms.disconnectRoom(room);
+  storage.delete('tc-shared-llm-config-v1');
   if (TestMistNode.instance) { TestMistNode.instance.sent = []; TestMistNode.instance.onSend = undefined; }
 });
 
@@ -172,5 +174,56 @@ test('mistai room provider forwards inbound effort upstream ahead of its default
     assert.equal(bodies.at(-1).reasoning_effort, effort ?? 'low');
     assert.equal('temperature' in bodies.at(-1), false);
     assert.equal(bodies.at(-1).stream, true);
+  }
+});
+
+
+test('mistai room TTS forwards caller speed/format, falls back to shared speed and reports real MIME', { timeout: 5000 }, async t => {
+  const bodies = [];
+  t.mock.method(globalThis, 'fetch', async (url, init) => {
+    if (url.endsWith('/voices')) return Response.json({ voices: ['alloy'] });
+    bodies.push(JSON.parse(init.body));
+    return new Response('audio', { headers: { 'Content-Type': 'audio/wav' } });
+  });
+  const config = { v: 1, providers: [
+    { id: 'http', label: 'HTTP', baseUrl: 'https://example.test/v1', apiKey: '' },
+    { id: 'room', label: 'Room', baseUrl: 'mist-network://tts-provider-room', apiKey: '' },
+  ], tts: { providerId: 'http', model: 'speech-model', voice: 'alloy', speed: 1.5 } };
+  const service = new RoomProviderService({ config, consumers: rooms,
+    roomProvide: { room: { enabled: true, shared: [] } } });
+  t.after(() => service.destroy());
+  await new Promise(resolve => {
+    if (service.states.room.status === 'connected') return resolve();
+    const stop = service.subscribe(() => { if (service.states.room.status === 'connected') { stop(); resolve(); } });
+  });
+  const node = TestMistNode.instance;
+  for (const hints of [{ speed: 2, response_format: 'flac' }, {}, { speed: 10, response_format: 'bogus' }]) {
+    const done = Promise.withResolvers();
+    node.onSend = message => { if (message.type === 'tts_response') done.resolve(message); };
+    node.receive('tts-provider-room', { v: 1, type: 'tts_request', id: 'tts-' + bodies.length, text: 'Hello', ...hints });
+    const response = await done.promise;
+    assert.equal(bodies.at(-1).speed, hints.speed === 2 ? 2 : 1.5);
+    assert.equal(bodies.at(-1).response_format, hints.response_format === 'flac' ? 'flac' : undefined);
+    assert.equal(response.mime, 'audio/wav');
+  }
+});
+
+
+test('app room TTS helper fills shared speed and lets explicit caller hints win', { timeout: 5000 }, async () => {
+  const config = emptyLlmConfig();
+  config.tts = { model: 'speech-model', speed: 1.5 };
+  saveLlmConfig(config);
+  await rooms.roomConsumer('tts-room').connect('tts-room');
+  const node = TestMistNode.instance;
+  node.onSend = (message, room) => {
+    if (message.type === 'tts_request') node.receive(room, { v: 1, type: 'tts_response', id: message.id,
+      seq: 0, data: Buffer.from('audio').toString('base64'), last: true, mime: 'audio/wav' });
+  };
+  for (const hints of [{}, { speed: 2, responseFormat: 'flac' }]) {
+    const blob = await requestNetworkTts('tts-room', { text: 'Hello', ...hints });
+    const request = node.sent.filter(({ message }) => message.type === 'tts_request').at(-1).message;
+    assert.equal(request.speed, hints.speed ?? 1.5);
+    assert.equal(request.response_format, hints.responseFormat);
+    assert.equal(blob.type, 'audio/wav');
   }
 });
