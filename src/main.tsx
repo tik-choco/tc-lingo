@@ -6,7 +6,7 @@ import "./styles/views.css";
 import { App } from "./app.tsx";
 import { writeAppManifest } from "./lib/appManifest";
 import { BUS_VERSION } from "./lib/sharedBus";
-import { getVersion as getMistlibVersion } from "./vendor/mistlib/wrappers/web/index.js";
+import { getVersion as getMistlibVersion } from "@tik-choco/mistlib-web";
 
 void getMistlibVersion()
   .then((version) => { captureMistBuildInfo(); console.log(`[tc-lingo] mistlib ${version}`); })

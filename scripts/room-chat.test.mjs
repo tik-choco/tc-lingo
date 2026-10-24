@@ -27,7 +27,7 @@ class TestMistNode {
   receive(roomId, message) { this.handler(0, 'remote-peer', encode(message), roomId); }
 }
 globalThis.__roomChatTestNode = TestMistNode;
-const wrapperUrl = new URL('../src/vendor/mistlib/wrappers/web/index.js', import.meta.url).href;
+const wrapperUrl = import.meta.resolve('@tik-choco/mistlib-web');
 const diagnosticsUrl = new URL('../src/lib/mistBuildInfo.ts', import.meta.url).href;
 registerHooks({
   resolve(specifier, context, next) {

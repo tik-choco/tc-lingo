@@ -1,16 +1,15 @@
 import { captureMistBuildInfo, markMistLoadError } from "./mistBuildInfo";
-// Thin storage-only path into the vendored mistlib wasm module, used to pull
+// Thin storage-only path into the npm mistlib wasm engine, used to pull
 // down CID-addressed payloads published by other apps (e.g. tc-translate's
 // `lingo-card-inbox` topic — see lib/cardInbox.ts). Deliberately independent
 // of `network.ts`'s `ConsumerClient` (AI Network / LLM chat) usage —
 // storage_add/storage_get only need the wasm node initialized, not a joined
 // room — but reuses the same persisted node id so both features share one
 // node identity. Ported byte-for-byte in shape from tc-translate's
-// src/lib/mistStorage.ts (the two apps' vendored mistlib copies differ only
-// in commit, not storage API surface).
+// src/lib/mistStorage.ts; both apps use the same npm storage API.
 //
 // mistlib's storage_add/storage_get require `init_with_config` to have run
-// first (see src/vendor/mistlib/wrappers/web/index.js's MistNode.init() for
+// first (see @tik-choco/mistlib-web's MistNode.init() for
 // the equivalent LLM-Network-side init, used by network.ts). This lazily
 // performs that init once, shared by every caller in this module.
 //
@@ -20,10 +19,8 @@ import { captureMistBuildInfo, markMistLoadError } from "./mistBuildInfo";
 // backlog), so a future backup publisher doesn't need to re-derive this
 // module from scratch.
 
-// The engine comes from npm, the same specifier the vendored wrapper imports.
-// Importing the vendored pkg/ copy here instead would put a *second*, separately
-// versioned wasm instance in the bundle, and storage written through one
-// instance is invisible to the MistNode running in the other.
+// Use the same npm engine specifier as @tik-choco/mistlib-web so storage
+// and MistNode share one wasm instance.
 import init, * as mistWasm from '@tik-choco/mistlib'
 import { NODE_ID_STORAGE_KEY } from './network'
 

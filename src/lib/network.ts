@@ -1,6 +1,6 @@
 import { createSharedNodeScope, createRoomConsumers, formatMistaiError, MESSAGES_EN, MESSAGES_JA } from "@tik-choco/mistai";
 import type { ChatMessage, RoomChatOptions } from "@tik-choco/mistai";
-import { MistNode } from "../vendor/mistlib/wrappers/web/index.js";
+import { MistNode } from "@tik-choco/mistlib-web";
 import { mistSignalingConfig } from "./mistSignaling";
 import { captureMistBuildInfo, markMistLoadError } from "./mistBuildInfo";
 import { getUiLanguage } from "../i18n";

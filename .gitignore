@@ -16,8 +16,6 @@ dist-ssr
 .env.*
 !.env.example
 .mistlib-src/
-# Same, for the separate repo the JS wrapper (wrappers/web) now lives in.
-.mistlib-examples-src/
 
 # Editor directories and files
 .vscode/*
