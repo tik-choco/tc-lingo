@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { afterEach, test } from 'node:test';
 import { registerHooks } from 'node:module';
-import { encode, decode, RoomProviderService } from '@tik-choco/mistai';
+import { encode, decode, EVENT_RAW, RoomProviderService } from '@tik-choco/mistai';
 import { emptyLlmConfig, saveLlmConfig } from '@tik-choco/mistai/llm-config';
 
 // Exercise real mistai consumers/providers with an in-memory transport; only
@@ -24,7 +24,7 @@ class TestMistNode {
     this.sent.push({ to, roomId, message });
     this.onSend?.(message, roomId);
   }
-  receive(roomId, message) { this.handler(0, 'remote-peer', encode(message), roomId); }
+  receive(roomId, message) { this.handler(EVENT_RAW, 'remote-peer', encode(message), roomId); }
 }
 globalThis.__roomChatTestNode = TestMistNode;
 const wrapperUrl = import.meta.resolve('@tik-choco/mistlib-web');

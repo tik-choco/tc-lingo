@@ -12,16 +12,17 @@
 // Node lifecycle, persistent node id, and event wiring are ported unchanged
 // from the library (same as lib/p2p/network.ts).
 
-import { getPersistentNodeId, type MistNodeLike } from "@tik-choco/mistai";
+import {
+  DELIVERY_RELIABLE,
+  EVENT_PEER_CONNECTED,
+  EVENT_PEER_DISCONNECTED,
+  EVENT_RAW,
+  getPersistentNodeId,
+  type MistNodeLike,
+} from "@tik-choco/mistai";
 import { decodeSync, encodeSync, type SyncMessage } from "./protocol";
 
-// Mist event/delivery constants, mirrored from the mistlib web wrapper (same
-// values lib/p2p/network.ts mirrors) so this file doesn't have to import the
-// library's own Network class just to get at them.
-export const EVENT_RAW = 0;
-export const EVENT_PEER_CONNECTED = 5;
-export const EVENT_PEER_DISCONNECTED = 6;
-export const DELIVERY_RELIABLE = 0;
+export { DELIVERY_RELIABLE, EVENT_PEER_CONNECTED, EVENT_PEER_DISCONNECTED, EVENT_RAW } from "@tik-choco/mistai";
 
 export interface SyncNetworkCallbacks {
   onPeerConnected?(peerId: string): void;

@@ -10,8 +10,8 @@
   },
   "dependencies": {
     "@tik-choco/mistai": "github:tik-choco-lab/mistai",
-    "@tik-choco/mistlib": "0.6.6",
-    "@tik-choco/mistlib-web": "0.1.0",
+    "@tik-choco/mistlib": "0.7.1",
+    "@tik-choco/mistlib-web": "0.3.0",
     "lucide-preact": "^0.577.0",
     "preact": "^10.29.3"
   },
