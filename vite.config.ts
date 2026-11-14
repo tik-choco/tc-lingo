@@ -29,7 +29,7 @@ export default defineConfig(({ mode }) => {
   return {
     base: process.env.VITE_BASE_PATH || '/',
     plugins: [preact()],
-    resolve: { alias },
+    resolve: { alias, dedupe: ['preact'] },
     optimizeDeps: { exclude: ['@tik-choco/mistlib', '@tik-choco/mistlib-web'] },
     define: { __MISTLIB_SOURCE__: JSON.stringify(localEngine ? 'local' : 'registry') },
     // The dev server refuses to serve files outside the project root

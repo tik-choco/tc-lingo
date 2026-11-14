@@ -12,7 +12,7 @@
 // Persistence key: tc-lingo:levels-v1.
 import type { CefrBand, LanguageLevelRecord } from "../types";
 import { diffChars } from "./diff";
-import { loadJson, saveJson, subscribeStorage } from "./storage";
+import { loadDomainJson, nextUpdatedAt, saveJson, subscribeStorage, type StorageWriteOptions } from "./storage";
 
 const STORAGE_NAME = "levels-v1";
 
@@ -32,9 +32,8 @@ function isCefrBand(value: unknown): value is CefrBand {
 
 /** Exported so lib/sync/snapshot.ts can validate remote level records with
  * the exact same rules used to load local ones. Unlike the other domain
- * types, LanguageLevelRecord has always had a required `updatedAt` (no
- * backfill needed here — see recordOutputSample/setLevelOverride, which set
- * it on every write already). */
+ * types, LanguageLevelRecord has a required `updatedAt`; local loading
+ * supplies the migration baseline if it is absent from older data. */
 export function isLevelRecord(value: unknown): value is LanguageLevelRecord {
   if (value === null || typeof value !== "object") return false;
   const r = value as Record<string, unknown>;
@@ -50,13 +49,13 @@ export function isLevelRecord(value: unknown): value is LanguageLevelRecord {
 }
 
 export function loadLevels(): LanguageLevelRecord[] {
-  const raw = loadJson<unknown[]>(STORAGE_NAME, []);
+  const raw = loadDomainJson(STORAGE_NAME);
   if (!Array.isArray(raw)) return [];
   return raw.filter(isLevelRecord);
 }
 
-function saveLevels(records: LanguageLevelRecord[]): void {
-  saveJson(STORAGE_NAME, records);
+function saveLevels(records: LanguageLevelRecord[], options?: StorageWriteOptions): void {
+  saveJson(STORAGE_NAME, records, options);
 }
 
 export function subscribeLevels(cb: () => void): () => void {
@@ -92,7 +91,7 @@ export function recordOutputSample(language: string, original: string, corrected
   const accuracy = sampleAccuracy(original, corrected);
   const records = loadLevels();
   const existing = records.find((r) => r.language === lang);
-  const updatedAt = new Date().toISOString();
+  const updatedAt = nextUpdatedAt(existing?.updatedAt);
   if (existing) {
     existing.score = existing.samples === 0 ? accuracy : existing.score * (1 - EMA_ALPHA) + accuracy * EMA_ALPHA;
     existing.samples += 1;
@@ -137,7 +136,7 @@ export function setLevelOverride(language: string, band: CefrBand | ""): void {
   const existing = records.find((r) => r.language === lang);
   if (existing) {
     existing.override = band;
-    existing.updatedAt = new Date().toISOString();
+    existing.updatedAt = nextUpdatedAt(existing.updatedAt);
   } else {
     records.push({ language: lang, score: 0, samples: 0, override: band, updatedAt: new Date().toISOString() });
   }
@@ -152,8 +151,8 @@ export function setLevelOverride(language: string, band: CefrBand | ""): void {
  * removing a target language via lib/settings.ts's removeTargetLanguage
  * leaves its level record in place — see lib/sync/tombstones.ts's header for
  * why "levels" therefore never needs a tombstone). */
-export function replaceLevelsForSync(records: LanguageLevelRecord[]): void {
-  saveLevels(records);
+export function replaceLevelsForSync(records: LanguageLevelRecord[], options?: StorageWriteOptions): void {
+  saveLevels(records, options);
 }
 
 /** English prompt fragment steering generation to the learner's level, or ""

@@ -1,4 +1,4 @@
-import { createSharedNodeScope, createRoomConsumers, formatMistaiError, MESSAGES_EN, MESSAGES_JA } from "@tik-choco/mistai";
+import { createSharedNodeScope, createRoomConsumers, formatMistaiError, getPersistentNodeId, MESSAGES_EN, MESSAGES_JA } from "@tik-choco/mistai";
 import type { ChatMessage, RoomChatOptions } from "@tik-choco/mistai";
 import { MistNode } from "@tik-choco/mistlib-web";
 import { mistSignalingConfig } from "./mistSignaling";
@@ -15,6 +15,9 @@ export const createMistNode = createSharedNodeScope(id => {
   };
   return node;
 });
+export function createAppNode() {
+  return createMistNode(getPersistentNodeId(NODE_ID_STORAGE_KEY));
+}
 export const rooms = createRoomConsumers(createMistNode, {
   nodeIdStorageKey: NODE_ID_STORAGE_KEY,
   requestTimeoutMs: 120_000,

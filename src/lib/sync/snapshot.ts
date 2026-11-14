@@ -18,6 +18,7 @@ import { loadPassages, replacePassagesForSync, sanitizePassages } from "../readi
 import { loadConversations, replaceConversationsForSync, sanitizeConversations } from "../conversation";
 import { isLevelRecord, loadLevels, replaceLevelsForSync } from "../level";
 import { loadTombstones, mergeTombstones, sanitizeTombstones, unionTombstones } from "./tombstones";
+import { saveJsonBatch, type StorageWriteOptions } from "../storage";
 import type { SyncMergeSummary, SyncSnapshot, SyncStoreCounts, SyncStoreName } from "./types";
 
 const SNAPSHOT_VERSION = 1;
@@ -77,7 +78,7 @@ function pickWinner<T extends { updatedAt: string }>(a: T, b: T): T {
  * replace*ForSync write + change-event when nothing actually moved, and is
  * what makes a second merge of the same snapshot produce an all-zero
  * summary (idempotence). */
-function mergeStore<T extends { updatedAt: string }>(
+export function mergeStore<T extends { updatedAt: string }>(
   local: T[],
   remote: T[],
   keyOf: (item: T) => string,
@@ -127,7 +128,7 @@ function mergeStore<T extends { updatedAt: string }>(
  * (and changes nothing) when `remote` is not a valid v1 snapshot; otherwise
  * returns what changed locally. Only stores that actually changed are
  * persisted (avoids pointless change-event storms); tombstones are always
- * merged (union with remote's, capped) regardless of whether any entity
+ * merged (union with remote's) regardless of whether any entity
  * store changed. Idempotent (merging the same snapshot twice yields an
  * all-zero summary the second time) and commutative between two peers — see
  * ./types.ts's header for why that's the point of this merge model. */
@@ -152,21 +153,8 @@ export function mergeSyncSnapshot(remote: unknown): SyncMergeSummary | null {
   const cardsResult = mergeStore(loadCards(), remoteCards, (c) => c.id, "cards", tombstoneDeletedAtByKey);
   const topicsResult = mergeStore(loadTopics(), remoteTopics, (t) => t.id, "topics", tombstoneDeletedAtByKey);
   const attemptsResult = mergeStore(loadAttempts(), remoteAttempts, (a) => a.id, "attempts", tombstoneDeletedAtByKey);
-  // An attempt whose topic didn't survive the merge is orphaned: this
-  // happens when one peer deletes a topic (and tombstones the attempts it
-  // could see at delete time — lib/topics.ts's deleteTopic) while the other
-  // peer independently records a *new* attempt against that same topic
-  // before ever seeing the delete. That attempt has no tombstone of its own
-  // (the deleting peer never knew it existed) and would otherwise survive
-  // pointing at a topic that no longer exists anywhere. Drop it too, same as
-  // deleteTopic()'s own cascade.
-  const survivingTopicIds = new Set(topicsResult.merged.map((t) => t.id));
-  const orphanedAttempts = attemptsResult.merged.filter((a) => !survivingTopicIds.has(a.topicId));
-  if (orphanedAttempts.length > 0) {
-    attemptsResult.merged = attemptsResult.merged.filter((a) => survivingTopicIds.has(a.topicId));
-    attemptsResult.counts = { ...attemptsResult.counts, removed: attemptsResult.counts.removed + orphanedAttempts.length };
-    attemptsResult.changed = true;
-  }
+  // A concurrent attempt has its own revision and may not have been visible
+  // when its topic was deleted. Keep it unless it has its own tombstone.
   const passagesResult = mergeStore(loadPassages(), remotePassages, (p) => p.id, "passages", tombstoneDeletedAtByKey);
   const conversationsResult = mergeStore(
     loadConversations(),
@@ -195,4 +183,15 @@ export function mergeSyncSnapshot(remote: unknown): SyncMergeSummary | null {
     conversations: conversationsResult.counts,
     levels: levelsResult.counts,
   };
+}
+
+/** Persists a complete snapshot with a fresh per-key concurrency check. */
+export function replaceSyncSnapshot(next: SyncSnapshot, options?: StorageWriteOptions,
+  refresh?: (store: SyncStoreName | "tombstones") => SyncSnapshot[SyncStoreName] | SyncSnapshot["tombstones"]): void {
+  const stores = ["cards", "topics", "attempts", "passages", "conversations", "levels", "tombstones"] as const;
+  saveJsonBatch(stores.map((store) => ({
+    name: store === "tombstones" ? "sync-tombstones-v1" : store + "-v1",
+    value: next[store],
+    refresh: refresh ? () => refresh(store) : undefined,
+  })), options);
 }

@@ -2,8 +2,8 @@
 // tc-lingo:attempts-v1. Same-topic repeated practice (round 1/2/3) is the
 // core differentiator this app is built around — see CLAUDE.md.
 import type { AttemptRound, PracticeAttempt, Topic } from "../types";
-import { loadJson, newId, saveJson, subscribeStorage } from "./storage";
-import { recordTombstone } from "./sync/tombstones";
+import { loadDomainJson, newId, nextUpdatedAt, saveJson, subscribeStorage, type StorageWriteOptions } from "./storage";
+import { persistDeletions } from "./sync/tombstones";
 
 const TOPICS_NAME = "topics-v1";
 const ATTEMPTS_NAME = "attempts-v1";
@@ -96,20 +96,20 @@ export function sanitizeAttempts(raw: unknown): PracticeAttempt[] {
 /** `language`, when given, also matches topics saved with "" (unassigned,
  * predating multi-language support) so they aren't orphaned out of view. */
 export function loadTopics(language?: string): Topic[] {
-  const topics = sanitizeTopics(loadJson<unknown[]>(TOPICS_NAME, []));
+  const topics = sanitizeTopics(loadDomainJson(TOPICS_NAME));
   return language ? topics.filter((t) => t.language === language || t.language === "") : topics;
 }
 
-function saveTopics(topics: Topic[]): void {
-  saveJson(TOPICS_NAME, topics);
+function saveTopics(topics: Topic[], options?: StorageWriteOptions): void {
+  saveJson(TOPICS_NAME, topics, options);
 }
 
 export function loadAttempts(): PracticeAttempt[] {
-  return sanitizeAttempts(loadJson<unknown[]>(ATTEMPTS_NAME, []));
+  return sanitizeAttempts(loadDomainJson(ATTEMPTS_NAME));
 }
 
-function saveAttempts(attempts: PracticeAttempt[]): void {
-  saveJson(ATTEMPTS_NAME, attempts);
+function saveAttempts(attempts: PracticeAttempt[], options?: StorageWriteOptions): void {
+  saveJson(ATTEMPTS_NAME, attempts, options);
 }
 
 export function subscribeTopics(cb: () => void): () => void {
@@ -139,16 +139,19 @@ export function addTopic(input: {
 }
 
 export function deleteTopic(id: string): void {
-  const orphanedAttemptIds = loadAttempts()
-    .filter((a) => a.topicId === id)
-    .map((a) => a.id);
-  saveTopics(loadTopics().filter((t) => t.id !== id));
-  saveAttempts(loadAttempts().filter((a) => a.topicId !== id));
-  recordTombstone("topics", id);
-  // The topic's attempts are deleted alongside it (see saveAttempts filter
-  // above) — record a tombstone for each so a peer that still has one of
+  const topics = loadTopics();
+  const attempts = loadAttempts();
+  const orphanedAttempts = attempts.filter((a) => a.topicId === id);
+  // The topic's attempts are deleted alongside it — record a tombstone for
+  // each so a peer that still has one of
   // them removes it too instead of resurrecting it on the next sync.
-  for (const attemptId of orphanedAttemptIds) recordTombstone("attempts", attemptId);
+  persistDeletions([
+    { name: TOPICS_NAME, value: topics.filter((t) => t.id !== id) },
+    { name: ATTEMPTS_NAME, value: attempts.filter((a) => a.topicId !== id) },
+  ], [
+    { store: "topics", records: [{ id, updatedAt: topics.find((t) => t.id === id)?.updatedAt }] },
+    { store: "attempts", records: orphanedAttempts },
+  ]);
 }
 
 export function attemptsForTopic(topicId: string): PracticeAttempt[] {
@@ -214,8 +217,7 @@ export function addAttempt(input: NewAttemptInput): PracticeAttempt {
 }
 
 export function updateAttempt(id: string, patch: Partial<Omit<NewAttemptInput, "topicId" | "round">>): void {
-  const now = new Date().toISOString();
-  const attempts = loadAttempts().map((a) => (a.id === id ? { ...a, ...patch, updatedAt: now } : a));
+  const attempts = loadAttempts().map((a) => (a.id === id ? { ...a, ...patch, updatedAt: nextUpdatedAt(a.updatedAt) } : a));
   saveAttempts(attempts);
 }
 
@@ -223,14 +225,14 @@ export function updateAttempt(id: string, patch: Partial<Omit<NewAttemptInput, "
  * event) — persistence only, no id lookup/merge. Only lib/sync/snapshot.ts
  * should call this; every other write path goes through addTopic/deleteTopic
  * above so `updatedAt`/tombstones stay correct. */
-export function replaceTopicsForSync(topics: Topic[]): void {
-  saveTopics(topics);
+export function replaceTopicsForSync(topics: Topic[], options?: StorageWriteOptions): void {
+  saveTopics(topics, options);
 }
 
 /** Bulk-replaces the entire attempt store with `attempts` (one save, one
  * change event) — persistence only, no id lookup/merge. Only
  * lib/sync/snapshot.ts should call this; every other write path goes through
  * addAttempt/updateAttempt above so `updatedAt`/tombstones stay correct. */
-export function replaceAttemptsForSync(attempts: PracticeAttempt[]): void {
-  saveAttempts(attempts);
+export function replaceAttemptsForSync(attempts: PracticeAttempt[], options?: StorageWriteOptions): void {
+  saveAttempts(attempts, options);
 }

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import "@tik-choco/mistai/ui.css";
+import "@tik-choco/mistvault/ui.css";
 import {
   BookOpen,
   ExternalLink,
@@ -41,6 +42,7 @@ import { rooms } from "./lib/network";
 import { isEditableTarget, SHORTCUT_PRIORITY } from "./lib/keyboard";
 import { useShortcuts } from "./hooks/useShortcuts";
 import { runCardAutoOrganize } from "./lib/cardAutoOrganize";
+import { takeVaultLink } from "./lib/vault/link";
 
 // `#/sync/<roomId>` deep link (opened e.g. by scanning the sync QR code):
 // stage the join for 設定 > 同期 to confirm, and rewrite the hash immediately
@@ -67,12 +69,13 @@ const TABS: { id: MainTab; labelKey: string; icon: typeof PenLine }[] = [
 
 const TAB_ORDER = TABS.map((t) => t.id);
 
-export function App() {
+export function App({ initialVaultCode = null }: { initialVaultCode?: string | null }) {
   const { theme, toggleTheme } = useTheme();
+  const [pendingVaultCode, setPendingVaultCode] = useState(initialVaultCode);
   const [tab, setTab] = useState<MainTab>(() => {
     const state = readHash();
     handleSyncDeepLink(state);
-    return state.tab ?? "practice";
+    return initialVaultCode ? "settings" : state.tab ?? "practice";
   });
   const [settings, setSettings] = useState(loadSettings);
   useEffect(() => subscribeSettings(() => setSettings(loadSettings())), []);
@@ -134,6 +137,12 @@ export function App() {
   useEffect(
     () =>
       onHashChange((state) => {
+        const code = takeVaultLink();
+        if (code) {
+          setPendingVaultCode(code);
+          setTab("settings");
+          return;
+        }
         if (state.tab) setTab(state.tab);
         handleSyncDeepLink(state);
       }),
@@ -248,7 +257,7 @@ export function App() {
           {tab === "review" && <ReviewView />}
           {tab === "cards" && <CardsView />}
           {tab === "history" && <HistoryView />}
-          {tab === "settings" && <SettingsView />}
+          {tab === "settings" && <SettingsView pendingVaultCode={pendingVaultCode} onVaultLinkHandled={() => setPendingVaultCode(null)} />}
         </div>
       </main>
       {showOnboarding && <Onboarding onClose={closeOnboarding} />}

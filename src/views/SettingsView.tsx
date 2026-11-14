@@ -16,6 +16,9 @@ import { useSpeech } from "../hooks/useSpeech";
 import { getSyncState } from "../lib/sync/session";
 import { SyncPanel } from "../components/SyncPanel";
 import { getUiLanguage, t } from "../i18n";
+import { vaultMessage } from "@tik-choco/mistvault";
+import { VaultPanel } from "@tik-choco/mistvault/preact";
+import { vault } from "../lib/vault";
 
 const MIN_LEVEL_SAMPLES = 3;
 const TTS_SAMPLE_TEXT: Record<string, string> = {
@@ -73,11 +76,15 @@ const TABS: { id: SettingsTab; labelKey: string }[] = [
   { id: "general", labelKey: "settings-tab-general" }, { id: "ai", labelKey: "ai-settings" }, { id: "sync", labelKey: "settings-tab-sync" },
 ];
 
-export function SettingsView() {
+export function SettingsView({ pendingVaultCode, onVaultLinkHandled }: {
+  pendingVaultCode: string | null;
+  onVaultLinkHandled: () => void;
+}) {
   const [activeTab, setActiveTab] = useState<SettingsTab>(() => {
     const state = getSyncState();
-    return state.pendingJoinRoomId || state.phase !== "idle" ? "sync" : "general";
+    return pendingVaultCode || state.pendingJoinRoomId || state.phase !== "idle" ? "sync" : "general";
   });
+  useEffect(() => { if (pendingVaultCode) setActiveTab("sync"); }, [pendingVaultCode]);
   const [settings, setSettings] = useState(loadSettings);
   useEffect(() => subscribeSettings(() => setSettings(loadSettings())), []);
   const [levelRecords, setLevelRecords] = useState(loadLevels);
@@ -220,7 +227,24 @@ export function SettingsView() {
 
 
     {activeTab === "ai" && <div class="settings-tab-panel" role="tabpanel"><AiSettings /></div>}
-    {activeTab === "sync" && <div class="settings-tab-panel" role="tabpanel"><SyncPanel /></div>}
+    {activeTab === "sync" && <div class="settings-tab-panel" role="tabpanel">
+      <div class="card-panel settings-vault">
+        {pendingVaultCode && <div class="mv-confirm" role="group" aria-label={vaultMessage(getUiLanguage(), "confirm")}>
+          <p>{vaultMessage(getUiLanguage(), "confirmation")}</p>
+          <div class="mv-row">
+            <button type="button" onClick={() => {
+              if (vault.importCode(pendingVaultCode)) {
+                if (vault.getView().mode === "off") vault.enable();
+                onVaultLinkHandled();
+              }
+            }}>{vaultMessage(getUiLanguage(), "confirm")}</button>
+            <button type="button" onClick={onVaultLinkHandled}>{vaultMessage(getUiLanguage(), "cancel")}</button>
+          </div>
+        </div>}
+        <VaultPanel controller={vault} locale={getUiLanguage()} appName="TC Lingo" />
+      </div>
+      <SyncPanel />
+    </div>}
     <footer style={{ padding: "12px 0" }}><MistBuildBanner view="settings" /></footer>
   </div>;
 }

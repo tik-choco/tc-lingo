@@ -1,61 +1,17 @@
-import { captureMistBuildInfo, markMistLoadError } from "./mistBuildInfo";
-// Thin storage-only path into the npm mistlib wasm engine, used to pull
-// down CID-addressed payloads published by other apps (e.g. tc-translate's
-// `lingo-card-inbox` topic — see lib/cardInbox.ts). Deliberately independent
-// of `network.ts`'s `ConsumerClient` (AI Network / LLM chat) usage —
-// storage_add/storage_get only need the wasm node initialized, not a joined
-// room — but reuses the same persisted node id so both features share one
-// node identity. Ported byte-for-byte in shape from tc-translate's
-// src/lib/mistStorage.ts; both apps use the same npm storage API.
-//
-// mistlib's storage_add/storage_get require `init_with_config` to have run
-// first (see @tik-choco/mistlib-web's MistNode.init() for
-// the equivalent LLM-Network-side init, used by network.ts). This lazily
-// performs that init once, shared by every caller in this module.
-//
-// storageGetJson is currently the only entry point this app calls (payload
-// resolution in cardInbox.ts); storageAdd/AddJson/AddText/Get/GetText are
-// carried over unused for the planned `lingo-backup` topic (see CLAUDE.md's
-// backlog), so a future backup publisher doesn't need to re-derive this
-// module from scratch.
-
-// Use the same npm engine specifier as @tik-choco/mistlib-web so storage
-// and MistNode share one wasm instance.
-import init, * as mistWasm from '@tik-choco/mistlib'
-import { NODE_ID_STORAGE_KEY } from './network'
+import * as mistWasm from '@tik-choco/mistlib'
+import { createAppNode } from './network'
 
 const textEncoder = new TextEncoder()
 const textDecoder = new TextDecoder()
 
 let initPromise: Promise<void> | null = null
 
-function loadOrCreateNodeId(): string {
-  try {
-    const stored = localStorage.getItem(NODE_ID_STORAGE_KEY)
-    if (stored) return stored
-  } catch {
-    // localStorage unavailable; fall through to an in-memory id.
-  }
-  const nodeId = `node-${globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2)}`
-  try {
-    localStorage.setItem(NODE_ID_STORAGE_KEY, nodeId)
-  } catch {
-    // Best-effort persistence; an in-memory id still works for this session.
-  }
-  return nodeId
-}
-
 async function ensureStorageNodeInit(): Promise<void> {
   if (!initPromise) {
-    initPromise = (async () => {
-      await init()
-      captureMistBuildInfo()
-      mistWasm.init_with_config(
-        loadOrCreateNodeId(),
-        JSON.stringify({ signaling: { mode: 'nostr', nostr: { relays: [] } } }),
-      )
-    })().catch((err) => {
-      markMistLoadError()
+    const node = createAppNode()
+    initPromise = node.init().then(() => {
+      node.leaveRoom()
+    }).catch((err) => {
       initPromise = null
       throw err
     })

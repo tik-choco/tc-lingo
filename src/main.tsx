@@ -7,12 +7,14 @@ import { App } from "./app.tsx";
 import { writeAppManifest } from "./lib/appManifest";
 import { BUS_VERSION } from "./lib/sharedBus";
 import { getVersion as getMistlibVersion } from "@tik-choco/mistlib-web";
+import { takeVaultLink } from "./lib/vault/link";
 
 void getMistlibVersion()
   .then((version) => { captureMistBuildInfo(); console.log(`[tc-lingo] mistlib ${version}`); })
   .catch((error) => console.warn("[tc-lingo] failed to read mistlib version", error));
 
-render(<div class="mist-app-frame"><MistBuildBanner /><div class="mist-app-content"><App /></div></div>, document.getElementById("app")!);
+const initialVaultCode = takeVaultLink();
+render(<div class="mist-app-frame"><MistBuildBanner /><div class="mist-app-content"><App initialVaultCode={initialVaultCode} /></div></div>, document.getElementById("app")!);
 
 writeAppManifest({
   app: "tc-lingo",

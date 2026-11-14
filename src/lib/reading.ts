@@ -9,8 +9,8 @@ import { levelInstruction } from "./level";
 import { readingAid } from "./languages";
 import { extractJson } from "./parse";
 import type { ReadingPassage } from "../types";
-import { loadJson, newId, saveJson, subscribeStorage } from "./storage";
-import { recordTombstone } from "./sync/tombstones";
+import { loadDomainJson, newId, saveJson, subscribeStorage, type StorageWriteOptions } from "./storage";
+import { persistDeletions } from "./sync/tombstones";
 
 const STORAGE_NAME = "passages-v1";
 
@@ -72,12 +72,12 @@ export function sanitizePassages(raw: unknown): ReadingPassage[] {
  * so they aren't orphaned out of every filtered view — same convention as
  * Card.language (see types.ts). */
 export function loadPassages(language?: string): ReadingPassage[] {
-  const passages = sanitizePassages(loadJson<unknown[]>(STORAGE_NAME, []));
+  const passages = sanitizePassages(loadDomainJson(STORAGE_NAME));
   return language ? passages.filter((p) => p.language === language || p.language === "") : passages;
 }
 
-function savePassages(passages: ReadingPassage[]): void {
-  saveJson(STORAGE_NAME, passages);
+function savePassages(passages: ReadingPassage[], options?: StorageWriteOptions): void {
+  saveJson(STORAGE_NAME, passages, options);
 }
 
 export function subscribePassages(cb: () => void): () => void {
@@ -107,13 +107,16 @@ export function addPassage(input: NewPassageInput): ReadingPassage {
     createdAt: now,
     updatedAt: now,
   };
-  savePassages([passage, ...loadPassages()].slice(0, MAX_PASSAGES));
+  const passages = [passage, ...loadPassages()];
+  persistDeletions([{ name: STORAGE_NAME, value: passages.slice(0, MAX_PASSAGES) }],
+    [{ store: "passages", records: passages.slice(MAX_PASSAGES) }]);
   return passage;
 }
 
 export function deletePassage(id: string): void {
-  savePassages(loadPassages().filter((p) => p.id !== id));
-  recordTombstone("passages", id);
+  const passages = loadPassages();
+  persistDeletions([{ name: STORAGE_NAME, value: passages.filter((p) => p.id !== id) }],
+    [{ store: "passages", records: [{ id, updatedAt: passages.find((p) => p.id === id)?.updatedAt }] }]);
 }
 
 /** Bulk-replaces the entire passage store with `passages` (one save, one
@@ -121,8 +124,8 @@ export function deletePassage(id: string): void {
  * capping (that's addPassage's business logic, not the raw save path). Only
  * lib/sync/snapshot.ts should call this; every other write path goes through
  * addPassage/deletePassage above so `updatedAt`/tombstones stay correct. */
-export function replacePassagesForSync(passages: ReadingPassage[]): void {
-  savePassages(passages);
+export function replacePassagesForSync(passages: ReadingPassage[], options?: StorageWriteOptions): void {
+  savePassages(passages, options);
 }
 
 interface GeneratedPassage {

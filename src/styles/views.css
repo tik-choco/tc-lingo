@@ -1272,6 +1272,23 @@ button:disabled {
   gap: var(--space-4);
 }
 
+.settings-vault {
+  --mv-fg: var(--text);
+  --mv-muted: var(--text-muted);
+  --mv-border: var(--border);
+  --mv-accent: var(--primary);
+  --mv-bg: var(--surface);
+  color-scheme: light;
+}
+
+[data-theme="dark"] .settings-vault {
+  color-scheme: dark;
+}
+
+.settings-vault .mv-panel {
+  color-scheme: inherit;
+}
+
 /* ---------------- Settings view: 同期 tab (components/SyncPanel.tsx) ----------------
    Device-to-device sync: QR/URL invite card, phase status lines, and the
    post-sync per-store summary list. */

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "preact/hooks";
 import { ChevronDown, ChevronUp, Loader2, Pencil, Square, Trash2, Volume2 } from "lucide-preact";
 import { addCard, deleteCard, loadCards, mergeCards, subscribeCards, updateCard } from "../lib/cards";
 import { loadSettings, subscribeSettings } from "../lib/settings";
-import { loadTopics } from "../lib/topics";
+import { loadTopics, subscribeTopics } from "../lib/topics";
 import { languageDisplayName, readingSpec } from "../lib/languages";
 import { CardFront } from "../components/CardFront";
 import { LanguageSelect } from "../components/LanguageSelect";
@@ -254,10 +254,8 @@ export function CardsView() {
     setLanguage(settings.activeLanguage);
   }, [settings.activeLanguage]);
 
-  // Which source topic a "from your mistake" card came from — loaded once;
-  // topic list churn while this view is open is rare enough not to warrant
-  // a live subscription here.
-  const [topics] = useState(() => loadTopics());
+  const [topics, setTopics] = useState(() => loadTopics());
+  useEffect(() => subscribeTopics(() => setTopics(loadTopics())), []);
 
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   function toggleExpand(id: string) {

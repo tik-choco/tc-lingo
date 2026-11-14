@@ -8,8 +8,8 @@
 // re-review, not an unbounded archive — same rationale as other domain
 // modules' bounded lists).
 import type { ConversationRole, ConversationSession, ConversationTurn } from "../types";
-import { loadJson, newId, saveJson, subscribeStorage } from "./storage";
-import { recordTombstone } from "./sync/tombstones";
+import { loadDomainJson, newId, nextUpdatedAt, saveJson, subscribeStorage, type StorageWriteOptions } from "./storage";
+import { persistDeletions } from "./sync/tombstones";
 import { chatJson } from "./llm";
 import type { LlmConnection } from "./llmConnection";
 import { levelInstruction } from "./level";
@@ -91,12 +91,12 @@ export function sanitizeConversations(raw: unknown): ConversationSession[] {
  * predating multi-language support) so they aren't orphaned out of view —
  * same convention as cards.ts/topics.ts. */
 export function loadConversations(language?: string): ConversationSession[] {
-  const sessions = sanitizeConversations(loadJson<unknown[]>(STORAGE_NAME, []));
+  const sessions = sanitizeConversations(loadDomainJson(STORAGE_NAME));
   return language ? sessions.filter((s) => s.language === language || s.language === "") : sessions;
 }
 
-function saveConversations(sessions: ConversationSession[]): void {
-  saveJson(STORAGE_NAME, sessions);
+function saveConversations(sessions: ConversationSession[], options?: StorageWriteOptions): void {
+  saveJson(STORAGE_NAME, sessions, options);
 }
 
 export function subscribeConversations(cb: () => void): () => void {
@@ -126,7 +126,9 @@ export function addConversation(input: NewConversationInput): ConversationSessio
   };
   // Newest first, capped at MAX_SESSIONS — oldest sessions fall off instead
   // of growing localStorage unboundedly.
-  saveConversations([session, ...loadConversations()].slice(0, MAX_SESSIONS));
+  const sessions = [session, ...loadConversations()];
+  persistDeletions([{ name: STORAGE_NAME, value: sessions.slice(0, MAX_SESSIONS) }],
+    [{ store: "conversations", records: sessions.slice(MAX_SESSIONS) }]);
   return session;
 }
 
@@ -134,14 +136,14 @@ export function addConversation(input: NewConversationInput): ConversationSessio
  * "replace by id" shape as topics.ts's updateAttempt. Bumps `updatedAt`
  * (turn appends, ending a session, etc. all go through this one function). */
 export function updateConversation(id: string, patch: Partial<Omit<ConversationSession, "id">>): void {
-  const now = new Date().toISOString();
-  const sessions = loadConversations().map((s) => (s.id === id ? { ...s, ...patch, updatedAt: now } : s));
+  const sessions = loadConversations().map((s) => (s.id === id ? { ...s, ...patch, updatedAt: nextUpdatedAt(s.updatedAt) } : s));
   saveConversations(sessions);
 }
 
 export function deleteConversation(id: string): void {
-  saveConversations(loadConversations().filter((s) => s.id !== id));
-  recordTombstone("conversations", id);
+  const sessions = loadConversations();
+  persistDeletions([{ name: STORAGE_NAME, value: sessions.filter((s) => s.id !== id) }],
+    [{ store: "conversations", records: [{ id, updatedAt: sessions.find((s) => s.id === id)?.updatedAt }] }]);
 }
 
 /** Bulk-replaces the entire session store with `sessions` (one save, one
@@ -150,8 +152,8 @@ export function deleteConversation(id: string): void {
  * Only lib/sync/snapshot.ts should call this; every other write path goes
  * through addConversation/updateConversation/deleteConversation above so
  * `updatedAt`/tombstones stay correct. */
-export function replaceConversationsForSync(sessions: ConversationSession[]): void {
-  saveConversations(sessions);
+export function replaceConversationsForSync(sessions: ConversationSession[], options?: StorageWriteOptions): void {
+  saveConversations(sessions, options);
 }
 
 /** Builds one turn with a fresh id — callers append it to a session's

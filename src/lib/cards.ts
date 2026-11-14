@@ -1,8 +1,8 @@
 // Card CRUD + defensive (de)serialization. Persistence key: tc-lingo:cards-v1.
 import type { Card, CardSource, ReviewGrade } from "../types";
 import { initialSrsFields, scheduleReview, isDue } from "./srs";
-import { loadJson, newId, saveJson, subscribeStorage } from "./storage";
-import { recordTombstone } from "./sync/tombstones";
+import { loadDomainJson, newId, nextUpdatedAt, saveJson, subscribeStorage, type StorageWriteOptions } from "./storage";
+import { persistDeletions } from "./sync/tombstones";
 
 const STORAGE_NAME = "cards-v1";
 
@@ -39,8 +39,8 @@ export function isCard(value: unknown): value is Card {
  * regardless of the active language filter, rather than dropping the card);
  * `exampleSentenceTranslation` predates the translation-reveal feature
  * (backfilled to ""); `updatedAt` predates the sync feature (backfilled to
- * `createdAt` — a stable, deterministic timestamp, not `now`, so a pre-sync
- * card doesn't spuriously look newer than it is). Exported so
+ * `createdAt` for remote data; local loading supplies a persisted migration
+ * baseline before sanitizing). Exported so
  * lib/sync/snapshot.ts can apply identical sanitization to a remote
  * snapshot's cards. */
 export function sanitizeCards(raw: unknown): Card[] {
@@ -54,11 +54,11 @@ export function sanitizeCards(raw: unknown): Card[] {
 }
 
 export function loadCards(): Card[] {
-  return sanitizeCards(loadJson<unknown[]>(STORAGE_NAME, []));
+  return sanitizeCards(loadDomainJson(STORAGE_NAME));
 }
 
-function saveCards(cards: Card[]): void {
-  saveJson(STORAGE_NAME, cards);
+function saveCards(cards: Card[], options?: StorageWriteOptions): void {
+  saveJson(STORAGE_NAME, cards, options);
 }
 
 export function subscribeCards(cb: () => void): () => void {
@@ -103,7 +103,6 @@ export function addCard(input: NewCardInput): Card {
 }
 
 export function updateCard(id: string, patch: Partial<NewCardInput>): void {
-  const now = new Date().toISOString();
   const cards = loadCards().map((c) =>
     c.id === id
       ? {
@@ -117,7 +116,7 @@ export function updateCard(id: string, patch: Partial<NewCardInput>): void {
             : {}),
           ...(patch.context !== undefined ? { context: patch.context.trim() } : {}),
           ...(patch.cloze !== undefined ? { cloze: patch.cloze.trim() } : {}),
-          updatedAt: now,
+          updatedAt: nextUpdatedAt(c.updatedAt),
         }
       : c,
   );
@@ -125,13 +124,14 @@ export function updateCard(id: string, patch: Partial<NewCardInput>): void {
 }
 
 export function deleteCard(id: string): void {
-  saveCards(loadCards().filter((c) => c.id !== id));
-  recordTombstone("cards", id);
+  const cards = loadCards();
+  persistDeletions([{ name: STORAGE_NAME, value: cards.filter((c) => c.id !== id) }],
+    [{ store: "cards", records: [{ id, updatedAt: cards.find((c) => c.id === id)?.updatedAt }] }]);
 }
 
 export function gradeCard(id: string, grade: ReviewGrade, now: Date = new Date()): void {
   const cards = loadCards().map((c) =>
-    c.id === id ? { ...c, ...scheduleReview(c, grade, now), updatedAt: now.toISOString() } : c,
+    c.id === id ? { ...c, ...scheduleReview(c, grade, now), updatedAt: nextUpdatedAt(c.updatedAt, now) } : c,
   );
   saveCards(cards);
 }
@@ -183,6 +183,6 @@ export function mergeCards(
  * event) — persistence only, no id lookup/merge. Only lib/sync/snapshot.ts
  * should call this; every other write path goes through addCard/updateCard/
  * deleteCard/gradeCard above so `updatedAt`/tombstones stay correct. */
-export function replaceCardsForSync(cards: Card[]): void {
-  saveCards(cards);
+export function replaceCardsForSync(cards: Card[], options?: StorageWriteOptions): void {
+  saveCards(cards, options);
 }
