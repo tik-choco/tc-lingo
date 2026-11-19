@@ -13,6 +13,7 @@
 // unaffected) rather than a second, near-duplicate component.
 import { useEffect, useRef, useState } from "preact/hooks";
 import type { CardCandidate } from "../lib/parse";
+import { priorityLevel } from "../lib/cards";
 import { t } from "../i18n";
 import { SHORTCUT_PRIORITY } from "../lib/keyboard";
 import { useShortcuts } from "../hooks/useShortcuts";
@@ -34,6 +35,7 @@ export interface MistakeCardPickerProps {
    * the caller doesn't do duplicate checking (e.g. the Practice tab). */
   duplicateFlags?: boolean[];
   duplicateLabel?: string;
+  priorities?: Readonly<Partial<Record<number, number>>>;
 }
 
 export function MistakeCardPicker({
@@ -45,15 +47,12 @@ export function MistakeCardPicker({
   cancelLabel,
   duplicateFlags,
   duplicateLabel,
+  priorities,
 }: MistakeCardPickerProps) {
-  const [selected, setSelected] = useState<boolean[]>(() => candidates.map((_, i) => !duplicateFlags?.[i]));
-
-  // Candidates can grow after mount (CardsView's "AIで語彙を抽出" appends to
-  // the same array rather than replacing it) — extend `selected` instead of
-  // losing the learner's manual toggles on the ones already shown.
-  useEffect(() => {
-    setSelected((prev) => candidates.map((_, i) => (i < prev.length ? prev[i] : !duplicateFlags?.[i])));
-  }, [candidates.length]);
+  const [selectionOverrides, setSelectionOverrides] = useState<Partial<Record<number, boolean>>>({});
+  const selected = candidates.map((_, i) =>
+    selectionOverrides[i] ?? (!duplicateFlags?.[i] && priorityLevel(priorities?.[i] ?? 1) !== "low"),
+  );
 
   const firstCheckboxRef = useRef<HTMLInputElement>(null);
   const previouslyFocused = useRef<Element | null>(null);
@@ -78,10 +77,6 @@ export function MistakeCardPicker({
     { modal: true },
   );
 
-  function toggle(index: number) {
-    setSelected((prev) => prev.map((v, i) => (i === index ? !v : v)));
-  }
-
   function addSelected() {
     onAdd(candidates.filter((_, i) => selected[i]));
   }
@@ -95,7 +90,10 @@ export function MistakeCardPicker({
           <input
             type="checkbox"
             checked={selected[i]}
-            onChange={() => toggle(i)}
+            onChange={(event) => {
+              const checked = event.currentTarget.checked;
+              setSelectionOverrides((prev) => ({ ...prev, [i]: checked }));
+            }}
             ref={i === 0 ? firstCheckboxRef : undefined}
           />
           <span>
@@ -103,6 +101,11 @@ export function MistakeCardPicker({
             {c.reading && <span class="mistake-card-reading"> ({c.reading})</span>}
             <span class="mistake-card-meaning"> — {c.meaning}</span>
             {duplicateFlags?.[i] && <span class="source-badge">{duplicateLabel ?? t("cards-inbox-already-added")}</span>}
+            {priorities?.[i] !== undefined && (
+              <span class="source-badge">{t("practice-mistake-importance", {
+                level: t("cards-priority-" + priorityLevel(priorities[i])),
+              })}</span>
+            )}
           </span>
         </label>
       ))}

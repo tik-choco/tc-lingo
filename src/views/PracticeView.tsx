@@ -6,9 +6,10 @@ import { useEffect, useRef, useState } from "preact/hooks";
 import { Loader2, Save, Sparkles, Square, Volume2 } from "lucide-preact";
 import { addAttempt, addTopic, attemptsForTopic, loadTopics, nextRoundFor, subscribeTopics, updateAttempt } from "../lib/topics";
 import type { AttemptRound, Card, PracticeAttempt, Topic } from "../types";
-import { addCard, dueCards } from "../lib/cards";
+import { addCard, boostCardPriority, dueCards, PRIORITY_HIGH, PRIORITY_NORMAL } from "../lib/cards";
 import { changedCorrectedSentences, saveSentenceCards } from "../lib/sentenceCards";
-import { autoExtractMistakeCards } from "../lib/autoExtract";
+import { autoExtractMistakeCards, matchMistakeCards } from "../lib/autoExtract";
+import { scoreCardImportanceBatch } from "../lib/decision";
 import { effectiveBand, levelInstruction, recordOutputSample, subscribeLevels } from "../lib/level";
 import { loadSettings, subscribeSettings } from "../lib/settings";
 import { useLlmConnection } from "../hooks/useLlmConnection";
@@ -29,6 +30,10 @@ import { languageDisplayName } from "../lib/languages";
  * generation as spaced re-use hints (see requestTopicSuggestion's
  * reviewWords param and CLAUDE.md's core loop diagram). */
 const MAX_REVIEW_WORDS_FOR_TOPIC = 5;
+
+function mistakePriority(round: AttemptRound): number {
+  return round >= 2 ? PRIORITY_HIGH : PRIORITY_NORMAL;
+}
 
 /** Inline display for a retry-answer "check my answer" result: reuses the
  * same diff + reasons layout as FeedbackPanel's corrected field, but scoped
@@ -172,7 +177,26 @@ export function PracticeView() {
   // ReadingView's per-sentence translation reveal) — reset alongside the
   // rest of the round/topic UI state below.
   const [promptTranslationRevealed, setPromptTranslationRevealed] = useState(false);
-  const [candidates, setCandidates] = useState<CardCandidate[] | null>(null);
+  const [extracted, setExtracted] = useState<{
+    candidates: CardCandidate[];
+    duplicateFlags: boolean[];
+    priorities: Partial<Record<number, number>>;
+  } | null>(null);
+  const extractedCandidates = extracted?.candidates;
+  const mistakeLanguage = activeTopic?.language || settings.activeLanguage;
+  useEffect(() => {
+    if (!extractedCandidates?.length) return;
+    const controller = new AbortController();
+    void scoreCardImportanceBatch(extractedCandidates, {
+      context: () => ({ targetLanguage: mistakeLanguage, nativeLanguage: settings.nativeLanguage, source: "mistake" }),
+      signal: controller.signal,
+      onScore: (_, priority, index) => setExtracted((current) => current?.candidates === extractedCandidates
+        ? { ...current, priorities: { ...current.priorities, [index]: priority } }
+        : current),
+    });
+    return () => controller.abort();
+  }, [extractedCandidates, mistakeLanguage, settings.nativeLanguage]);
+  const boostedCardsByAttempt = useRef(new Map<string, Set<string>>());
   const [extracting, setExtracting] = useState(false);
   const [cardsAdded, setCardsAdded] = useState(0);
   // Background auto-extraction results (lib/autoExtract.ts), shown as a small
@@ -216,6 +240,13 @@ export function PracticeView() {
     if (currentAttempt) updateAttempt(currentAttempt.id, { retryAnswer });
   }
 
+  function boostMistakeDuplicate(attemptId: string, cardId: string) {
+    const boosted = boostedCardsByAttempt.current.get(attemptId) ?? new Set<string>();
+    if (boosted.has(cardId) || !boostCardPriority(cardId, 0.2, { dueNow: true })) return;
+    boosted.add(cardId);
+    boostedCardsByAttempt.current.set(attemptId, boosted);
+  }
+
   // Keyboard-only flow: focus the answer textarea the moment a fresh, empty
   // prompt appears (topic freshly chosen, or a new round started via
   // resetForNextRound) — but not on unrelated re-renders where the form was
@@ -241,7 +272,7 @@ export function PracticeView() {
     setCurrentAttempt(null);
     setRetryAnswer("");
     setCheckingRetry(false);
-    setCandidates(null);
+    setExtracted(null);
     setCardsAdded(0);
     setAutoAddedCards([]);
     setAutoAddedRetryCards([]);
@@ -263,7 +294,7 @@ export function PracticeView() {
     setCurrentAttempt(null);
     setRetryAnswer("");
     setCheckingRetry(false);
-    setCandidates(null);
+    setExtracted(null);
     setCardsAdded(0);
     setAutoAddedCards([]);
     setAutoAddedRetryCards([]);
@@ -426,6 +457,8 @@ export function PracticeView() {
         corrected: feedback.corrected,
         reasons: feedback.reasons,
         sourceTopicId: activeTopic.id,
+        priority: mistakePriority(attempt.round),
+        onDuplicate: (id) => boostMistakeDuplicate(attempt.id, id),
       }).then((added) => {
         if (added.length > 0) setAutoAddedCards(added);
       });
@@ -489,6 +522,8 @@ export function PracticeView() {
           corrected: result.corrected,
           reasons: result.reasons,
           sourceTopicId: activeTopic?.id ?? null,
+          priority: mistakePriority(currentAttempt.round),
+          onDuplicate: (id) => boostMistakeDuplicate(currentAttempt.id, id),
         }).then((added) => {
           if (added.length > 0) setAutoAddedRetryCards(added);
         });
@@ -578,7 +613,13 @@ export function PracticeView() {
         corrected: currentAttempt.corrected,
         reasons: currentAttempt.reasons,
       });
-      setCandidates(found);
+      const matches = matchMistakeCards(found, settings.activeLanguage);
+      for (const id of matches) {
+        if (id !== undefined) boostMistakeDuplicate(currentAttempt.id, id);
+      }
+      if (currentAttemptRef.current?.id === currentAttempt.id) {
+        setExtracted({ candidates: found, duplicateFlags: matches.map((id) => id !== undefined), priorities: {} });
+      }
     } catch (e) {
       setError(localizeNetworkError(e, t("practice-extract-failed")));
     } finally {
@@ -587,12 +628,23 @@ export function PracticeView() {
   }
 
   function addSelectedCards(selected: CardCandidate[]) {
-    if (!activeTopic) return;
+    if (!activeTopic || !currentAttempt || !extracted) return;
     for (const c of selected) {
-      addCard({ ...c, source: "mistake", sourceTopicId: activeTopic.id, language: activeTopic.language });
+      const score = extracted.priorities[extracted.candidates.indexOf(c)];
+      const priority = score === undefined || currentAttempt.round >= 2
+        ? Math.max(score ?? 0, mistakePriority(currentAttempt.round))
+        : score;
+      addCard({
+        ...c,
+        source: "mistake",
+        sourceTopicId: activeTopic.id,
+        language: activeTopic.language,
+        priority,
+        prioritySource: score === undefined ? "default" : "auto",
+      });
     }
     setCardsAdded(selected.length);
-    setCandidates(null);
+    setExtracted(null);
   }
 
   if (!activeTopic) {
@@ -859,14 +911,20 @@ export function PracticeView() {
                 (above) is off — see lib/autoExtract.ts / settings.autoExtractCards. */}
             {!settings.autoExtractCards && (
               <>
-                {candidates === null ? (
+                {extracted === null ? (
                   <div class="button-row">
                     <button type="button" onClick={extractCards} disabled={extracting}>
                       {extracting ? t("practice-extracting") : t("practice-extract-cards")}
                     </button>
                   </div>
-                ) : candidates.length > 0 ? (
-                  <MistakeCardPicker candidates={candidates} onAdd={addSelectedCards} onClose={() => setCandidates(null)} />
+                ) : extracted.candidates.length > 0 ? (
+                  <MistakeCardPicker
+                    candidates={extracted.candidates}
+                    duplicateFlags={extracted.duplicateFlags}
+                    priorities={extracted.priorities}
+                    onAdd={addSelectedCards}
+                    onClose={() => setExtracted(null)}
+                  />
                 ) : (
                   <p class="hint-text">{t("practice-no-cards-found")}</p>
                 )}

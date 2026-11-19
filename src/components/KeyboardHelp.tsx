@@ -31,6 +31,7 @@ const ROWS: ShortcutRow[] = [
   { keys: ["?"], descriptionKey: "app-kbd-toggle-help" },
   { keys: ["Esc"], descriptionKey: "app-kbd-close-dialogs" },
   { keys: ["Enter", sep("/"), "Space"], descriptionKey: "app-kbd-review-reveal" },
+  { keys: ["S"], descriptionKey: "app-kbd-review-skip" },
   { keys: ["Enter", sep("/"), "Space"], descriptionKey: "app-kbd-review-next" },
   { keys: ["Ctrl", sep("+"), "Enter"], descriptionKey: "app-kbd-submit" },
 ];

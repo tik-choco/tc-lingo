@@ -11,8 +11,9 @@ import type { Card } from "../types";
 import { updateCard } from "./cards";
 import { hashCardConsistencyInput, loadCardConsistencyCache, markCardConsistencyChecked } from "./cardConsistencyCache";
 import { deriveClozeGaps } from "./clozeFill";
+import { quickClozeConsistent } from "./decision";
 import { requestCardConsistencyCheck } from "./llm";
-import { connectionForTask } from "./llmConnection";
+import { connectionForTask, decisionTargetForApp } from "./llmConnection";
 
 /** Checks (and, if needed, fixes and persists) one card's front/cloze
  * consistency. No-ops if the card has no cloze/exampleSentence to check
@@ -25,7 +26,7 @@ import { connectionForTask } from "./llmConnection";
  * so most cards never need the LLM fallback below.
  * Returns the fixed card (already persisted via updateCard) if a fix was
  * applied, otherwise null — including on any failure, best-effort only. */
-export async function checkCardConsistency(card: Card, targetLanguage: string): Promise<Card | null> {
+export async function checkCardConsistency(card: Card, targetLanguage: string, signal?: AbortSignal): Promise<Card | null> {
   if (!card.cloze.trim() || !card.exampleSentence.trim()) return null;
 
   const originalHash = hashCardConsistencyInput(card.front, card.cloze, card.exampleSentence);
@@ -36,15 +37,24 @@ export async function checkCardConsistency(card: Card, targetLanguage: string): 
     return null;
   }
 
-  const connection = connectionForTask("review");
-  if (!connection) return null;
-
   try {
+    if (decisionTargetForApp()) {
+      const consistent = await quickClozeConsistent(card, targetLanguage, signal);
+      if (signal?.aborted) return null;
+      if (consistent !== null && consistent >= 0.8) {
+        markCardConsistencyChecked(card.id, originalHash);
+        return null;
+      }
+    }
+
+    const connection = connectionForTask("review");
+    if (!connection) return null;
     const result = await requestCardConsistencyCheck({
       connection,
       targetLanguage,
       card: { front: card.front, exampleSentence: card.exampleSentence, cloze: card.cloze },
     });
+    if (signal?.aborted) return null;
 
     if (result.consistent || !result.front.trim() || !result.cloze.trim()) {
       markCardConsistencyChecked(card.id, originalHash);

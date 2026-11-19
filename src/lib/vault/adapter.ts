@@ -1,8 +1,8 @@
 import type {
   Card, ConversationSession, ConversationTurn, LanguageLevelRecord, PracticeAttempt, ReadingPassage, Topic,
 } from "../../types";
-import { isCard } from "../cards";
-import { isConversationSession } from "../conversation";
+import { isCard, sanitizeCards } from "../cards";
+import { isConversationSession, sanitizeConversations } from "../conversation";
 import { isLevelRecord } from "../level";
 import { isReadingPassage } from "../reading";
 import { legacyBaseline, subscribeStorageChanges } from "../storage";
@@ -19,13 +19,18 @@ const MAX_STRING_LENGTH = 2 * 1024 * 1024;
 const MAX_RECORDS = 100_000;
 const MAX_NESTED_ITEMS = 10_000;
 
-const CARD_KEYS = ["id", "front", "reading", "meaning", "exampleSentence", "exampleSentenceTranslation", "context", "cloze", "source", "sourceTopicId", "language", "createdAt", "dueAt", "intervalDays", "easeFactor", "reps", "lapses", "updatedAt"] as const satisfies readonly (keyof Card)[];
+const LEGACY_CARD_KEYS = ["id", "front", "reading", "meaning", "exampleSentence", "exampleSentenceTranslation", "context", "cloze", "source", "sourceTopicId", "language", "createdAt", "dueAt", "intervalDays", "easeFactor", "reps", "lapses", "updatedAt"] as const satisfies readonly (keyof Card)[];
+const CARD_REVIEW_KEYS = ["priority", "prioritySource", "suspended", "lastReviewedAt"] as const satisfies readonly (keyof Card)[];
+const CARD_KEYS = [...LEGACY_CARD_KEYS, ...CARD_REVIEW_KEYS];
 const TOPIC_KEYS = ["id", "title", "prompt", "promptTranslation", "custom", "language", "createdAt", "updatedAt"] as const satisfies readonly (keyof Topic)[];
 const ATTEMPT_KEYS = ["id", "topicId", "round", "createdAt", "original", "corrected", "correctedReading", "correctedTranslation", "reasons", "retryPrompt", "retryPromptReading", "retryPromptTranslation", "retryAnswer", "retryCorrected", "retryCorrectedReading", "retryCorrectedTranslation", "retryReasons", "updatedAt"] as const satisfies readonly (keyof PracticeAttempt)[];
 const PASSAGE_KEYS = ["id", "language", "title", "sentences", "reviewWords", "question", "questionAnswer", "createdAt", "updatedAt"] as const satisfies readonly (keyof ReadingPassage)[];
 const SENTENCE_KEYS = ["text", "translation", "reading"] as const;
 const CONVERSATION_KEYS = ["id", "language", "title", "scenario", "turns", "createdAt", "endedAt", "updatedAt"] as const satisfies readonly (keyof ConversationSession)[];
+const INQUIRY_SESSION_KEYS = ["mode", "mission", "facts", "retryOfId"] as const satisfies readonly (keyof ConversationSession)[];
 const TURN_KEYS = ["id", "role", "text", "reading", "translation", "corrected", "correctedReading", "correctedTranslation", "reasons"] as const satisfies readonly (keyof ConversationTurn)[];
+const INQUIRY_TURN_KEYS = ["understanding", "unclearReason", "revealedFactIds"] as const satisfies readonly (keyof ConversationTurn)[];
+const FACT_KEYS = ["id", "label", "detail"] as const;
 const LEVEL_KEYS = ["language", "score", "samples", "override", "updatedAt"] as const satisfies readonly (keyof LanguageLevelRecord)[];
 const TOMBSTONE_KEYS = ["store", "id", "deletedAt"] as const satisfies readonly (keyof Tombstone)[];
 const STATE_KEYS = ["v", "app", "cards", "topics", "attempts", "passages", "conversations", "levels", "tombstones"] as const;
@@ -42,10 +47,10 @@ function record(value: unknown): value is Record<string, unknown> {
   return prototype === Object.prototype || prototype === null;
 }
 
-function hasKeys(value: unknown, keys: readonly string[]): boolean {
+function hasKeys(value: unknown, keys: readonly string[], optional: readonly string[] = []): boolean {
   if (!record(value)) return false;
-  const actual = Object.keys(value);
-  return actual.length === keys.length && actual.every((key) => keys.includes(key));
+  return keys.every((key) => Object.hasOwn(value, key)) &&
+    Object.keys(value).every((key) => keys.includes(key) || optional.includes(key));
 }
 
 function validId(id: unknown): id is string {
@@ -110,7 +115,9 @@ function project(state: SyncSnapshot): VaultState {
       ...pick(item, PASSAGE_KEYS), sentences: item.sentences.map((sentence) => pick(sentence, SENTENCE_KEYS)),
     })).sort(byCreated(true)),
     conversations: state.conversations.map((item) => ({
-      ...pick(item, CONVERSATION_KEYS), turns: item.turns.map((turn) => pick(turn, TURN_KEYS)),
+      ...pick(item, [...CONVERSATION_KEYS, ...INQUIRY_SESSION_KEYS]),
+      turns: item.turns.map((turn) => pick(turn, [...TURN_KEYS, ...INQUIRY_TURN_KEYS])),
+      facts: item.facts.map((fact) => pick(fact, FACT_KEYS)),
     })).sort(byCreated(true)),
     levels: state.levels.map((item) => pick(item, LEVEL_KEYS)).sort((a, b) => compare(a.language, b.language)),
     tombstones: unionTombstones([], state.tombstones.map((item) => pick(item, TOMBSTONE_KEYS))),
@@ -134,17 +141,19 @@ function parseState(value: unknown, ceiling = Date.now() + 366 * 86400000): Vaul
   if (arrays.some((items) => !Array.isArray(items)) || arrays.reduce<number>((count, items) => count + (items as unknown[]).length, 0) > MAX_RECORDS) invalid();
 
   const { cards, topics, attempts, passages, conversations, levels, tombstones } = value as unknown as SyncSnapshot;
-  if (!cards.every((item) => hasKeys(item, CARD_KEYS) && isCard(item) && validId(item.id) && date(item.createdAt) &&
+  if (!cards.every((item) => hasKeys(item, LEGACY_CARD_KEYS, CARD_REVIEW_KEYS) && isCard(item) && validId(item.id) && date(item.createdAt) &&
     date(item.updatedAt) && dueDate(item.dueAt) && item.intervalDays >= 0 && item.easeFactor > 0 &&
     Number.isSafeInteger(item.reps) && item.reps >= 0 && Number.isSafeInteger(item.lapses) && item.lapses >= 0 &&
+    (item.lastReviewedAt == null || date(item.lastReviewedAt)) &&
     (item.sourceTopicId === null || validId(item.sourceTopicId)))) invalid();
   if (!topics.every((item) => hasKeys(item, TOPIC_KEYS) && isTopic(item) && validId(item.id) && date(item.createdAt) && date(item.updatedAt))) invalid();
   if (!attempts.every((item) => hasKeys(item, ATTEMPT_KEYS) && isAttempt(item) && validId(item.id) && validId(item.topicId) && date(item.createdAt) && date(item.updatedAt))) invalid();
   if (!passages.every((item) => hasKeys(item, PASSAGE_KEYS) && isReadingPassage(item) && validId(item.id) && date(item.createdAt) && date(item.updatedAt) &&
     item.sentences.length <= MAX_NESTED_ITEMS && item.reviewWords.length <= MAX_NESTED_ITEMS && item.sentences.every((sentence) => hasKeys(sentence, SENTENCE_KEYS)))) invalid();
-  if (!conversations.every((item) => hasKeys(item, CONVERSATION_KEYS) && isConversationSession(item) && validId(item.id) && date(item.createdAt) && date(item.updatedAt) &&
+  if (!conversations.every((item) => hasKeys(item, CONVERSATION_KEYS, INQUIRY_SESSION_KEYS) && isConversationSession(item) && validId(item.id) && date(item.createdAt) && date(item.updatedAt) &&
     (item.endedAt === "" || date(item.endedAt)) && item.turns.length <= MAX_NESTED_ITEMS &&
-    item.turns.every((turn) => hasKeys(turn, TURN_KEYS) && validId(turn.id)))) invalid();
+    item.turns.every((turn) => hasKeys(turn, TURN_KEYS, INQUIRY_TURN_KEYS) && validId(turn.id)) &&
+    (item.facts === undefined || (item.facts.length <= MAX_NESTED_ITEMS && item.facts.every((fact) => hasKeys(fact, FACT_KEYS)))))) invalid();
   if (!levels.every((item) => hasKeys(item, LEVEL_KEYS) && isLevelRecord(item) && validId(item.language) && date(item.updatedAt) &&
     item.score >= 0 && item.score <= 1 && Number.isSafeInteger(item.samples) && item.samples >= 0)) invalid();
   if (!tombstones.every((item) => hasKeys(item, TOMBSTONE_KEYS) && STORE_NAMES.includes(item.store) && validId(item.id) && date(item.deletedAt))) invalid();
@@ -157,7 +166,7 @@ function parseState(value: unknown, ceiling = Date.now() + 366 * 86400000): Vaul
   unique(levels, (item) => item.language);
   unique(tombstones, (item) => `${item.store}:${item.id}`);
   for (const item of conversations) unique(item.turns, (turn) => turn.id);
-  return project(value as unknown as SyncSnapshot);
+  return project({ v: 1, app: "tc-lingo", cards: sanitizeCards(cards), topics, attempts, passages, conversations: sanitizeConversations(conversations), levels, tombstones });
 }
 
 function mergeStates(local: VaultState, remote: VaultState): VaultState {

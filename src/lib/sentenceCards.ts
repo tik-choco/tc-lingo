@@ -7,6 +7,7 @@
 // to pick out reusable words/phrases from it.
 import type { Card } from "../types";
 import { addCard, loadCards } from "./cards";
+import { scoreSavedCards } from "./decision";
 import type { LlmConnection } from "./llmConnection";
 import { requestSentenceCardInfo } from "./llm";
 import { splitSentences } from "./spelling";
@@ -86,5 +87,6 @@ export async function saveSentenceCards(params: {
       }),
     );
   }
+  void scoreSavedCards(added, params);
   return added;
 }

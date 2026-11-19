@@ -6,13 +6,27 @@
 // swallowed (console.warn) — auto-extraction is best-effort sugar on top of
 // the manual flow, never something that should surface a failure state.
 import type { Card } from "../types";
-import { addCard, loadCards } from "./cards";
+import { addCard, loadCards, PRIORITY_HIGH } from "./cards";
+import { scoreSavedCards } from "./decision";
 import type { LlmConnection } from "./llmConnection";
+import type { CardCandidate } from "./parse";
 import { requestMistakeCards } from "./llm";
 import { loadSettings } from "./settings";
 
 function frontKey(front: string): string {
   return front.trim().toLowerCase();
+}
+
+/** Match against the target deck, including cards with no assigned language. */
+export function matchMistakeCards(candidates: readonly CardCandidate[], language: string): (string | undefined)[] {
+  const existing = new Map<string, string>();
+  for (const card of loadCards()) {
+    if (card.language === language || card.language === "") {
+      const key = frontKey(card.front);
+      if (key && !existing.has(key)) existing.set(key, card.id);
+    }
+  }
+  return candidates.map((candidate) => existing.get(frontKey(candidate.front)));
 }
 
 /** Runs the mistake-card extraction for one correction and adds the deduped
@@ -27,6 +41,8 @@ export async function autoExtractMistakeCards(params: {
   corrected: string;
   reasons: string;
   sourceTopicId?: string | null;
+  priority?: number;
+  onDuplicate?: (cardId: string) => void;
 }): Promise<Card[]> {
   if (!loadSettings().autoExtractCards) return [];
   const original = params.original.trim();
@@ -48,27 +64,32 @@ export async function autoExtractMistakeCards(params: {
     return [];
   }
 
-  // Dedup against cards already in this language's deck ("" = unassigned,
-  // visible under every filter — treat as a duplicate source too) and within
-  // the batch itself.
-  const existing = new Set(
-    loadCards()
-      .filter((c) => c.language === params.targetLanguage || c.language === "")
-      .map((c) => frontKey(c.front)),
-  );
+  const matches = matchMistakeCards(candidates, params.targetLanguage);
+  const addedFronts = new Set<string>();
   const added: Card[] = [];
-  for (const candidate of candidates) {
+  for (const [index, candidate] of candidates.entries()) {
+    const match = matches[index];
+    if (match !== undefined) {
+      params.onDuplicate?.(match);
+      continue;
+    }
     const key = frontKey(candidate.front);
-    if (!key || existing.has(key)) continue;
-    existing.add(key);
+    if (!key || addedFronts.has(key)) continue;
+    addedFronts.add(key);
     added.push(
       addCard({
         ...candidate,
         source: "mistake",
         sourceTopicId: params.sourceTopicId ?? null,
         language: params.targetLanguage,
+        priority: params.priority,
       }),
     );
   }
+  void scoreSavedCards(added, {
+    targetLanguage: params.targetLanguage,
+    nativeLanguage: params.nativeLanguage,
+    minimumPriority: params.priority === PRIORITY_HIGH ? PRIORITY_HIGH : undefined,
+  });
   return added;
 }

@@ -4,6 +4,18 @@ import { loadLlmConfig, emptyLlmConfig, presetIdToRef, providerKind, roomIdFromB
 import { loadJson, saveJson, subscribeStorage } from "./storage";
 
 const STORAGE_NAME = "settings-v1";
+export const REVIEW_LIMITS = {
+  reviewSessionLimit: { min: 5, max: 200, fallback: 40 },
+  newCardsPerDay: { min: 0, max: 100, fallback: 10 },
+} as const;
+
+export function normalizeReviewLimit(field: keyof typeof REVIEW_LIMITS, value: unknown): number {
+  const { min, max, fallback } = REVIEW_LIMITS[field];
+  return typeof value === "number" && Number.isFinite(value)
+    ? Math.max(min, Math.min(max, Math.round(value)))
+    : fallback;
+}
+
 const TASKS: LlmTask[] = ["practice", "topic", "cards", "review", "reading", "conversation", "grammar", "ui-translation", "card-organize"];
 const browserLanguageNames: Record<string, string> = {
   ja: "Japanese",
@@ -57,6 +69,8 @@ export function loadSettings(): LingoSettings {
     targetLanguages, activeLanguage: targetLanguages.includes(raw.activeLanguage) ? raw.activeLanguage : targetLanguages[0],
     nativeLanguage, autoExtractCards: raw.autoExtractCards !== false, showReadingAids: raw.showReadingAids !== false,
     autoOrganizeCards: raw.autoOrganizeCards !== false, lastCardAutoOrganizeAt: typeof raw.lastCardAutoOrganizeAt === "string" ? raw.lastCardAutoOrganizeAt : "",
+    reviewSessionLimit: normalizeReviewLimit("reviewSessionLimit", raw.reviewSessionLimit),
+    newCardsPerDay: normalizeReviewLimit("newCardsPerDay", raw.newCardsPerDay),
     ttsVoicesByRef: raw.ttsVoicesByRef ?? {},
   };
   if (raw.tasks && typeof raw.tasks === "object") {

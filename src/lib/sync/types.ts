@@ -27,7 +27,7 @@
 // - Entities keyed by `id`, except "levels" which is keyed by `language`.
 //
 // Out of scope (deliberately not synced): LingoSettings (device-local,
-// includes connection mode), the shared llm config (co-owned cross-app
+// includes per-task model refs such as System One), the shared llm config (co-owned cross-app
 // contract with its own merge rules), and the card-inbox cursor state.
 
 import type {

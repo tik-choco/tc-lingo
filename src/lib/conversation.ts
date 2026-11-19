@@ -7,7 +7,7 @@
 // at the 20 newest sessions (a learner's dialogue history is meant for quick
 // re-review, not an unbounded archive — same rationale as other domain
 // modules' bounded lists).
-import type { ConversationRole, ConversationSession, ConversationTurn } from "../types";
+import type { ConversationMode, ConversationRole, ConversationSession, ConversationTurn, InquiryFact, InquiryUnderstanding } from "../types";
 import { loadDomainJson, newId, nextUpdatedAt, saveJson, subscribeStorage, type StorageWriteOptions } from "./storage";
 import { persistDeletions } from "./sync/tombstones";
 import { chatJson } from "./llm";
@@ -24,10 +24,18 @@ function isConversationRole(value: unknown): value is ConversationRole {
   return value === "assistant" || value === "learner";
 }
 
-/** `reading`/`correctedReading` are optional here to accept turns saved
- * before reading aids existed — loadConversations back-fills them to ""
- * below, same pattern as topics.ts's loadAttempts backfilling
- * retryCorrected/retryReasons. */
+function isInquiryUnderstanding(value: unknown): value is InquiryUnderstanding {
+  return value === "" || value === "full" || value === "partial" || value === "none";
+}
+
+function isInquiryFact(value: unknown): value is InquiryFact {
+  if (value === null || typeof value !== "object") return false;
+  const { id, label, detail } = value as Record<string, unknown>;
+  return typeof id === "string" && !!id.trim() && typeof label === "string" && !!label.trim() &&
+    typeof detail === "string" && !!detail.trim();
+}
+
+/** Fields added after the initial format are optional when loading old data. */
 function isConversationTurn(value: unknown): value is ConversationTurn {
   if (value === null || typeof value !== "object") return false;
   const r = value as Record<string, unknown>;
@@ -40,7 +48,10 @@ function isConversationTurn(value: unknown): value is ConversationTurn {
     typeof r.corrected === "string" &&
     (r.correctedReading === undefined || typeof r.correctedReading === "string") &&
     (r.correctedTranslation === undefined || typeof r.correctedTranslation === "string") &&
-    typeof r.reasons === "string"
+    typeof r.reasons === "string" &&
+    (r.understanding === undefined || isInquiryUnderstanding(r.understanding)) &&
+    (r.unclearReason === undefined || typeof r.unclearReason === "string") &&
+    (r.revealedFactIds === undefined || (Array.isArray(r.revealedFactIds) && r.revealedFactIds.every((id) => typeof id === "string")))
   );
 }
 
@@ -56,6 +67,10 @@ export function isConversationSession(value: unknown): value is ConversationSess
     typeof r.language === "string" &&
     typeof r.title === "string" &&
     typeof r.scenario === "string" &&
+    (r.mode === undefined || typeof r.mode === "string") &&
+    (r.mission === undefined || typeof r.mission === "string") &&
+    (r.facts === undefined || Array.isArray(r.facts)) &&
+    (r.retryOfId === undefined || typeof r.retryOfId === "string") &&
     Array.isArray(r.turns) &&
     r.turns.every(isConversationTurn) &&
     typeof r.createdAt === "string" &&
@@ -64,24 +79,26 @@ export function isConversationSession(value: unknown): value is ConversationSess
   );
 }
 
-/** Filters + backfills a raw array into valid ConversationSessions: per-turn
- * `reading`/`correctedReading`/`translation`/`correctedTranslation` predate
- * the reading-aid/translation-reveal features (backfilled to ""); `updatedAt`
- * predates the sync feature (backfilled to `createdAt`, same rationale as
- * cards.ts's sanitizeCards). Malformed entries (and any individually
- * malformed turn) are dropped rather than throwing. Exported so
- * lib/sync/snapshot.ts can apply identical sanitization to a remote
- * snapshot's sessions. */
+/** Normalizes local and remote sessions without changing their revisions.
+ * Drops malformed sessions (including those with malformed turns) and filters
+ * invalid fact entries from otherwise valid sessions. */
 export function sanitizeConversations(raw: unknown): ConversationSession[] {
   if (!Array.isArray(raw)) return [];
   return raw.filter(isConversationSession).map((s) => ({
     ...s,
+    mode: s.mode === "inquiry" ? "inquiry" : "free",
+    mission: s.mission ?? "",
+    facts: s.facts?.filter(isInquiryFact).map(({ id, label, detail }) => ({ id, label, detail })) ?? [],
+    retryOfId: s.retryOfId ?? "",
     turns: s.turns.map((turn) => ({
       ...turn,
       reading: turn.reading ?? "",
       translation: turn.translation ?? "",
       correctedReading: turn.correctedReading ?? "",
       correctedTranslation: turn.correctedTranslation ?? "",
+      understanding: turn.understanding ?? "",
+      unclearReason: turn.unclearReason ?? "",
+      revealedFactIds: turn.revealedFactIds ?? [],
     })),
     updatedAt: s.updatedAt ?? s.createdAt,
   }));
@@ -107,6 +124,10 @@ export interface NewConversationInput {
   language: string;
   title: string;
   scenario: string;
+  mode?: ConversationMode;
+  mission?: string;
+  facts?: InquiryFact[];
+  retryOfId?: string;
   /** The assistant's opening turn (and any further seed turns), so a fresh
    * session is created already showing its scenario-opening line. */
   turns?: ConversationTurn[];
@@ -119,6 +140,10 @@ export function addConversation(input: NewConversationInput): ConversationSessio
     language: input.language,
     title: input.title.trim(),
     scenario: input.scenario.trim(),
+    mode: input.mode ?? "free",
+    mission: input.mission?.trim() ?? "",
+    facts: input.facts ?? [],
+    retryOfId: input.retryOfId ?? "",
     turns: input.turns ?? [],
     createdAt: now,
     endedAt: "",
@@ -167,6 +192,9 @@ export function newTurn(input: {
   correctedReading?: string;
   correctedTranslation?: string;
   reasons?: string;
+  understanding?: InquiryUnderstanding;
+  unclearReason?: string;
+  revealedFactIds?: string[];
 }): ConversationTurn {
   return {
     id: newId(),
@@ -178,7 +206,18 @@ export function newTurn(input: {
     correctedReading: input.correctedReading ?? "",
     correctedTranslation: input.correctedTranslation ?? "",
     reasons: input.reasons ?? "",
+    understanding: input.understanding ?? "",
+    unclearReason: input.unclearReason ?? "",
+    revealedFactIds: input.revealedFactIds ?? [],
   };
+}
+
+export function revealedFactIds({ turns }: Pick<ConversationSession, "turns">): Set<string> {
+  const revealed = new Set<string>();
+  for (const turn of turns) {
+    if (turn.role === "assistant") for (const id of turn.revealedFactIds) revealed.add(id);
+  }
+  return revealed;
 }
 
 export interface ConversationStartResult {

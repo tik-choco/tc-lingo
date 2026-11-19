@@ -1,12 +1,13 @@
 import { MistBuildBanner } from "../components/MistBuildBanner";
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 import { Sparkles, Volume2, X } from "lucide-preact";
-import { LlmSettings, Switch, useLlmConfig } from "@tik-choco/mistai/preact";
+import { LlmSettings, ModelPicker, Switch, useLlmConfig } from "@tik-choco/mistai/preact";
 import { loadSettings, subscribeSettings, llmLocalAdapter, addTargetLanguage, removeTargetLanguage,
-  saveSettings, setAutoExtractCards, setShowReadingAids, setAutoOrganizeCards, setTtsVoiceOverride, voiceRefKey } from "../lib/settings";
+  normalizeReviewLimit, REVIEW_LIMITS, saveSettings, setAutoExtractCards, setShowReadingAids, setAutoOrganizeCards, setTtsVoiceOverride, voiceRefKey } from "../lib/settings";
 import { resolveVoice } from "../lib/llmConfig";
 import { languageVoiceRows } from "../lib/ttsVoiceByLanguage";
-import { LLM_TASKS } from "../lib/llmConnection";
+import { CHAT_TASKS, decisionTargetForApp } from "../lib/llmConnection";
+import { testDecisionTarget } from "../lib/decision";
 import { CEFR_BANDS, computedBand, loadLevels, setLevelOverride, subscribeLevels } from "../lib/level";
 import type { CefrBand } from "../types";
 import { languageDisplayName } from "../lib/languages";
@@ -39,36 +40,85 @@ export function AiSettings() {
   const [settings, setSettings] = useState(loadSettings);
   useEffect(() => subscribeSettings(() => setSettings(loadSettings())), []);
   const { config } = useLlmConfig();
+  const decisionTarget = decisionTargetForApp();
+  const decisionTest = useRef<AbortController | null>(null);
+  const [decisionStatus, setDecisionStatus] = useState<"testing" | "ok" | "error" | null>(null);
+  useEffect(() => {
+    setDecisionStatus(null);
+    return () => {
+      decisionTest.current?.abort();
+      decisionTest.current = null;
+    };
+  }, [decisionTarget?.baseUrl, decisionTarget?.model, decisionTarget?.apiKey]);
+
+  async function testDecision() {
+    if (!decisionTarget || decisionTest.current) return;
+    const controller = new AbortController();
+    decisionTest.current = controller;
+    setDecisionStatus("testing");
+    const ok = await testDecisionTarget(decisionTarget, controller.signal);
+    if (decisionTest.current !== controller) return;
+    decisionTest.current = null;
+    setDecisionStatus(ok ? "ok" : "error");
+  }
+
   const speech = useSpeech();
   const target = resolveVoice(config, "tts");
   const rows = languageVoiceRows([...settings.targetLanguages, settings.nativeLanguage]);
   const voices = target ? settings.ttsVoicesByRef[voiceRefKey(target)] ?? {} : {};
   return <LlmSettings
-    tasks={LLM_TASKS.map(id => ({ id, label: t("ai-task-" + id), reasoning: id !== "card-organize" }))}
+    tasks={CHAT_TASKS.map(id => ({ id, label: t("ai-task-" + id), reasoning: id !== "card-organize" }))}
     localSettings={llmLocalAdapter}
     voice={{ tts: {} }}
     locale={getUiLanguage()}
-    extraSections={tab => tab === "tasks" && <section class="card-panel lingo-voice-settings">
-      <div class="button-row"><button type="button" disabled={!speech.supported}
-        onClick={() => speech.speak(TTS_SAMPLE_TEXT[settings.activeLanguage] ?? TTS_SAMPLE_TEXT.English, settings.activeLanguage, TTS_TEST_ID)}>
-        <Volume2 size={15} />{speech.loadingId === TTS_TEST_ID ? t("settings-tts-test-loading") : speech.speakingId === TTS_TEST_ID ? t("settings-tts-test-stop") : t("settings-tts-test-button")}
-      </button></div>
-      {speech.speechError && <p class="error-text">{speech.speechError}</p>}
-      {target && rows.length > 0 && <div class="field-grid">
-        <h3 class="settings-subheading">{t("settings-tts-per-language-heading")}</h3>
-        <p class="hint-text">{t("settings-tts-per-language-hint")}</p>
-        {rows.map(row => {
-          const label = row.languages.map(languageDisplayName).join(" / ");
-          return <label class="lingo-voice-row" key={voiceRefKey(target) + row.subtag}>
-            <span>{label}</span><input type="text" value={voices[row.subtag] ?? ""}
-              placeholder={t("settings-tts-per-language-voice-placeholder")}
-              aria-label={t("settings-tts-per-language-voice-aria-label", { language: label })}
-              onBlur={event => setTtsVoiceOverride(target, row.subtag, event.currentTarget.value)}
-              onKeyDown={event => { if (event.key === "Enter") event.currentTarget.blur(); }} />
-          </label>;
-        })}
-      </div>}
-    </section>} />;
+    extraSections={tab => tab === "tasks" && <>
+      <section class="card-panel">
+        <div class="provider-task-row">
+          <span>{t("ai-task-decision")}</span>
+          <ModelPicker providers={config.providers} recent={settings.recentModels} name="decision"
+            label={t("ai-task-decision")} clearLabel={t("ai-decision-disabled")}
+            value={settings.tasks.decision?.ref} onChange={(ref) => {
+              const current = loadSettings();
+              const tasks = { ...current.tasks };
+              if (ref) tasks.decision = { ref, reasoningEffort: "none" };
+              else delete tasks.decision;
+              saveSettings({ ...current, tasks });
+            }} />
+        </div>
+        <p class="hint-text">{t("ai-decision-hint")}</p>
+        <div class="button-row">
+          <button type="button" onClick={testDecision} disabled={!decisionTarget || decisionStatus === "testing"}>
+            {t("ai-decision-test")}
+          </button>
+          {decisionStatus && (
+            <span role="status" class={decisionStatus === "error" ? "error-text" : "hint-text"}>
+              {t("ai-decision-test-" + decisionStatus)}
+            </span>
+          )}
+        </div>
+      </section>
+      <section class="card-panel lingo-voice-settings">
+        <div class="button-row"><button type="button" disabled={!speech.supported}
+          onClick={() => speech.speak(TTS_SAMPLE_TEXT[settings.activeLanguage] ?? TTS_SAMPLE_TEXT.English, settings.activeLanguage, TTS_TEST_ID)}>
+          <Volume2 size={15} />{speech.loadingId === TTS_TEST_ID ? t("settings-tts-test-loading") : speech.speakingId === TTS_TEST_ID ? t("settings-tts-test-stop") : t("settings-tts-test-button")}
+        </button></div>
+        {speech.speechError && <p class="error-text">{speech.speechError}</p>}
+        {target && rows.length > 0 && <div class="field-grid">
+          <h3 class="settings-subheading">{t("settings-tts-per-language-heading")}</h3>
+          <p class="hint-text">{t("settings-tts-per-language-hint")}</p>
+          {rows.map(row => {
+            const label = row.languages.map(languageDisplayName).join(" / ");
+            return <label class="lingo-voice-row" key={voiceRefKey(target) + row.subtag}>
+              <span>{label}</span><input type="text" value={voices[row.subtag] ?? ""}
+                placeholder={t("settings-tts-per-language-voice-placeholder")}
+                aria-label={t("settings-tts-per-language-voice-aria-label", { language: label })}
+                onBlur={event => setTtsVoiceOverride(target, row.subtag, event.currentTarget.value)}
+                onKeyDown={event => { if (event.key === "Enter") event.currentTarget.blur(); }} />
+            </label>;
+          })}
+        </div>}
+      </section>
+    </>} />;
 }
 
 type SettingsTab = "general" | "ai" | "sync";
@@ -89,7 +139,13 @@ export function SettingsView({ pendingVaultCode, onVaultLinkHandled }: {
   useEffect(() => subscribeSettings(() => setSettings(loadSettings())), []);
   const [levelRecords, setLevelRecords] = useState(loadLevels);
   useEffect(() => subscribeLevels(() => setLevelRecords(loadLevels())), []);
-  function updateLanguage(patch: Partial<typeof settings>) { saveSettings({ ...loadSettings(), ...patch }); }
+  function updateSettings(patch: Partial<typeof settings>) { saveSettings({ ...loadSettings(), ...patch }); }
+
+  function updateReviewLimit(field: keyof typeof REVIEW_LIMITS, input: HTMLInputElement) {
+    const value = normalizeReviewLimit(field, input.valueAsNumber);
+    input.value = String(value);
+    updateSettings({ [field]: value });
+  }
   return <div class="view-container settings-view">
     <div class="lingo-settings-tab-bar" role="tablist" aria-label={t("settings-tabs-aria-label")}>
       {TABS.map(tab => <button key={tab.id} type="button" role="tab" class={"lingo-settings-tab" + (activeTab === tab.id ? " active" : "")}
@@ -147,11 +203,37 @@ export function SettingsView({ pendingVaultCode, onVaultLinkHandled }: {
                 {t("settings-native-language-label")}
                 <LanguageSelect
                   value={settings.nativeLanguage}
-                  onChange={(lang) => updateLanguage({ nativeLanguage: lang })}
+                  onChange={(lang) => updateSettings({ nativeLanguage: lang })}
                   ariaLabel={t("settings-native-language-aria-label")}
                 />
               </label>
               <p class="hint-text">{t("settings-native-language-hint")}</p>
+            </div>
+          </section>
+
+          <section class="card-panel">
+            <h2>{t("settings-review-heading")}</h2>
+            <div class="field-grid">
+              <label>
+                {t("settings-review-session-limit")}
+                <input
+                  type="number"
+                  min={REVIEW_LIMITS.reviewSessionLimit.min}
+                  max={REVIEW_LIMITS.reviewSessionLimit.max}
+                  value={settings.reviewSessionLimit}
+                  onChange={(e) => updateReviewLimit("reviewSessionLimit", e.currentTarget)}
+                />
+              </label>
+              <label>
+                {t("settings-review-new-per-day")}
+                <input
+                  type="number"
+                  min={REVIEW_LIMITS.newCardsPerDay.min}
+                  max={REVIEW_LIMITS.newCardsPerDay.max}
+                  value={settings.newCardsPerDay}
+                  onChange={(e) => updateReviewLimit("newCardsPerDay", e.currentTarget)}
+                />
+              </label>
             </div>
           </section>
 

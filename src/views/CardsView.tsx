@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import { ChevronDown, ChevronUp, Loader2, Pencil, Square, Trash2, Volume2 } from "lucide-preact";
-import { addCard, deleteCard, loadCards, mergeCards, subscribeCards, updateCard } from "../lib/cards";
+import {
+  addCard, deleteCard, loadCards, mergeCards, PRIORITY_HIGH, PRIORITY_LOW, PRIORITY_NORMAL,
+  priorityLevel, setCardPriority, setCardSuspended, subscribeCards, updateCard,
+} from "../lib/cards";
 import { loadSettings, subscribeSettings } from "../lib/settings";
 import { loadTopics, subscribeTopics } from "../lib/topics";
 import { languageDisplayName, readingSpec } from "../lib/languages";
@@ -10,7 +13,8 @@ import { MistakeCardPicker } from "../components/MistakeCardPicker";
 import { getUiLanguage, t } from "../i18n";
 import { useSpeech } from "../hooks/useSpeech";
 import { useLlmConnection } from "../hooks/useLlmConnection";
-import { connectionForTask } from "../lib/llmConnection";
+import { connectionForTask, decisionTargetForApp } from "../lib/llmConnection";
+import { scoreSavedCards } from "../lib/decision";
 import { localizeNetworkError } from "../lib/network";
 import { requestCardMerges, requestTranslationCards } from "../lib/llm";
 import type { CardCandidate, CardMergeGroup } from "../lib/parse";
@@ -26,6 +30,8 @@ import type { LingoCardInboxItem, LingoCardPayloadV1 } from "../lib/cardInbox";
 import { deterministicCandidates } from "../lib/inboxCandidates";
 import type { LlmConnection } from "../lib/llmConnection";
 import type { Card } from "../types";
+
+const CARD_PRIORITIES = { low: PRIORITY_LOW, normal: PRIORITY_NORMAL, high: PRIORITY_HIGH } as const;
 
 /** Days until due relative to local midnight; null for an unparsable date. */
 function dueDiffDays(dueAt: string): number | null {
@@ -121,9 +127,8 @@ function InboxItemRow({
   }
 
   function addSelected(selected: CardCandidate[]) {
-    for (const c of selected) {
-      addCard({ ...c, source: "translate", sourceTopicId: null, language: item.targetLanguage });
-    }
+    const added = selected.map((c) => addCard({ ...c, source: "translate", sourceTopicId: null, language: item.targetLanguage }));
+    void scoreSavedCards(added, { targetLanguage: item.targetLanguage, nativeLanguage });
     markImported(item.id);
   }
 
@@ -216,6 +221,18 @@ export function CardsView() {
   useEffect(() => subscribeSettings(() => setSettings(loadSettings())), []);
 
   const { connection } = useLlmConnection("cards");
+  const decisionTarget = decisionTargetForApp();
+  const importanceAbort = useRef<AbortController | null>(null);
+  const [importanceProgress, setImportanceProgress] = useState<{
+    completed: number; total: number; status: "running" | "done" | "cancelled";
+  } | null>(null);
+  useEffect(() => {
+    setImportanceProgress(null);
+    return () => {
+      importanceAbort.current?.abort();
+      importanceAbort.current = null;
+    };
+  }, [settings.activeLanguage, decisionTarget?.baseUrl, decisionTarget?.model, decisionTarget?.apiKey]);
 
   // "類似カードを整理" — LLM-assisted merge cleanup (lib/llm.ts
   // requestCardMerges / lib/cards.ts mergeCards). Scoped to the current
@@ -240,6 +257,7 @@ export function CardsView() {
   const speech = useSpeech();
 
   const [showForm, setShowForm] = useState(false);
+  const [suspendedOnly, setSuspendedOnly] = useState(false);
   const [front, setFront] = useState("");
   const [reading, setReading] = useState("");
   const [meaning, setMeaning] = useState("");
@@ -328,7 +346,7 @@ export function CardsView() {
   function submit(event: Event) {
     event.preventDefault();
     if (!canSubmitNew()) return;
-    addCard({
+    const added = addCard({
       front,
       reading,
       meaning,
@@ -338,6 +356,7 @@ export function CardsView() {
       source: "manual",
       language: settings.targetLanguages.length > 1 ? language : settings.targetLanguages[0],
     });
+    void scoreSavedCards([added], { targetLanguage: settings.activeLanguage, nativeLanguage: settings.nativeLanguage });
     setFront("");
     setReading("");
     setMeaning("");
@@ -371,7 +390,31 @@ export function CardsView() {
   }
 
   const visible = cards.filter((c) => !c.language || c.language === settings.activeLanguage);
-  const sorted = [...visible].sort((a, b) => new Date(a.dueAt).getTime() - new Date(b.dueAt).getTime());
+  const unscored = visible.filter((c) => c.prioritySource === "default");
+  const sorted = visible.filter((c) => !suspendedOnly || c.suspended)
+    .sort((a, b) => new Date(a.dueAt).getTime() - new Date(b.dueAt).getTime());
+
+  async function estimateImportance() {
+    if (!decisionTarget || importanceAbort.current || unscored.length === 0) return;
+    const controller = new AbortController();
+    importanceAbort.current = controller;
+    setImportanceProgress({ completed: 0, total: unscored.length, status: "running" });
+    await scoreSavedCards(unscored, {
+      targetLanguage: settings.activeLanguage,
+      nativeLanguage: settings.nativeLanguage,
+      signal: controller.signal,
+      onProgress: (completed, total) => setImportanceProgress({ completed, total, status: "running" }),
+    });
+    if (importanceAbort.current !== controller) return;
+    importanceAbort.current = null;
+    setImportanceProgress((progress) => progress && { ...progress, status: "done" });
+  }
+
+  function cancelImportanceEstimate() {
+    importanceAbort.current?.abort();
+    importanceAbort.current = null;
+    setImportanceProgress((progress) => progress && { ...progress, status: "cancelled" });
+  }
 
   const cardLanguage = settings.targetLanguages.length > 1 ? language : settings.targetLanguages[0];
   const readingField = readingSpec(cardLanguage);
@@ -421,7 +464,7 @@ export function CardsView() {
     <div class="view-container cards-view">
       <section class="card-panel">
         <div class="topic-header">
-          <h2>{t("cards-heading", { count: visible.length })}</h2>
+          <h2>{t("cards-heading", { count: sorted.length })}</h2>
           <button type="button" onClick={() => setShowForm((v) => !v)}>
             {showForm ? t("cards-close") : t("cards-add-button")}
           </button>
@@ -549,9 +592,30 @@ export function CardsView() {
       )}
 
       <section class="card-panel">
+        {decisionTarget && (
+          <div class="button-row">
+            <button type="button" onClick={estimateImportance}
+              disabled={importanceProgress?.status === "running" || unscored.length === 0}>
+              {t("cards-estimate-importance")}
+            </button>
+            {importanceProgress?.status === "running" && (
+              <button type="button" onClick={cancelImportanceEstimate}>{t("cards-estimate-cancel")}</button>
+            )}
+            {importanceProgress && (
+              <span class="hint-text" role="status">
+                {t(importanceProgress.status === "cancelled" ? "cards-estimate-cancelled" : "cards-estimate-progress",
+                  { completed: importanceProgress.completed, total: importanceProgress.total })}
+              </span>
+            )}
+          </div>
+        )}
+        <label class="button-row">
+          <input type="checkbox" checked={suspendedOnly} onChange={(e) => setSuspendedOnly(e.currentTarget.checked)} />
+          {t("cards-suspended-only")}
+        </label>
         {speech.speechError && <p class="speak-error">{speech.speechError}</p>}
         {sorted.length === 0 ? (
-          <p class="hint-text">{t("cards-empty")}</p>
+          <p class="hint-text">{t(suspendedOnly ? "cards-suspended-empty" : "cards-empty")}</p>
         ) : (
           <ul class="card-list">
             {sorted.map((c) => {
@@ -560,7 +624,7 @@ export function CardsView() {
               const topicTitle = sourceTopicTitle(c);
               const editReadingField = readingSpec(c.language || settings.activeLanguage);
               return (
-                <li key={c.id} class="card-list-entry">
+                <li key={c.id} class={`card-list-entry${c.suspended ? " is-suspended" : ""}`}>
                   <div class="card-list-item card-list-clickable" onClick={() => toggleExpand(c.id)}>
                     <div class="card-list-main">
                       <CardFront
@@ -573,9 +637,13 @@ export function CardsView() {
                       <span class="card-list-meaning"> — {c.meaning}</span>
                     </div>
                     <div class="card-list-meta">
-                      <span class={`due-badge${(dueDiffDays(c.dueAt) ?? 1) <= 0 ? " due-badge-ready" : ""}`}>
-                        {formatDue(dueDiffDays(c.dueAt))}
-                      </span>
+                      {c.suspended ? (
+                        <span class="due-badge">{t("cards-suspended")}</span>
+                      ) : (
+                        <span class={`due-badge${(dueDiffDays(c.dueAt) ?? 1) <= 0 ? " due-badge-ready" : ""}`}>
+                          {formatDue(dueDiffDays(c.dueAt))}
+                        </span>
+                      )}
                       {c.source === "mistake" && <span class="source-badge">{t("cards-source-mistake")}</span>}
                       {c.source === "translate" && <span class="source-badge">{t("cards-source-translate")}</span>}
                       {c.source === "sentence" && <span class="source-badge">{t("cards-source-sentence")}</span>}
@@ -633,6 +701,23 @@ export function CardsView() {
                         <Trash2 size={14} />
                       </button>
                     </div>
+                  </div>
+
+                  <div class="button-row card-review-controls">
+                    <label class="button-row">
+                      {t("cards-priority")}
+                      <select
+                        value={priorityLevel(c.priority)}
+                        onChange={(e) => setCardPriority(c.id, CARD_PRIORITIES[e.currentTarget.value as keyof typeof CARD_PRIORITIES])}
+                      >
+                        <option value="low">{t("cards-priority-low")}</option>
+                        <option value="normal">{t("cards-priority-normal")}</option>
+                        <option value="high">{t("cards-priority-high")}</option>
+                      </select>
+                    </label>
+                    <button type="button" onClick={() => setCardSuspended(c.id, !c.suspended)}>
+                      {t(c.suspended ? "cards-resume" : "cards-suspend")}
+                    </button>
                   </div>
 
                   {expanded &&

@@ -2,9 +2,8 @@
 // the やり取り (interaction) leg of CLAUDE.md's core loop, distinct from
 // 練習's one-shot topic writing. No session: pick from past conversations or
 // start a fresh AI-invented scenario. Active session: a chat log (assistant
-// bubbles left, learner bubbles right) with an inline, expanded-by-default
-// (but still per-turn collapsible) correction under any learner line that
-// needed one, plus a composer (Ctrl+Enter submits, matching PracticeView's
+// bubbles left, learner bubbles right) with a per-turn correction (collapsed
+// in inquiry mode), plus a composer (Ctrl+Enter submits, matching PracticeView's
 // convention). Every corrected reply also fires lib/autoExtract.ts's
 // background mistake-card extraction (settings.autoExtractCards) and feeds
 // lib/level.ts's per-language proficiency estimate. Ending a session offers
@@ -13,12 +12,14 @@
 // is off, since it would otherwise duplicate the background flow. The most
 // recent learner+assistant exchange (only) can be edited in place — the
 // learner retypes their line, the old pair is dropped, and a fresh
-// requestConversationReply call replaces it, so the log always reads as one
+// reply replaces it, so the log always reads as one
 // coherent conversation rather than gaining visible "redo" branches.
 import { useEffect, useRef, useState } from "preact/hooks";
 import { Loader2, MessageCircle, Pencil, Send, Square, Trash2, Volume2 } from "lucide-preact";
-import type { Card, ConversationSession, ConversationTurn } from "../types";
+import type { Card, ConversationMode, ConversationSession, ConversationTurn } from "../types";
 import type { ConversationReplyResult } from "../lib/conversation";
+import type { InquiryReplyResult } from "../lib/inquiry";
+import type { LlmConnection } from "../lib/llmConnection";
 import {
   addConversation,
   deleteConversation,
@@ -26,9 +27,11 @@ import {
   newTurn,
   requestConversationReply,
   requestConversationStart,
+  revealedFactIds,
   subscribeConversations,
   updateConversation,
 } from "../lib/conversation";
+import { isInquiryClarification, requestInquiryReply, requestInquiryStart } from "../lib/inquiry";
 import { addCard } from "../lib/cards";
 import { autoExtractMistakeCards } from "../lib/autoExtract";
 import { effectiveBand, recordOutputSample, subscribeLevels } from "../lib/level";
@@ -41,6 +44,9 @@ import { localizeNetworkError } from "../lib/network";
 import { changedCorrectedSentences, saveSentenceCards } from "../lib/sentenceCards";
 import type { CardCandidate } from "../lib/parse";
 import { MistakeCardPicker } from "../components/MistakeCardPicker";
+import { InquiryDebrief } from "../components/InquiryDebrief";
+import { InquiryPanel } from "../components/InquiryPanel";
+import { scoreSavedCards } from "../lib/decision";
 import { SpellingDrill } from "../components/SpellingDrill";
 import { diffChars } from "../lib/diff";
 import { languageDisplayName } from "../lib/languages";
@@ -53,14 +59,13 @@ import "../styles/talk.css";
  * sentenceCardsByTurn state. Absent = not yet attempted (show the button). */
 type SentenceCardsSaveState = { kind: "saving" } | { kind: "saved"; count: number } | { kind: "error"; message: string };
 
-/** Inline, expanded-by-default correction shown under a learner bubble that
- * had something to fix (still manually collapsible per turn). Reuses
+/** Collapsible correction shown under a learner bubble that had something to fix. Reuses
  * lib/diff.ts's character diff the same way FeedbackPanel does, just scoped
  * to one turn, so a corrected reply is visible without an extra click while
  * the log still reads as a conversation rather than a stack of feedback
  * panels. `autoAdded`, when non-empty, is the auto-extraction notice for this
- * turn (see TalkView's autoAddedByTurn) — shown outside the collapsible body
- * so it stays visible even if the learner collapses the correction.
+ * turn (see TalkView's autoAddedByTurn), shown when the correction is open or
+ * the session uses free conversation mode.
  * `sentenceCardsState`/`onSaveSentenceCards`/`canSaveSentenceCards` drive the
  * "save corrected sentence(s) as SRS cards" affordance — shown only when
  * lib/sentenceCards.ts's changedCorrectedSentences() finds at least one
@@ -93,6 +98,7 @@ function TalkCorrection({
   showReadingAids,
   translationRevealed,
   onToggleTranslation,
+  inquiry,
 }: {
   original: string;
   corrected: string;
@@ -109,9 +115,11 @@ function TalkCorrection({
   showReadingAids: boolean;
   translationRevealed: boolean;
   onToggleTranslation: () => void;
+  inquiry: boolean;
 }) {
-  const [expanded, setExpanded] = useState(true);
+  const [expanded, setExpanded] = useState(!inquiry);
   const [typingPractice, setTypingPractice] = useState(false);
+  const showActions = !inquiry || expanded;
   const chunks = diffChars(original, corrected);
   const changedSentences = changedCorrectedSentences(original, corrected);
   // Typing-practice material for this turn's correction (see
@@ -126,8 +134,8 @@ function TalkCorrection({
   const loading = speech.loadingId === speakId;
   return (
     <div class="talk-correction">
-      <button type="button" class="link-button talk-correction-toggle" onClick={() => setExpanded((v) => !v)}>
-        {expanded ? t("talk-correction-hide") : t("talk-correction-show")}
+      <button type="button" class="link-button talk-correction-toggle" aria-expanded={expanded} onClick={() => setExpanded((v) => !v)}>
+        {expanded ? t(inquiry ? "talk-inquiry-correction-close" : "talk-correction-hide") : t("talk-correction-show")}
       </button>
       {expanded && (
         <div class="talk-correction-body">
@@ -170,14 +178,14 @@ function TalkCorrection({
           {reasons && <p class="talk-correction-reasons">{reasons}</p>}
         </div>
       )}
-      {autoAdded && autoAdded.length > 0 && (
+      {showActions && autoAdded && autoAdded.length > 0 && (
         <p class="talk-correction-auto-added">
           {t("talk-auto-cards-added", { count: autoAdded.length })}
           <br />
           {autoAdded.map((c) => c.front).join(", ")}
         </p>
       )}
-      {hasTypingPractice && (
+      {showActions && hasTypingPractice && (
         <div class="talk-typing-practice">
           <button
             type="button"
@@ -189,7 +197,7 @@ function TalkCorrection({
           {typingPractice && <SpellingDrill words={practiceWords} sentences={practiceSentences} />}
         </div>
       )}
-      {changedSentences.length > 0 && (
+      {showActions && changedSentences.length > 0 && (
         <div class="talk-sentence-cards">
           {!sentenceCardsState || sentenceCardsState.kind === "error" ? (
             <>
@@ -225,6 +233,7 @@ function TalkCorrection({
  * other's state. Each bubble just uses its own turn id as the toggle key. */
 function TalkBubble({
   turn,
+  inquiry,
   language,
   speech,
   autoAdded,
@@ -245,6 +254,7 @@ function TalkBubble({
   editError,
 }: {
   turn: ConversationTurn;
+  inquiry: boolean;
   language: string;
   speech: ReturnType<typeof useSpeech>;
   autoAdded?: Card[];
@@ -332,8 +342,17 @@ function TalkBubble({
           </button>
         </div>
       )}
+      {inquiry && !editing && isInquiryClarification(turn) && (
+        turn.unclearReason ? (
+          <details class="talk-inquiry-clarification">
+            <summary class="talk-inquiry-badge">{t("talk-inquiry-asked-back")}</summary>
+            <p class="hint-text">{turn.unclearReason}</p>
+          </details>
+        ) : <span class="talk-inquiry-badge">{t("talk-inquiry-asked-back")}</span>
+      )}
       {turn.role === "learner" && turn.corrected && !editing && (
         <TalkCorrection
+          inquiry={inquiry}
           original={turn.text}
           corrected={turn.corrected}
           correctedReading={turn.correctedReading}
@@ -381,6 +400,7 @@ export function TalkView() {
   const [starting, setStarting] = useState(false);
   const [startError, setStartError] = useState("");
   const [topicRequest, setTopicRequest] = useState("");
+  const [mode, setMode] = useState<ConversationMode>("free");
 
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
@@ -463,13 +483,15 @@ export function TalkView() {
     setStartError("");
     setStarting(true);
     try {
-      const result = await requestConversationStart({
+      const params = {
         connection: conn,
         targetLanguage: settings.activeLanguage,
         nativeLanguage: settings.nativeLanguage,
         recentTitles: sessions.slice(0, 10).map((s) => s.title),
         topicRequest: topicRequest.trim() || undefined,
-      });
+      };
+      const inquiry = mode === "inquiry" ? await requestInquiryStart(params) : undefined;
+      const result = inquiry ?? await requestConversationStart(params);
       const opening = newTurn({
         role: "assistant",
         text: result.opening,
@@ -480,6 +502,9 @@ export function TalkView() {
         language: settings.activeLanguage,
         title: result.title,
         scenario: result.scenario,
+        mode,
+        mission: inquiry?.mission,
+        facts: inquiry?.facts,
         turns: [opening],
       });
       openSession(session.id);
@@ -490,12 +515,12 @@ export function TalkView() {
     }
   }
 
-  /** Builds the learner+assistant turn pair from a requestConversationReply
-   * result, feeds lib/level.ts's proficiency estimate, and fires the
+  /** Builds the learner+assistant turn pair in either mode, feeds
+   * lib/level.ts's proficiency estimate, and fires the
    * background mistake-card auto-extraction — shared by sendMessage
    * (appends to the log) and submitEdit (replaces the last exchange). */
   function buildReplyTurns(
-    result: ConversationReplyResult,
+    result: ConversationReplyResult & Partial<InquiryReplyResult>,
     learnerText: string,
   ): [ConversationTurn, ConversationTurn] {
     const learnerTurn = newTurn({
@@ -505,12 +530,15 @@ export function TalkView() {
       correctedReading: result.correctedReading,
       correctedTranslation: result.correctedTranslation,
       reasons: result.reasons,
+      understanding: result.understanding,
+      unclearReason: result.unclearReason,
     });
     const assistantTurn = newTurn({
       role: "assistant",
       text: result.reply,
       reading: result.replyReading,
       translation: result.replyTranslation,
+      revealedFactIds: result.revealedFactIds,
     });
 
     // Feed the per-language proficiency estimate (lib/level.ts) — a
@@ -539,9 +567,27 @@ export function TalkView() {
     return [learnerTurn, assistantTurn];
   }
 
+  async function saveExchange(session: ConversationSession, turns: ConversationTurn[], learnerText: string, conn: LlmConnection) {
+    const params = {
+      connection: conn,
+      targetLanguage: sessionLanguage,
+      nativeLanguage: settings.nativeLanguage,
+      scenario: session.scenario,
+      turns,
+      learnerText,
+    };
+    const result = session.mode === "inquiry"
+      ? await requestInquiryReply({ ...params, mission: session.mission, facts: session.facts, revealedFactIds: revealedFactIds({ turns }) })
+      : await requestConversationReply(params);
+    if (session.mode === "inquiry" && !loadConversations().some((latest) => latest.id === session.id && latest.updatedAt === session.updatedAt)) {
+      throw new Error(t("talk-send-failed"));
+    }
+    updateConversation(session.id, { turns: [...turns, ...buildReplyTurns(result, learnerText)] });
+  }
+
   async function sendMessage(event: Event) {
     event.preventDefault();
-    if (!activeSession || activeSession.endedAt || !text.trim()) return;
+    if (!activeSession || activeSession.endedAt || sending || !text.trim()) return;
     if (!connection) {
       setSendError(t("talk-need-llm"));
       return;
@@ -552,16 +598,7 @@ export function TalkView() {
     setSending(true);
     const learnerText = text;
     try {
-      const result = await requestConversationReply({
-        connection: conn,
-        targetLanguage: sessionLanguage,
-        nativeLanguage: settings.nativeLanguage,
-        scenario: activeSession.scenario,
-        turns: activeSession.turns,
-        learnerText,
-      });
-      const [learnerTurn, assistantTurn] = buildReplyTurns(result, learnerText);
-      updateConversation(activeSession.id, { turns: [...activeSession.turns, learnerTurn, assistantTurn] });
+      await saveExchange(activeSession, activeSession.turns, learnerText, conn);
       setText("");
     } catch (e) {
       setSendError(localizeNetworkError(e, t("talk-send-failed")));
@@ -583,14 +620,14 @@ export function TalkView() {
   }
 
   /** Replaces the last learner+assistant exchange in place: drops that pair
-   * from the log, then re-runs requestConversationReply against the history
+   * from the log, then requests a reply against the history
    * before it with the retyped text, same as a fresh sendMessage but
    * overwriting instead of appending. Only ever offered for the most recent
    * exchange (see editableTurnId) so earlier turns can't drift out of sync
    * with what the AI partner said next. */
   async function submitEdit(event: Event) {
     event.preventDefault();
-    if (!activeSession || activeSession.endedAt || editingTurnId === null || !editText.trim()) return;
+    if (!activeSession || activeSession.endedAt || editSubmitting || editingTurnId === null || !editText.trim()) return;
     const editIndex = activeSession.turns.findIndex((turn) => turn.id === editingTurnId);
     if (editIndex === -1) return;
     const historyTurns = activeSession.turns.slice(0, editIndex);
@@ -604,16 +641,7 @@ export function TalkView() {
     setEditSubmitting(true);
     const learnerText = editText;
     try {
-      const result = await requestConversationReply({
-        connection: conn,
-        targetLanguage: sessionLanguage,
-        nativeLanguage: settings.nativeLanguage,
-        scenario: activeSession.scenario,
-        turns: historyTurns,
-        learnerText,
-      });
-      const [learnerTurn, assistantTurn] = buildReplyTurns(result, learnerText);
-      updateConversation(activeSession.id, { turns: [...historyTurns, learnerTurn, assistantTurn] });
+      await saveExchange(activeSession, historyTurns, learnerText, conn);
       cancelEdit();
     } catch (e) {
       setEditError(localizeNetworkError(e, t("talk-send-failed")));
@@ -654,6 +682,21 @@ export function TalkView() {
     updateConversation(activeSession.id, { endedAt: new Date().toISOString() });
   }
 
+  function retryInquiry(session: ConversationSession) {
+    const opening = session.turns.find((turn) => turn.role === "assistant");
+    const retry = addConversation({
+      language: session.language,
+      title: session.title,
+      scenario: session.scenario,
+      mode: "inquiry",
+      mission: session.mission,
+      facts: session.facts,
+      retryOfId: session.id,
+      turns: opening ? [newTurn({ role: "assistant", text: opening.text, reading: opening.reading, translation: opening.translation })] : [],
+    });
+    openSession(retry.id);
+  }
+
   const correctedTurns = activeSession ? activeSession.turns.filter((turn) => turn.role === "learner" && turn.corrected) : [];
 
   // The one learner turn (if any) eligible for "edit + resend": the last
@@ -691,9 +734,9 @@ export function TalkView() {
 
   function addSelectedCards(selected: CardCandidate[]) {
     if (!activeSession) return;
-    for (const c of selected) {
-      addCard({ ...c, source: "mistake", sourceTopicId: null, language: activeSession.language });
-    }
+    const targetLanguage = activeSession.language;
+    const added = selected.map((c) => addCard({ ...c, source: "mistake", sourceTopicId: null, language: targetLanguage }));
+    void scoreSavedCards(added, { targetLanguage, nativeLanguage: settings.nativeLanguage });
     setCardsAdded(selected.length);
     setCandidates(null);
   }
@@ -703,7 +746,15 @@ export function TalkView() {
       <div class="view-container talk-view">
         <section class="card-panel">
           <h2>{t("talk-start-heading")}</h2>
-          <p class="hint-text">{t("talk-start-hint")}</p>
+          <div class="talk-mode-toggle" role="group" aria-label={t("talk-mode-label")}>
+            <button type="button" aria-pressed={mode === "free"} onClick={() => setMode("free")} disabled={starting}>
+              {t("talk-mode-free")}
+            </button>
+            <button type="button" aria-pressed={mode === "inquiry"} onClick={() => setMode("inquiry")} disabled={starting}>
+              {t("talk-mode-inquiry")}
+            </button>
+          </div>
+          <p class="hint-text">{t(mode === "inquiry" ? "talk-inquiry-start-hint" : "talk-start-hint")}</p>
           <div class="field-grid">
             <label>
               {t("talk-topic-request-label")}
@@ -738,6 +789,7 @@ export function TalkView() {
                     <span class="talk-session-meta">
                       <span>{new Date(s.createdAt).toLocaleDateString()}</span>
                       <span>{t("talk-turn-count", { count: s.turns.length })}</span>
+                      {s.mode === "inquiry" && <span class="talk-inquiry-badge">{t("talk-mode-inquiry")}</span>}
                       {s.endedAt && <span class="talk-ended-badge">{t("talk-ended-badge")}</span>}
                     </span>
                   </button>
@@ -759,6 +811,7 @@ export function TalkView() {
     );
   }
 
+  const inquiry = activeSession.mode === "inquiry";
   return (
     <div class="view-container talk-view">
       <section class="card-panel talk-panel">
@@ -767,12 +820,22 @@ export function TalkView() {
           {activeSession.endedAt && <span class="talk-ended-badge">{t("talk-ended-badge")}</span>}
         </div>
         {activeSession.scenario && <p class="talk-scenario">{activeSession.scenario}</p>}
+        {inquiry && (activeSession.endedAt ? (
+          <InquiryDebrief
+            session={activeSession}
+            previous={sessions.find((session) => session.id === activeSession.retryOfId)}
+            language={sessionLanguage}
+            speech={speech}
+            onRetry={() => retryInquiry(activeSession)}
+          />
+        ) : <InquiryPanel session={activeSession} language={sessionLanguage} speech={speech} />)}
 
         <div class="talk-log">
           {activeSession.turns.map((turn) => (
             <TalkBubble
               key={turn.id}
               turn={turn}
+              inquiry={inquiry}
               language={sessionLanguage}
               speech={speech}
               autoAdded={autoAddedByTurn[turn.id]}
@@ -782,7 +845,7 @@ export function TalkView() {
               showReadingAids={settings.showReadingAids}
               translationRevealed={revealedTranslations.has(turn.id)}
               onToggleTranslation={() => toggleTranslation(turn.id)}
-              canEdit={turn.id === editableTurnId}
+              canEdit={turn.id === editableTurnId && (!inquiry || !sending)}
               editing={editingTurnId === turn.id}
               editText={editText}
               onEditTextChange={setEditText}
@@ -824,7 +887,7 @@ export function TalkView() {
                   </>
                 )}
               </button>
-              <button type="button" onClick={endSession}>
+              <button type="button" onClick={endSession} disabled={inquiry && sending}>
                 {t("talk-end-session")}
               </button>
             </div>
@@ -851,7 +914,7 @@ export function TalkView() {
         )}
 
         <div class="button-row">
-          <button type="button" onClick={backToList}>
+          <button type="button" onClick={backToList} disabled={inquiry && (sending || editSubmitting)}>
             {t("talk-back-to-list")}
           </button>
         </div>

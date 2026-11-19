@@ -10,6 +10,7 @@ export type MainTab = "practice" | "reading" | "talk" | "review" | "cards" | "hi
  * lib/cardInbox.ts), or saved verbatim from a practice correction's
  * corrected sentence (see lib/sentenceCards.ts). */
 export type CardSource = "manual" | "mistake" | "translate" | "sentence";
+export type CardPrioritySource = "default" | "auto" | "user";
 
 /** Extended SRS card: word/phrase plus enough context to review it as more
  * than a bare flashcard (reading, an example sentence, when it's used, and
@@ -39,6 +40,11 @@ export interface Card {
   easeFactor: number;
   reps: number;
   lapses: number;
+  /** 0..1 importance for selecting and ordering review cards. */
+  priority: number;
+  prioritySource: CardPrioritySource;
+  suspended: boolean;
+  lastReviewedAt: string | null;
   /** ISO timestamp, bumped on every mutation to this card; exists for the
    * device-to-device sync feature's LWW merge — see lib/sync/types.ts. */
   updatedAt: string;
@@ -135,6 +141,16 @@ export interface ReadingPassage {
 }
 
 export type ConversationRole = "assistant" | "learner";
+export type ConversationMode = "free" | "inquiry";
+export type InquiryUnderstanding = "" | "full" | "partial" | "none";
+
+export interface InquiryFact {
+  id: string;
+  /** What to find out, in the learner's native language. */
+  label: string;
+  /** The answer in the target language, hidden until obtained or debriefed. */
+  detail: string;
+}
 
 /** One turn of the 会話 tab's dialogue. Correction fields are only ever
  * non-empty on learner turns ("" = nothing to correct / not a learner turn). */
@@ -160,6 +176,12 @@ export interface ConversationTurn {
   correctedTranslation: string;
   /** Why, in the learner's native language. "" when no correction. */
   reasons: string;
+  /** How well the partner understood a learner turn in inquiry mode. */
+  understanding: InquiryUnderstanding;
+  /** What was unclear, in the learner's native language. */
+  unclearReason: string;
+  /** Facts conveyed in this assistant reply. */
+  revealedFactIds: string[];
 }
 
 /** One 会話 session: a scenario plus its turns. See lib/conversation.ts. */
@@ -171,6 +193,12 @@ export interface ConversationSession {
   title: string;
   /** The scenario instruction the AI partner follows. */
   scenario: string;
+  mode: ConversationMode;
+  /** What to find out, in the learner's native language. */
+  mission: string;
+  facts: InquiryFact[];
+  /** The session this mission was retried from, or "". */
+  retryOfId: string;
   turns: ConversationTurn[];
   createdAt: string;
   /** Set when the learner ends the session; "" while still active. */
@@ -201,7 +229,7 @@ export interface LanguageLevelRecord {
 
 export type ReasoningEffort = import("@tik-choco/mistai/preact").ReasoningEffort;
 export type TtsEngine = "browser" | "api" | "network";
-export type LlmTask = "practice" | "topic" | "cards" | "review" | "reading" | "conversation" | "grammar" | "ui-translation" | "card-organize";
+export type LlmTask = "practice" | "topic" | "cards" | "review" | "reading" | "conversation" | "grammar" | "ui-translation" | "card-organize" | "decision";
 
 export interface LingoSettings extends LlmLocalSettings {
   targetLanguages: string[];
@@ -210,6 +238,8 @@ export interface LingoSettings extends LlmLocalSettings {
   autoExtractCards: boolean;
   showReadingAids: boolean;
   autoOrganizeCards: boolean;
+  reviewSessionLimit: number;
+  newCardsPerDay: number;
   lastCardAutoOrganizeAt: string;
   // Each model ref owns its language voices, so changing models cannot reuse stale voice IDs.
   ttsVoicesByRef: Record<string, Record<string, string>>;

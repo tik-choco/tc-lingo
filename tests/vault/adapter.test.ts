@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { addCard, deleteCard, gradeCard, loadCards, updateCard } from "../../src/lib/cards";
+import { addCard, deleteCard, gradeCard, loadCards, setCardSuspended, updateCard } from "../../src/lib/cards";
 import { addConversation, deleteConversation, loadConversations, newTurn, updateConversation } from "../../src/lib/conversation";
 import { loadLevels, recordOutputSample, setLevelOverride } from "../../src/lib/level";
 import { addPassage, loadPassages } from "../../src/lib/reading";
@@ -98,6 +98,26 @@ describe("vault adapter", () => {
     expect(card.language).toBe("");
     expect(card.exampleSentenceTranslation).toBe("");
     expect(createVaultAdapter().parse(snapshot())).toEqual(snapshot());
+  });
+
+  it("backfills legacy checkpoint cards and preserves review fields on restore", () => {
+    const card = addCard({ front: "train", meaning: "railway vehicle", priority: 0.8, prioritySource: "auto" });
+    const reviewed = gradeCard(card.id, "again")!;
+    const suspended = setCardSuspended(card.id, true)!;
+    const adapter = createVaultAdapter();
+    const checkpoint = adapter.snapshot() as VaultState;
+    const { priority, prioritySource, suspended: paused, lastReviewedAt, ...legacyCard } = checkpoint.cards[0];
+    expect({ priority, prioritySource, paused, lastReviewedAt }).toEqual({
+      priority: 0.8, prioritySource: "auto", paused: true, lastReviewedAt: reviewed.lastReviewedAt,
+    });
+    expect(adapter.parse({ ...checkpoint, cards: [legacyCard] }).cards).toEqual([
+      { ...legacyCard, priority: 0.5, prioritySource: "default", suspended: false, lastReviewedAt: null },
+    ]);
+
+    storage.clear();
+    adapter.apply(adapter.parse(checkpoint));
+    expect(loadCards()).toEqual([suspended]);
+    expect(storage.getItem("tc-lingo:review-daily-v1")).toBeNull();
   });
 
   it("includes no settings, secrets, cache entries, or foreign properties inside records", () => {

@@ -1,4 +1,4 @@
-import { loadLlmConfig, resolveModel, providerKind, roomIdFromBaseUrl } from "./llmConfig";
+import { isModelRef, loadLlmConfig, resolveModel, resolveModelExact, providerKind, roomIdFromBaseUrl } from "./llmConfig";
 import type { ResolvedLlmTargetV1 } from "./llmConfig";
 import { loadSettings } from "./settings";
 import type { LlmTask, ReasoningEffort } from "../types";
@@ -7,7 +7,7 @@ export type LlmConnection =
   | { kind: "api"; target: ResolvedLlmTargetV1 }
   | { kind: "network"; roomId: string; model: string; reasoningEffort: ReasoningEffort };
 
-export const LLM_TASKS: readonly LlmTask[] = [
+export const CHAT_TASKS: readonly Exclude<LlmTask, "decision">[] = [
   "practice", "topic", "cards", "review", "reading", "conversation", "grammar", "ui-translation", "card-organize",
 ];
 
@@ -27,8 +27,20 @@ export function resolveLlmConnection() {
 }
 
 export function connectionForTask(task: LlmTask): LlmConnection | null {
+  if (task === "decision") return connectionFromTarget(decisionTargetForApp(), "none");
   const settings = loadSettings();
   const config = loadLlmConfig();
   const local = settings.tasks[task];
   return connectionFromTarget(config ? resolveModel(config, local?.ref) : null, local?.reasoningEffort ?? "none");
+}
+
+export function decisionTargetForApp(): ResolvedLlmTargetV1 | null {
+  try {
+    const ref = loadSettings().tasks.decision?.ref;
+    if (!isModelRef(ref)) return null;
+    const config = loadLlmConfig();
+    return config ? resolveModelExact(config, ref) : null;
+  } catch {
+    return null;
+  }
 }

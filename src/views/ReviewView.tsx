@@ -1,7 +1,7 @@
-// Retrieval practice: the review queue is snapshotted once when the view
-// loads (not re-derived live from storage) so grading a card mid-session
-// doesn't reshuffle the deck out from under the learner. "更新" re-snapshots
-// on demand (e.g. after adding cards elsewhere).
+// Retrieval practice: each snapshot ranks due review cards by urgency and
+// interleaves high-priority new cards within the session and daily limits.
+// Grading doesn't reshuffle the snapshot. Refresh or change the study
+// language to build a new one.
 //
 // Grading is automatic: the learner types (or leaves blank) their recalled
 // answer, "check" compares it and combines that with how long it took
@@ -17,45 +17,40 @@
 // recalled the word. When an LLM connection exists, a non-blank answer that
 // fails the strict check — or only earns a strict "near" that isn't the
 // deterministic lemmaMatch case above — gets a second opinion
-// (judgeReviewAnswer, passed the same displayed sentence/expectedFill):
+// (System One when configured, otherwise judgeReviewAnswer, using the
+// displayed sentence and expected fill):
 // synonyms/equivalent phrasings count as correct, and a right-word-wrong-form
 // slip (tense, plural, conjugation, ...) counts as "near" (partial credit)
-// instead of lapsing the card outright — the verdict can only upgrade the
-// strict judgement, never downgrade it. The learner put effort into the
-// attempt either way, so the same pass also asks for a constructive
+// instead of lapsing the card outright. A confident System One verdict
+// grades immediately. The generative fallback can only upgrade the strict
+// judgement. The generative judge also asks for a constructive
 // `rewrite` — the displayed sentence with the LEARNER's own typed expression
 // made to fit (inflection/collocation/word order corrected as needed),
 // same spirit as the practice tab's corrected text — shown alongside the
 // note whenever the model returns one.
 //
-// Three more LLM-connection-gated, best-effort niceties layered on top,
-// all designed to cost zero added latency by working during the idle time
-// the learner spends on whichever card is currently shown:
-// - A miss also gets requeued a few cards later in *this session's* queue
-//   (interleaving — see REQUEUE_OFFSET), independent of its normal SRS
-//   reschedule to tomorrow-or-later.
-// - lib/cards.ts's dueCards() already orders by lapses first, so
-//   consistently-hard cards front-load the session.
-// - lib/reviewClozeVariation.ts prefetches a fresh example-sentence variant
-//   (sentence + its own expected fill) for a card that's been seen before,
-//   so repeat reviews don't always show the exact same sentence/answer (see
-//   displayCloze/expectedFill).
+// Misses are requeued later in the session (see REQUEUE_OFFSET). While the
+// learner answers, the app prefetches consistency fixes and cloze variations
+// for the next card whenever an LLM connection is available.
 import { useEffect, useRef, useState } from "preact/hooks";
-import { Loader2, RotateCw, Square, Volume2 } from "lucide-preact";
-import { dueCards, gradeCard } from "../lib/cards";
+import { Loader2, RotateCw, SkipForward, Square, Volume2 } from "lucide-preact";
+import { gradeCard, LEECH_THRESHOLD, loadCards, PRIORITY_LOW, priorityLevel, setCardPriority, setCardSuspended } from "../lib/cards";
+import { buildReviewQueue } from "../lib/reviewQueue";
+import { loadReviewDaily } from "../lib/reviewDaily";
 import { CardFront } from "../components/CardFront";
 import { diffChars } from "../lib/diff";
 import { GrammarExplain } from "../components/GrammarExplain";
 import { SpellingDrill } from "../components/SpellingDrill";
 import type { AnswerJudgement } from "../lib/srs";
-import { autoGrade, judgeAnswer, scheduleReview } from "../lib/srs";
+import { autoGrade, judgeAnswer } from "../lib/srs";
 import { deriveClozeGaps, judgeClozeAnswer, stripEllipsisTokens } from "../lib/clozeFill";
-import type { Card } from "../types";
+import { quickJudgeAnswer } from "../lib/decision";
+import type { LingoSettings } from "../types";
 import { loadSettings, subscribeSettings } from "../lib/settings";
 import { languageDisplayName } from "../lib/languages";
 import { judgeReviewAnswer } from "../lib/llm";
 import { useLlmConnection } from "../hooks/useLlmConnection";
-import { connectionForTask } from "../lib/llmConnection";
+import { connectionForTask, decisionTargetForApp } from "../lib/llmConnection";
 import { checkCardConsistency } from "../lib/reviewConsistencyCheck";
 import { generateClozeVariation } from "../lib/reviewClozeVariation";
 import { t } from "../i18n";
@@ -121,13 +116,32 @@ function expandClozeBlank(cloze: string, fill: string): { cloze: string; longFil
 const INSUFFICIENT_CUE_FILL_RATIO = 0.5;
 const MIN_INSUFFICIENT_CUE_FILL_WORDS = 5;
 
+function buildSession(settings: LingoSettings) {
+  const now = new Date();
+  return buildReviewQueue(loadCards(), now, {
+    language: settings.activeLanguage,
+    sessionLimit: settings.reviewSessionLimit,
+    newRemainingToday: settings.newCardsPerDay - loadReviewDaily(now).newIntroduced,
+  });
+}
+
+type SkippedCard =
+  | { id: string; kind: "lower"; previous: number }
+  | { id: string; kind: "suspend"; previous: boolean };
+
 export function ReviewView() {
   const [settings, setSettings] = useState(loadSettings);
   useEffect(() => subscribeSettings(() => setSettings(loadSettings())), []);
   const { connection } = useLlmConnection("review");
 
-  const [queue, setQueue] = useState<Card[]>(() => dueCards(new Date(), settings.activeLanguage));
+  const [snapshot, setSnapshot] = useState(() => buildSession(settings));
+  const { queue, deferred } = snapshot;
   const [index, setIndex] = useState(0);
+  const [skipped, setSkipped] = useState<SkippedCard | null>(null);
+  const plainSkipped = useRef(new Set<string>());
+  const [reviewError, setReviewError] = useState(false);
+  const sessionVersion = useRef(0);
+  const consistencyPrefetch = useRef<{ id: string; controller: AbortController } | null>(null);
   // llmNote/llmAccepted/llmRewrite come from the optional LLM second-opinion
   // pass in check(): the note is shown regardless of outcome (why an
   // alternative counts, what a wrong/near answer needs to change, or an
@@ -144,7 +158,9 @@ export function ReviewView() {
     llmAccepted: boolean;
     llmNote: string;
     llmRewrite: string;
+    equivalentAnswer: string | null;
     lemmaMatch: boolean;
+    leech: boolean;
   } | null>(null);
   const [checking, setChecking] = useState(false);
   const [doneCount, setDoneCount] = useState(0);
@@ -173,27 +189,20 @@ export function ReviewView() {
   const [promptTranslationOverride, setPromptTranslationOverride] = useState<boolean | null>(null);
 
   function refresh() {
-    setQueue(dueCards(new Date(), settings.activeLanguage));
+    sessionVersion.current++;
+    setSnapshot(buildSession(settings));
     setIndex(0);
-    setResult(null);
+    setChecking(false);
+    setSkipped(null);
+    plainSkipped.current.clear();
     setDoneCount(0);
-    setTypedAnswer("");
     setClozeVariations({});
-    setExampleTranslationRevealed(false);
-    setPromptTranslationOverride(null);
-    shownAtRef.current = performance.now();
+    resetAnswer();
   }
 
   useEffect(() => {
-    setQueue(dueCards(new Date(), settings.activeLanguage));
-    setIndex(0);
-    setResult(null);
-    setDoneCount(0);
-    setTypedAnswer("");
-    setClozeVariations({});
-    setExampleTranslationRevealed(false);
-    setPromptTranslationOverride(null);
-    shownAtRef.current = performance.now();
+    refresh();
+    return () => { sessionVersion.current++; };
   }, [settings.activeLanguage]);
 
   const current = queue[index] ?? null;
@@ -264,40 +273,53 @@ export function ReviewView() {
   // card. Fire-and-forget; a fix patches this snapshot's `queue` in place
   // (never re-fetched from storage) so it's picked up without reshuffling
   // the deck — see this file's header comment on why the queue stays static.
+  const upcoming = queue[index + 1];
+  // A deferred card can come right back as the prefetch target in a short
+  // queue. Leave it alone for the rest of this session.
+  const prefetchId = upcoming && !plainSkipped.current.has(upcoming.id) ? upcoming.id : undefined;
   useEffect(() => {
-    const next = queue[index + 1];
-    if (!next) return;
-    let cancelled = false;
-    void checkCardConsistency(next, next.language || settings.activeLanguage).then((fixed) => {
-      if (cancelled || !fixed) return;
-      setQueue((prev) => prev.map((c) => (c.id === fixed.id ? fixed : c)));
+    if (!upcoming || !prefetchId) return;
+    const controller = new AbortController();
+    consistencyPrefetch.current = { id: prefetchId, controller };
+    void checkCardConsistency(upcoming, upcoming.language || settings.activeLanguage, controller.signal).then((fixed) => {
+      if (controller.signal.aborted || !fixed) return;
+      setSnapshot((prev) => ({
+        ...prev,
+        queue: prev.queue.map((c, position) =>
+          position > index && c.id === fixed.id ? { ...c, front: fixed.front, cloze: fixed.cloze } : c,
+        ),
+      }));
     });
     return () => {
-      cancelled = true;
+      controller.abort();
+      consistencyPrefetch.current = null;
     };
     // Depends on the *id* of the next card, not `queue` itself — `queue`'s
     // reference changes on every grade/fix (including this effect's own
-    // setQueue below), which would otherwise refire this on every card.
-  }, [index, queue[index + 1]?.id, settings.activeLanguage]);
+    // snapshot update), which would otherwise refire this on every card.
+  }, [index, current?.id, prefetchId, settings.activeLanguage]);
 
   // Same idle-time-of-the-next-card prefetch shape as the consistency check
   // above, but for lib/reviewClozeVariation.ts's fresh-sentence generator —
   // independent concern (variety, not correctness), so a separate effect.
   useEffect(() => {
-    const next = queue[index + 1];
-    if (!next || clozeVariations[next.id]) return;
+    if (!upcoming || !prefetchId || clozeVariations[prefetchId]) return;
+    const version = sessionVersion.current;
     let cancelled = false;
-    void generateClozeVariation(next, next.language || settings.activeLanguage, settings.nativeLanguage).then((variation) => {
-      if (cancelled || !variation) return;
-      setClozeVariations((prev) => ({ ...prev, [next.id]: variation }));
+    void generateClozeVariation(upcoming, upcoming.language || settings.activeLanguage, settings.nativeLanguage).then((variation) => {
+      if (cancelled || version !== sessionVersion.current || !variation) return;
+      setClozeVariations((prev) => ({ ...prev, [prefetchId]: variation }));
     });
     return () => {
       cancelled = true;
     };
-  }, [index, queue[index + 1]?.id, settings.activeLanguage, settings.nativeLanguage]);
+  }, [index, current?.id, prefetchId, settings.activeLanguage, settings.nativeLanguage]);
 
   async function check() {
     if (!current || result || checking) return;
+    const version = sessionVersion.current;
+    setSkipped(null);
+    setReviewError(false);
     // Measured before the (possibly slow) LLM pass so its latency never
     // penalizes the learner's speed-based grade.
     const elapsed = performance.now() - shownAtRef.current;
@@ -320,71 +342,88 @@ export function ReviewView() {
     let llmAccepted = false;
     let llmNote = "";
     let llmRewrite = "";
+    let equivalentAnswer: string | null = null;
+    let deferFeedback = false;
     const reviewConn = connection ? connectionForTask("review") : null;
+    const judgeParams = {
+      targetLanguage: cardLanguage,
+      nativeLanguage: settings.nativeLanguage,
+      card: { front: current.front, reading: current.reading, meaning: current.meaning, context: current.context },
+      displayedCloze: isCloze ? displayCloze : "",
+      expectedAnswer: expectedFill,
+      typedAnswer: typedAnswer.trim(),
+    };
+    const generateFeedback = reviewConn
+      ? (fixedVerdict?: AnswerJudgement) => judgeReviewAnswer({ ...judgeParams, connection: reviewConn, fixedVerdict })
+      : null;
     // Ask for a second opinion on a strict "wrong", and also on a strict
     // "near" that ISN'T the deterministic lemmaMatch case (that one already
     // has its own note — see review-lemma-form-note below — and skipping the
     // LLM there keeps it snappy).
-    const wantsLlmPass = typedAnswer.trim() && reviewConn && (judgement === "wrong" || (judgement === "near" && !lemmaMatch));
-    if (wantsLlmPass && reviewConn) {
+    const wantsSecondOpinion = judgeParams.typedAnswer && (judgement === "wrong" || (judgement === "near" && !lemmaMatch));
+    const useDecision = wantsSecondOpinion && decisionTargetForApp() !== null;
+    if (wantsSecondOpinion && (useDecision || generateFeedback)) {
       setChecking(true);
       try {
-        const verdict = await judgeReviewAnswer({
-          connection: reviewConn,
-          targetLanguage: cardLanguage,
-          nativeLanguage: settings.nativeLanguage,
-          card: {
-            front: current.front,
-            reading: current.reading,
-            meaning: current.meaning,
-            context: current.context,
-          },
-          // The DISPLAYED sentence/fill, not the card's own stored cloze —
-          // may differ when an ephemeral variation is showing (see
-          // displayCloze/expectedFill above).
-          displayedCloze: isCloze ? displayCloze : "",
-          expectedAnswer: expectedFill,
-          typedAnswer: typedAnswer.trim(),
-        });
-        llmNote = verdict.note;
-        llmRewrite = verdict.rewrite;
-        // The verdict can only upgrade the strict judgement (correct > near >
-        // wrong), never downgrade it — a strict "near" starting point must
-        // never regress to "wrong" just because the LLM pass agreed it wasn't
-        // fully correct.
-        const rank: Record<AnswerJudgement, number> = { wrong: 0, near: 1, correct: 2 };
-        if (rank[verdict.verdict] > rank[judgement]) {
-          judgement = verdict.verdict;
-          llmAccepted = true;
+        const fast = useDecision ? await quickJudgeAnswer(judgeParams) : null;
+        if (version !== sessionVersion.current) return;
+        if (fast && fast.confidence >= 0.8) {
+          judgement = fast.verdict;
+          if (judgement === "correct") equivalentAnswer = judgeParams.expectedAnswer;
+          else deferFeedback = true;
+        } else if (generateFeedback) {
+          const verdict = await generateFeedback();
+          llmNote = verdict.note;
+          llmRewrite = verdict.rewrite;
+          const rank: Record<AnswerJudgement, number> = { wrong: 0, near: 1, correct: 2 };
+          if (rank[verdict.verdict] > rank[judgement]) {
+            judgement = verdict.verdict;
+            llmAccepted = true;
+          }
         }
       } catch {
         // Best-effort: on any LLM failure the strict judgement stands.
       } finally {
-        setChecking(false);
+        if (version === sessionVersion.current) setChecking(false);
       }
     }
+    if (version !== sessionVersion.current) return;
     const grade = autoGrade(judgement, elapsed);
-    const days = scheduleReview(current, grade).intervalDays;
-    gradeCard(current.id, grade);
+    const reviewed = gradeCard(current.id, grade);
+    if (!reviewed) {
+      setReviewError(true);
+      return;
+    }
     // Interleaving: a genuine miss also reappears later in *this session's*
     // queue (independent of its persisted SRS reschedule, which still moves
     // it to tomorrow-or-later) so the learner gets another shot at it today
     // instead of only via the app's normal daily due-date cycle.
     if (judgement === "wrong") {
-      const missedCard = current;
-      setQueue((prev) => {
-        const insertAt = Math.min(prev.length, index + 1 + REQUEUE_OFFSET);
-        const next = [...prev];
-        next.splice(insertAt, 0, missedCard);
-        return next;
+      setSnapshot((prev) => {
+        const insertAt = Math.min(prev.queue.length, index + 1 + REQUEUE_OFFSET);
+        const next = [...prev.queue];
+        next.splice(insertAt, 0, reviewed);
+        return { ...prev, queue: next };
       });
     }
     setDoneCount((n) => n + 1);
-    setResult({ judgement, days, llmAccepted, llmNote, llmRewrite, lemmaMatch });
+    const gradedResult = {
+      judgement, days: reviewed.intervalDays, llmAccepted, llmNote, llmRewrite, equivalentAnswer, lemmaMatch,
+      leech: grade === "again" && reviewed.lapses >= LEECH_THRESHOLD,
+    };
+    setResult(gradedResult);
+    if (deferFeedback && generateFeedback) {
+      void generateFeedback(gradedResult.judgement).then(({ note, rewrite }) => {
+        if (version !== sessionVersion.current || (!note && !rewrite)) return;
+        setResult((currentResult) => currentResult === gradedResult
+          ? { ...gradedResult, llmNote: note, llmRewrite: rewrite }
+          : currentResult);
+      }).catch(() => { /* Feedback is optional once the answer is graded. */ });
+    }
   }
 
-  function next() {
-    setIndex((i) => i + 1);
+  function resetAnswer() {
+    setReviewError(false);
     setResult(null);
     setTypedAnswer("");
     setExampleTranslationRevealed(false);
@@ -392,6 +431,59 @@ export function ReviewView() {
     // derived insufficientCue default — even when it's the same card again
     // (immediate requeue), which an id-keyed reset would miss.
     setPromptTranslationOverride(null);
+    shownAtRef.current = performance.now();
+  }
+
+  function next() {
+    setIndex((i) => i + 1);
+    resetAnswer();
+  }
+
+  function skipCard(kind: SkippedCard["kind"] | "plain") {
+    if (!current || checking || (kind === "plain" && result)) return;
+    const { id } = current;
+    const moveToEnd = kind === "plain" && !plainSkipped.current.has(id);
+    if (kind === "plain") {
+      plainSkipped.current.add(id);
+    } else {
+      const stored = loadCards().find((card) => card.id === id);
+      if (stored) {
+        const updated = kind === "lower" ? setCardPriority(id, PRIORITY_LOW) : setCardSuspended(id, true);
+        if (!updated) {
+          setReviewError(true);
+          return;
+        }
+        setSkipped(kind === "lower" ? { id, kind, previous: stored.priority } : { id, kind, previous: stored.suspended });
+      } else {
+        setSkipped(null);
+      }
+    }
+    sessionVersion.current++;
+    if (consistencyPrefetch.current?.id === id) consistencyPrefetch.current.controller.abort();
+    setSnapshot((prev) => {
+      const remaining = prev.queue.filter((card, position) => position < index || card.id !== id);
+      if (moveToEnd) remaining.push(current);
+      return { ...prev, queue: remaining };
+    });
+    resetAnswer();
+  }
+
+  function undoSkip() {
+    if (!skipped || checking) return;
+    const restored = skipped.kind === "lower"
+      ? setCardPriority(skipped.id, skipped.previous)
+      : setCardSuspended(skipped.id, skipped.previous);
+    if (!restored) {
+      setReviewError(true);
+      return;
+    }
+    setSnapshot((prev) => {
+      const next = [...prev.queue];
+      next.splice(index, 0, restored);
+      return { ...prev, queue: next };
+    });
+    resetAnswer();
+    setSkipped(null);
   }
 
   // Keep keyboard-only review flowing without a mouse: the answer input is
@@ -418,7 +510,11 @@ export function ReviewView() {
   // tab-switch shortcut — digits fall through to tab switching as usual.
   useShortcuts(SHORTCUT_PRIORITY.view, (e) => {
     if (!current) return false;
-    if (isEditableTarget(e.target)) return false;
+    if (isEditableTarget(e.target) || e.isComposing) return false;
+    if (!result && !checking && e.key === "s" && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      if (!e.repeat) skipCard("plain");
+      return true;
+    }
     // A focused button already fires check()/next() via its native click —
     // handling the same keydown here would double-grade or double-advance.
     if (e.target instanceof HTMLButtonElement) return false;
@@ -440,10 +536,24 @@ export function ReviewView() {
           </button>
         </div>
 
-        {queue.length === 0 ? (
-          <p class="hint-text">{t("review-empty-hint")}</p>
+        {deferred > 0 && <p class="hint-text">{t("review-deferred", { count: deferred })}</p>}
+        {skipped && (
+          <div class="button-row">
+            <span class="hint-text" role="status">
+              {t(skipped.kind === "lower" ? "review-priority-lowered" : "review-card-suspended")}
+            </span>
+            <button type="button" class="link-button review-small-button" onClick={undoSkip} disabled={checking}>
+              {t("review-undo")}
+            </button>
+          </div>
+        )}
+        {reviewError && <p class="error-text" role="status">{t("review-save-failed")}</p>}
+        {queue.length === 0 && plainSkipped.current.size === 0 ? (
+          deferred === 0 && !skipped && <p class="hint-text">{t("review-empty-hint")}</p>
         ) : !current ? (
-          <p class="hint-text status-ok">{t("review-session-done", { count: doneCount })}</p>
+          <p class="hint-text status-ok">
+            {doneCount === 0 ? t("review-session-no-answers") : t("review-session-done", { count: doneCount })}
+          </p>
         ) : (
           <div class="review-card">
             <p class="review-progress">
@@ -490,34 +600,61 @@ export function ReviewView() {
             )}
 
             {!result ? (
-              <div class="review-answer-form">
-                <input
-                  ref={answerInputRef}
-                  type="text"
-                  class="review-answer-input"
-                  value={typedAnswer}
-                  placeholder={t("review-answer-input-placeholder")}
-                  onInput={(e) => setTypedAnswer((e.target as HTMLInputElement).value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") check();
-                  }}
-                  disabled={checking}
-                />
-                <button type="button" class="primary-button" onClick={check} disabled={checking}>
-                  {checking ? (
-                    t("review-checking")
-                  ) : (
-                    <>
-                      {typedAnswer.trim() ? t("review-check-answer") : t("review-reveal-answer")} <kbd class="kbd">Enter</kbd>
-                    </>
+              <>
+                <div class="review-answer-form">
+                  <input
+                    ref={answerInputRef}
+                    type="text"
+                    class="review-answer-input"
+                    value={typedAnswer}
+                    placeholder={t("review-answer-input-placeholder")}
+                    onInput={(e) => setTypedAnswer((e.target as HTMLInputElement).value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") check();
+                    }}
+                    disabled={checking}
+                  />
+                  <button type="button" class="primary-button" onClick={check} disabled={checking}>
+                    {checking ? (
+                      t("review-checking")
+                    ) : (
+                      <>
+                        {typedAnswer.trim() ? t("review-check-answer") : t("review-reveal-answer")} <kbd class="kbd">Enter</kbd>
+                      </>
+                    )}
+                  </button>
+                </div>
+                <div class="button-row">
+                  <button type="button" class="review-small-button" onClick={() => skipCard("plain")} disabled={checking} aria-keyshortcuts="S">
+                    <SkipForward size={14} aria-hidden="true" />
+                    {t("review-skip")}
+                  </button>
+                  {priorityLevel(current.priority) !== "low" && (
+                    <button type="button" class="review-small-button" onClick={() => skipCard("lower")} disabled={checking}>
+                      {t("review-lower-priority")}
+                    </button>
                   )}
-                </button>
-              </div>
+                  <button type="button" class="review-small-button" onClick={() => skipCard("suspend")} disabled={checking}>
+                    {t("review-skip-suspend")}
+                  </button>
+                </div>
+              </>
             ) : (
               <>
                 <p class={`review-result review-result-${result.judgement}`}>
                   {t(`review-result-${result.judgement}`, { days: result.days })}
                 </p>
+                {result.leech && (
+                  <div class="button-row">
+                    <p class="hint-text">{t("review-leech-hint")}</p>
+                    <button type="button" class="review-small-button" onClick={() => skipCard("suspend")}>
+                      {t("review-leech-suspend")}
+                    </button>
+                  </div>
+                )}
+                {result.equivalentAnswer !== null && (
+                  <p class="hint-text status-ok">{t("review-equivalent-answer", { expected: result.equivalentAnswer })}</p>
+                )}
                 {result.llmNote && (
                   <p class={result.llmAccepted ? "hint-text status-ok" : "hint-text"}>
                     {t("review-llm-note", { note: result.llmNote })}

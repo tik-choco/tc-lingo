@@ -591,6 +591,11 @@ button:disabled {
   gap: var(--space-2);
 }
 
+.review-small-button {
+  padding: var(--space-1) var(--space-2);
+  font-size: 0.85rem;
+}
+
 /* ---------------- Cards view ---------------- */
 
 .card-list {
@@ -663,6 +668,29 @@ button:disabled {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
+}
+
+.card-list-entry.is-suspended > .card-list-item {
+  opacity: 0.7;
+}
+
+.card-review-controls {
+  padding-inline: var(--space-3);
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.card-review-controls button,
+.card-review-controls select {
+  padding: var(--space-1) var(--space-2);
+  font-size: inherit;
+}
+
+.card-review-controls select {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-s);
+  background: var(--surface);
+  color: var(--text);
 }
 
 .card-list-clickable {
@@ -1371,4 +1399,128 @@ button:disabled {
 .sync-summary-counts {
   color: var(--text-muted);
   font-size: 0.85rem;
+}
+
+/* Talk inquiry missions */
+.talk-mode-toggle {
+  align-self: flex-start;
+  display: inline-flex;
+  flex-wrap: wrap;
+  max-width: 100%;
+  gap: var(--space-1);
+  padding: var(--space-1);
+  border-radius: var(--radius-m);
+  background: var(--surface-2);
+}
+
+/* Labels stay on one line; on very narrow screens whole buttons wrap
+ * instead of breaking a label like 質問ミッション mid-word. */
+.talk-mode-toggle button {
+  flex: 1 0 auto;
+  justify-content: center;
+  padding-inline: var(--space-3);
+  white-space: nowrap;
+}
+
+.talk-mode-toggle button[aria-pressed="true"] {
+  background: var(--primary-soft-strong);
+  border-color: var(--primary-border);
+  font-weight: 600;
+}
+
+.talk-session-meta:has(.talk-inquiry-badge) {
+  flex-wrap: wrap;
+}
+
+.talk-inquiry-panel {
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-m);
+  overflow-wrap: anywhere;
+}
+
+.talk-inquiry-header,
+.talk-inquiry-stats {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.talk-inquiry-header {
+  justify-content: space-between;
+}
+
+.talk-inquiry-badge {
+  display: inline-block;
+  align-self: flex-start;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-pill);
+  background: var(--primary-soft-strong);
+  color: var(--text);
+  font-size: 0.8rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.talk-inquiry-list {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.talk-inquiry-check {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+
+.talk-inquiry-check > svg {
+  flex-shrink: 0;
+  margin-top: var(--space-1);
+  color: var(--text-muted);
+}
+
+.talk-inquiry-check > .talk-inquiry-check-mark {
+  color: var(--success);
+}
+
+.talk-inquiry-answer {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-2);
+  color: var(--text-muted);
+}
+
+.talk-inquiry-clarification summary {
+  display: inline list-item;
+  cursor: pointer;
+}
+
+.talk-inquiry-clarification p {
+  margin-top: var(--space-1);
+  overflow-wrap: anywhere;
+}
+
+.talk-inquiry-review li {
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-s);
+  background: var(--surface-2);
+}
+
+.talk-inquiry-review dl,
+.talk-inquiry-review dd {
+  margin: 0;
+}
+
+.talk-inquiry-review dt {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  font-weight: 600;
 }

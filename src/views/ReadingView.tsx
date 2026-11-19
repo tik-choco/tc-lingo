@@ -16,6 +16,7 @@ import { requestTranslationCards } from "../lib/llm";
 import { localizeNetworkError } from "../lib/network";
 import type { CardCandidate } from "../lib/parse";
 import { MistakeCardPicker } from "../components/MistakeCardPicker";
+import { scoreSavedCards } from "../lib/decision";
 import { t, getUiLanguage } from "../i18n";
 import "../styles/reading.css";
 
@@ -138,9 +139,9 @@ export function ReadingView() {
 
   function addSelectedCards(selected: CardCandidate[]) {
     if (!openPassage) return;
-    for (const c of selected) {
-      addCard({ ...c, source: "translate", sourceTopicId: null, language: openPassage.language });
-    }
+    const targetLanguage = openPassage.language;
+    const added = selected.map((c) => addCard({ ...c, source: "translate", sourceTopicId: null, language: targetLanguage }));
+    void scoreSavedCards(added, { targetLanguage, nativeLanguage: settings.nativeLanguage });
     setCardsAdded(selected.length);
     setCandidates(null);
   }

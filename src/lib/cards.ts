@@ -1,14 +1,30 @@
 // Card CRUD + defensive (de)serialization. Persistence key: tc-lingo:cards-v1.
-import type { Card, CardSource, ReviewGrade } from "../types";
-import { initialSrsFields, scheduleReview, isDue } from "./srs";
-import { loadDomainJson, newId, nextUpdatedAt, saveJson, subscribeStorage, type StorageWriteOptions } from "./storage";
+import type { Card, CardPrioritySource, CardSource, ReviewGrade } from "../types";
+import { initialSrsFields, scheduleReview } from "./srs";
+import { isDueForReview, isNewCard } from "./reviewQueue";
+import { loadReviewDaily, REVIEW_DAILY_STORAGE } from "./reviewDaily";
+import { loadDomainJson, newId, nextUpdatedAt, saveJson, saveJsonBatch, subscribeStorage } from "./storage";
+import type { StorageWriteOptions } from "./storage";
 import { persistDeletions } from "./sync/tombstones";
 
 const STORAGE_NAME = "cards-v1";
 
+export const PRIORITY_LOW = 0.2;
+export const PRIORITY_NORMAL = 0.5;
+export const PRIORITY_HIGH = 0.8;
+export const LEECH_THRESHOLD = 4;
+
+function clampPriority(priority: number): number {
+  return Number.isFinite(priority) ? Math.max(0, Math.min(1, priority)) : PRIORITY_NORMAL;
+}
+
+export function priorityLevel(p: number): "low" | "normal" | "high" {
+  return p < 0.35 ? "low" : p >= 0.65 ? "high" : "normal";
+}
+
 /** Exported so lib/sync/snapshot.ts can validate remote cards with the exact
- * same rules used to load local ones. `updatedAt` is optional here to accept
- * cards saved before the sync feature existed — see sanitizeCards. */
+ * same rules used to load local ones. Legacy fields may be absent here;
+ * sanitizeCards supplies their defaults. */
 export function isCard(value: unknown): value is Card {
   if (value === null || typeof value !== "object") return false;
   const r = value as Record<string, unknown>;
@@ -30,6 +46,10 @@ export function isCard(value: unknown): value is Card {
     typeof r.easeFactor === "number" &&
     typeof r.reps === "number" &&
     typeof r.lapses === "number" &&
+    (r.priority === undefined || typeof r.priority === "number") &&
+    (r.prioritySource === undefined || r.prioritySource === "default" || r.prioritySource === "auto" || r.prioritySource === "user") &&
+    (r.suspended === undefined || typeof r.suspended === "boolean") &&
+    (r.lastReviewedAt === undefined || r.lastReviewedAt === null || typeof r.lastReviewedAt === "string") &&
     (r.updatedAt === undefined || typeof r.updatedAt === "string")
   );
 }
@@ -49,6 +69,10 @@ export function sanitizeCards(raw: unknown): Card[] {
     ...c,
     language: c.language ?? "",
     exampleSentenceTranslation: c.exampleSentenceTranslation ?? "",
+    priority: clampPriority(c.priority),
+    prioritySource: c.prioritySource ?? "default",
+    suspended: c.suspended ?? false,
+    lastReviewedAt: c.lastReviewedAt ?? null,
     updatedAt: c.updatedAt ?? c.createdAt,
   }));
 }
@@ -78,10 +102,12 @@ export interface NewCardInput {
   /** Defaults to "" (unassigned, visible under every language filter) so
    * existing call sites that don't yet pass a language keep working. */
   language?: string;
+  priority?: number;
+  prioritySource?: CardPrioritySource;
 }
 
 export function addCard(input: NewCardInput): Card {
-  const now = new Date().toISOString();
+  const now = new Date();
   const card: Card = {
     id: newId(),
     front: input.front.trim(),
@@ -94,33 +120,77 @@ export function addCard(input: NewCardInput): Card {
     source: input.source ?? "manual",
     sourceTopicId: input.sourceTopicId ?? null,
     language: input.language ?? "",
-    createdAt: now,
-    updatedAt: now,
-    ...initialSrsFields(),
+    createdAt: now.toISOString(),
+    updatedAt: now.toISOString(),
+    priority: clampPriority(input.priority ?? PRIORITY_NORMAL),
+    prioritySource: input.prioritySource ?? "default",
+    suspended: false,
+    lastReviewedAt: null,
+    ...initialSrsFields(now),
   };
   saveCards([...loadCards(), card]);
   return card;
 }
 
-export function updateCard(id: string, patch: Partial<NewCardInput>): void {
-  const cards = loadCards().map((c) =>
-    c.id === id
-      ? {
-          ...c,
-          ...(patch.front !== undefined ? { front: patch.front.trim() } : {}),
-          ...(patch.reading !== undefined ? { reading: patch.reading.trim() } : {}),
-          ...(patch.meaning !== undefined ? { meaning: patch.meaning.trim() } : {}),
-          ...(patch.exampleSentence !== undefined ? { exampleSentence: patch.exampleSentence.trim() } : {}),
-          ...(patch.exampleSentenceTranslation !== undefined
-            ? { exampleSentenceTranslation: patch.exampleSentenceTranslation.trim() }
-            : {}),
-          ...(patch.context !== undefined ? { context: patch.context.trim() } : {}),
-          ...(patch.cloze !== undefined ? { cloze: patch.cloze.trim() } : {}),
-          updatedAt: nextUpdatedAt(c.updatedAt),
-        }
-      : c,
-  );
-  saveCards(cards);
+function patchCard(id: string, patch: (card: Card) => Partial<Card> | null, now = new Date()): Card | null {
+  const cards = loadCards();
+  const index = cards.findIndex((card) => card.id === id);
+  if (index < 0) return null;
+  const card = cards[index];
+  const changes = patch(card);
+  if (!changes) return null;
+  const updated = { ...card, ...changes, updatedAt: nextUpdatedAt(card.updatedAt, now) };
+  cards[index] = updated;
+  try {
+    saveCards(cards, { throwOnError: true });
+    return updated;
+  } catch (error) {
+    console.warn("tc-lingo: failed to persist card update", error);
+    return null;
+  }
+}
+
+export function updateCard(id: string, patch: Partial<NewCardInput>): Card | null {
+  return patchCard(id, () => ({
+    ...(patch.front !== undefined ? { front: patch.front.trim() } : {}),
+    ...(patch.reading !== undefined ? { reading: patch.reading.trim() } : {}),
+    ...(patch.meaning !== undefined ? { meaning: patch.meaning.trim() } : {}),
+    ...(patch.exampleSentence !== undefined ? { exampleSentence: patch.exampleSentence.trim() } : {}),
+    ...(patch.exampleSentenceTranslation !== undefined
+      ? { exampleSentenceTranslation: patch.exampleSentenceTranslation.trim() }
+      : {}),
+    ...(patch.context !== undefined ? { context: patch.context.trim() } : {}),
+    ...(patch.cloze !== undefined ? { cloze: patch.cloze.trim() } : {}),
+    ...(patch.priority !== undefined ? { priority: clampPriority(patch.priority) } : {}),
+    ...(patch.prioritySource !== undefined ? { prioritySource: patch.prioritySource } : {}),
+  }));
+}
+
+export function setCardPriority(id: string, priority: number): Card | null {
+  return patchCard(id, () => ({ priority: clampPriority(priority), prioritySource: "user" }));
+}
+
+export function setAutoCardPriority(scored: Card, priority: number): Card | null {
+  return patchCard(scored.id, (card) => {
+    if (card.prioritySource !== "default" || !Number.isFinite(priority) ||
+      card.front !== scored.front || card.meaning !== scored.meaning || card.context !== scored.context ||
+      card.exampleSentence !== scored.exampleSentence || card.language !== scored.language || card.source !== scored.source) {
+      return null;
+    }
+    return { priority: clampPriority(priority), prioritySource: "auto" };
+  });
+}
+
+export function setCardSuspended(id: string, suspended: boolean): Card | null {
+  return patchCard(id, () => ({ suspended }));
+}
+
+export function boostCardPriority(id: string, delta: number, options?: { dueNow?: boolean }): Card | null {
+  const now = new Date();
+  return patchCard(id, (card) => ({
+    priority: clampPriority(card.priority + delta),
+    ...(options?.dueNow && Date.parse(card.dueAt) > now.getTime() ? { dueAt: now.toISOString() } : {}),
+  }), now);
 }
 
 export function deleteCard(id: string): void {
@@ -129,23 +199,41 @@ export function deleteCard(id: string): void {
     [{ store: "cards", records: [{ id, updatedAt: cards.find((c) => c.id === id)?.updatedAt }] }]);
 }
 
-export function gradeCard(id: string, grade: ReviewGrade, now: Date = new Date()): void {
-  const cards = loadCards().map((c) =>
-    c.id === id ? { ...c, ...scheduleReview(c, grade, now), updatedAt: nextUpdatedAt(c.updatedAt, now) } : c,
-  );
-  saveCards(cards);
+export function gradeCard(id: string, grade: ReviewGrade, now: Date = new Date()): Card | null {
+  const cards = loadCards();
+  const index = cards.findIndex((card) => card.id === id);
+  if (index < 0 || cards[index].suspended) return null;
+  const card = cards[index];
+  const reviewed = {
+    ...card,
+    ...scheduleReview(card, grade, now),
+    lastReviewedAt: now.toISOString(),
+    updatedAt: nextUpdatedAt(card.updatedAt, now),
+  };
+  cards[index] = reviewed;
+  try {
+    if (isNewCard(card)) {
+      const daily = loadReviewDaily(now);
+      saveJsonBatch([
+        { name: STORAGE_NAME, value: cards },
+        { name: REVIEW_DAILY_STORAGE, value: { ...daily, newIntroduced: daily.newIntroduced + 1 } },
+      ], { throwOnError: true });
+    } else {
+      saveCards(cards, { throwOnError: true });
+    }
+    return reviewed;
+  } catch (error) {
+    console.warn("tc-lingo: failed to persist card review", error);
+    return null;
+  }
 }
 
-/** `language`, when given, also matches cards saved with "" (unassigned) so
- * pre-multi-language cards don't get orphaned out of every filtered queue.
- * Ordered by `lapses` descending first, `dueAt` ascending as a tiebreak —
- * every card here is already due (isDue), so this only reorders *within*
- * that set: consistently hard cards (more past "again" grades) surface
- * earlier in the session, while attention is freshest, rather than being
- * ordered purely by which happened to become due first. */
+/** Uncapped due cards for counts and spaced re-use in other views. Matches
+ * unassigned cards in every language and orders by lapses, then earliest due.
+ * Review sessions use buildReviewQueue for priority ordering and limits. */
 export function dueCards(now: Date = new Date(), language?: string): Card[] {
   return loadCards()
-    .filter((c) => isDue(c, now) && (!language || c.language === language || c.language === ""))
+    .filter((c) => isDueForReview(c, now, language))
     .sort((a, b) => b.lapses - a.lapses || new Date(a.dueAt).getTime() - new Date(b.dueAt).getTime());
 }
 
@@ -155,8 +243,8 @@ export function dueCards(now: Date = new Date(), language?: string): Card[] {
  * progress — highest `reps`, then highest `intervalDays`, then oldest
  * `createdAt` to break remaining ties deterministically — so consolidating
  * near-duplicate cards doesn't reset SRS progress back to new. Its content
- * fields are replaced with `merged` via updateCard (which never touches SRS
- * fields); every other id in the group is deleted (tombstoned, same as any
+ * fields are replaced with `merged` and it gets the group's highest priority.
+ * Every other id in the group is deleted (tombstoned, same as any
  * other deleteCard call) so sync/other devices converge too. No-ops if
  * fewer than 2 of the given ids are found among the current cards. */
 export function mergeCards(
@@ -173,16 +261,15 @@ export function mergeCards(
     return new Date(c.createdAt).getTime() < new Date(best.createdAt).getTime() ? c : best;
   });
 
-  updateCard(survivor.id, merged);
+  const highest = group.reduce((best, card) => card.priority > best.priority ? card : best, survivor);
+  const prioritySource = group.some((card) => card.prioritySource === "user") ? "user" : highest.prioritySource;
+  if (!updateCard(survivor.id, { ...merged, priority: highest.priority, prioritySource })) return;
   for (const c of group) {
     if (c.id !== survivor.id) deleteCard(c.id);
   }
 }
 
-/** Bulk-replaces the entire card store with `cards` (one save, one change
- * event) — persistence only, no id lookup/merge. Only lib/sync/snapshot.ts
- * should call this; every other write path goes through addCard/updateCard/
- * deleteCard/gradeCard above so `updatedAt`/tombstones stay correct. */
+/** Bulk-replaces the entire card store, without generating revisions or tombstones. */
 export function replaceCardsForSync(cards: Card[], options?: StorageWriteOptions): void {
   saveCards(cards, options);
 }

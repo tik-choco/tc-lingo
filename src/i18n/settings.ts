@@ -2,6 +2,9 @@ import type { MessageBundle } from "./types";
 
 export const settingsMessages = {
   "en": {
+    "settings-review-heading": "Review",
+    "settings-review-session-limit": "Maximum cards per review session",
+    "settings-review-new-per-day": "Maximum new cards per day",
     "settings-tab-general": "General",
     "settings-tab-sync": "Sync",
     "settings-tabs-aria-label": "Settings tabs",
@@ -82,6 +85,9 @@ export const settingsMessages = {
     "langsel-empty": "No matching languages."
   },
   "ja": {
+    "settings-review-heading": "復習",
+    "settings-review-session-limit": "1回の復習で出題するカードの上限",
+    "settings-review-new-per-day": "1日に出題する新規カードの上限",
     "settings-tab-general": "全般",
     "settings-tab-sync": "同期",
     "settings-tabs-aria-label": "設定タブ",
@@ -162,6 +168,9 @@ export const settingsMessages = {
     "langsel-empty": "該当する言語がありません。"
   },
   "zh-CN": {
+    "settings-review-heading": "复习",
+    "settings-review-session-limit": "每轮复习的卡片上限",
+    "settings-review-new-per-day": "每日新卡片上限",
     "settings-tab-general": "常规",
     "settings-tab-sync": "同步",
     "settings-tabs-aria-label": "设置标签页",
@@ -242,6 +251,9 @@ export const settingsMessages = {
     "langsel-empty": "没有匹配的语言。"
   },
   "zh-TW": {
+    "settings-review-heading": "複習",
+    "settings-review-session-limit": "每輪複習的卡片上限",
+    "settings-review-new-per-day": "每日新卡片上限",
     "settings-tab-general": "一般",
     "settings-tab-sync": "同步",
     "settings-tabs-aria-label": "設定分頁",
