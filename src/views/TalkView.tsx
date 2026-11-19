@@ -812,111 +812,116 @@ export function TalkView() {
   }
 
   const inquiry = activeSession.mode === "inquiry";
+  const splitLayout = inquiry || !!activeSession.scenario;
   return (
-    <div class="view-container talk-view">
+    <div class={`view-container talk-view${splitLayout ? " talk-view--split" : ""}`}>
       <section class="card-panel talk-panel">
-        <div class="topic-header">
-          <h2>{activeSession.title}</h2>
-          {activeSession.endedAt && <span class="talk-ended-badge">{t("talk-ended-badge")}</span>}
-        </div>
-        {activeSession.scenario && <p class="talk-scenario">{activeSession.scenario}</p>}
-        {inquiry && (activeSession.endedAt ? (
-          <InquiryDebrief
-            session={activeSession}
-            previous={sessions.find((session) => session.id === activeSession.retryOfId)}
-            language={sessionLanguage}
-            speech={speech}
-            onRetry={() => retryInquiry(activeSession)}
-          />
-        ) : <InquiryPanel session={activeSession} language={sessionLanguage} speech={speech} />)}
-
-        <div class="talk-log">
-          {activeSession.turns.map((turn) => (
-            <TalkBubble
-              key={turn.id}
-              turn={turn}
-              inquiry={inquiry}
+        <aside class="talk-details">
+          <div class="topic-header">
+            <h2>{activeSession.title}</h2>
+            {activeSession.endedAt && <span class="talk-ended-badge">{t("talk-ended-badge")}</span>}
+          </div>
+          {activeSession.scenario && <p class="talk-scenario">{activeSession.scenario}</p>}
+          {inquiry && (activeSession.endedAt ? (
+            <InquiryDebrief
+              session={activeSession}
+              previous={sessions.find((session) => session.id === activeSession.retryOfId)}
               language={sessionLanguage}
               speech={speech}
-              autoAdded={autoAddedByTurn[turn.id]}
-              sentenceCardsState={sentenceCardsByTurn[turn.id]}
-              onSaveSentenceCards={() => saveTurnSentenceCards(turn)}
-              canSaveSentenceCards={!!cardsConnection}
-              showReadingAids={settings.showReadingAids}
-              translationRevealed={revealedTranslations.has(turn.id)}
-              onToggleTranslation={() => toggleTranslation(turn.id)}
-              canEdit={turn.id === editableTurnId && (!inquiry || !sending)}
-              editing={editingTurnId === turn.id}
-              editText={editText}
-              onEditTextChange={setEditText}
-              onStartEdit={() => startEdit(turn)}
-              onCancelEdit={cancelEdit}
-              onSubmitEdit={submitEdit}
-              editSubmitting={editSubmitting}
-              editError={editError}
+              onRetry={() => retryInquiry(activeSession)}
             />
-          ))}
-          {sending && <p class="talk-typing-indicator">{t("talk-typing")}</p>}
-        </div>
-        {speech.speechError && <p class="speak-error">{speech.speechError}</p>}
+          ) : <InquiryPanel session={activeSession} language={sessionLanguage} speech={speech} />)}
+        </aside>
 
-        {!activeSession.endedAt && editingTurnId === null && (
-          <form class="talk-composer" onSubmit={sendMessage}>
-            <textarea
-              ref={composerRef}
-              class="practice-textarea"
-              value={text}
-              onInput={(e) => setText((e.target as HTMLTextAreaElement).value)}
-              onKeyDown={(e) => {
-                if ((e.ctrlKey || e.metaKey) && e.key === "Enter" && !sending && text.trim()) {
-                  e.preventDefault();
-                  sendMessage(e);
-                }
-              }}
-              rows={3}
-              placeholder={t("talk-composer-placeholder", { language: languageDisplayName(sessionLanguage) })}
-            />
-            <div class="button-row">
-              <button type="submit" class="primary-button" disabled={sending || !text.trim()}>
-                <Send size={16} />
-                {sending ? (
-                  t("talk-sending")
-                ) : (
-                  <>
-                    {t("talk-send")} <kbd class="kbd">Ctrl</kbd>+<kbd class="kbd">Enter</kbd>
-                  </>
-                )}
-              </button>
-              <button type="button" onClick={endSession} disabled={inquiry && sending}>
-                {t("talk-end-session")}
-              </button>
-            </div>
-            {sendError && <p class="error-text">{sendError}</p>}
-          </form>
-        )}
+        <div class="talk-conversation">
+          <div class="talk-log">
+            {activeSession.turns.map((turn) => (
+              <TalkBubble
+                key={turn.id}
+                turn={turn}
+                inquiry={inquiry}
+                language={sessionLanguage}
+                speech={speech}
+                autoAdded={autoAddedByTurn[turn.id]}
+                sentenceCardsState={sentenceCardsByTurn[turn.id]}
+                onSaveSentenceCards={() => saveTurnSentenceCards(turn)}
+                canSaveSentenceCards={!!cardsConnection}
+                showReadingAids={settings.showReadingAids}
+                translationRevealed={revealedTranslations.has(turn.id)}
+                onToggleTranslation={() => toggleTranslation(turn.id)}
+                canEdit={turn.id === editableTurnId && (!inquiry || !sending)}
+                editing={editingTurnId === turn.id}
+                editText={editText}
+                onEditTextChange={setEditText}
+                onStartEdit={() => startEdit(turn)}
+                onCancelEdit={cancelEdit}
+                onSubmitEdit={submitEdit}
+                editSubmitting={editSubmitting}
+                editError={editError}
+              />
+            ))}
+            {sending && <p class="talk-typing-indicator">{t("talk-typing")}</p>}
+          </div>
+          {speech.speechError && <p class="speak-error">{speech.speechError}</p>}
 
-        {activeSession.endedAt && correctedTurns.length > 0 && !settings.autoExtractCards && (
-          <div class="talk-extract">
-            {candidates === null ? (
+          {!activeSession.endedAt && editingTurnId === null && (
+            <form class="talk-composer" onSubmit={sendMessage}>
+              <textarea
+                ref={composerRef}
+                class="practice-textarea"
+                value={text}
+                onInput={(e) => setText((e.target as HTMLTextAreaElement).value)}
+                onKeyDown={(e) => {
+                  if ((e.ctrlKey || e.metaKey) && e.key === "Enter" && !sending && text.trim()) {
+                    e.preventDefault();
+                    sendMessage(e);
+                  }
+                }}
+                rows={3}
+                placeholder={t("talk-composer-placeholder", { language: languageDisplayName(sessionLanguage) })}
+              />
               <div class="button-row">
-                <button type="button" onClick={extractCards} disabled={extracting || !cardsConnection}>
-                  {extracting ? t("talk-extracting") : t("talk-extract-cards")}
+                <button type="submit" class="primary-button" disabled={sending || !text.trim()}>
+                  <Send size={16} />
+                  {sending ? (
+                    t("talk-sending")
+                  ) : (
+                    <>
+                      {t("talk-send")} <kbd class="kbd">Ctrl</kbd>+<kbd class="kbd">Enter</kbd>
+                    </>
+                  )}
+                </button>
+                <button type="button" onClick={endSession} disabled={inquiry && sending}>
+                  {t("talk-end-session")}
                 </button>
               </div>
-            ) : candidates.length > 0 ? (
-              <MistakeCardPicker candidates={candidates} onAdd={addSelectedCards} onClose={() => setCandidates(null)} />
-            ) : (
-              <p class="hint-text">{t("talk-no-cards-found")}</p>
-            )}
-            {cardsAdded > 0 && <p class="hint-text status-ok">{t("talk-cards-added", { count: cardsAdded })}</p>}
-            {extractError && <p class="error-text">{extractError}</p>}
-          </div>
-        )}
+              {sendError && <p class="error-text">{sendError}</p>}
+            </form>
+          )}
 
-        <div class="button-row">
-          <button type="button" onClick={backToList} disabled={inquiry && (sending || editSubmitting)}>
-            {t("talk-back-to-list")}
-          </button>
+          {activeSession.endedAt && correctedTurns.length > 0 && !settings.autoExtractCards && (
+            <div class="talk-extract">
+              {candidates === null ? (
+                <div class="button-row">
+                  <button type="button" onClick={extractCards} disabled={extracting || !cardsConnection}>
+                    {extracting ? t("talk-extracting") : t("talk-extract-cards")}
+                  </button>
+                </div>
+              ) : candidates.length > 0 ? (
+                <MistakeCardPicker candidates={candidates} onAdd={addSelectedCards} onClose={() => setCandidates(null)} />
+              ) : (
+                <p class="hint-text">{t("talk-no-cards-found")}</p>
+              )}
+              {cardsAdded > 0 && <p class="hint-text status-ok">{t("talk-cards-added", { count: cardsAdded })}</p>}
+              {extractError && <p class="error-text">{extractError}</p>}
+            </div>
+          )}
+
+          <div class="button-row">
+            <button type="button" onClick={backToList} disabled={inquiry && (sending || editSubmitting)}>
+              {t("talk-back-to-list")}
+            </button>
+          </div>
         </div>
       </section>
     </div>

@@ -69,6 +69,46 @@
   background: var(--danger-soft);
 }
 
+.talk-details,
+.talk-conversation {
+  display: flex;
+  flex-direction: column;
+  row-gap: inherit;
+}
+
+@media (min-width: 1024px) {
+  /* The scrollport starts below the header and tabs. Size the aside to
+     its height so the sidebar also fits when the diagnostics banner is shown. */
+  .app-main:has(.talk-view--split) {
+    container-type: size;
+  }
+
+  .talk-view--split {
+    max-width: 1180px;
+  }
+
+  .talk-view--split .talk-panel {
+    display: grid;
+    grid-template-columns: 340px minmax(0, 1fr);
+    grid-template-areas: "details conversation";
+    column-gap: var(--space-6);
+  }
+
+  .talk-view--split .talk-conversation {
+    grid-area: conversation;
+  }
+
+  .talk-view--split .talk-details {
+    grid-area: details;
+    align-self: start;
+    position: sticky;
+    top: var(--space-5);
+    max-height: calc(100cqh - 2 * var(--space-5));
+    overflow-y: auto;
+    overflow-wrap: anywhere;
+  }
+}
+
 .talk-scenario {
   color: var(--text-muted);
   line-height: 1.6;
