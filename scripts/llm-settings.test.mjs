@@ -31,7 +31,7 @@ function seed() {
     { id: 'retired', label: 'Room mirror', providerId: 'mirror', model: 'remote' },
   ], defaultPresetId: 'default', network: { roomId: 'legacy-room' }, tts: { providerId: 'http', model: 'm-10' }, updatedAt: '2026-10-01T00:00:00Z' };
   const local = { targetLanguages: ['Japanese'], activeLanguage: 'Japanese', nativeLanguage: 'English',
-    taskPresetIds: { practice: 'task', grammar: 'disabled-task', reading: 'retired', generation: 'default' },
+    taskPresetIds: { practice: 'task', cards: 'disabled-task', reading: 'retired', generation: 'default' },
     taskReasoningEfforts: { practice: 'none' }, defaultReasoningEffort: 'low',
     networkProviderEnabled: true, networkProviderPresetIds: ['task', 'retired'], ttsVoiceByLanguage: { ja: 'voice-ja' },
     autoExtractCards: false, autoOrganizeCards: false, showReadingAids: false };
@@ -51,11 +51,11 @@ test('migrates shared/local data once, preserving legacy config, effort, languag
   assert.deepEqual(migrated.defaultModel, { providerId: 'http', model: 'm-0' });
   assert.equal(migrated.providers[0].models.length, 300);
   assert.equal(migrated.providers[1].enabled, false);
-  assert.equal(Object.keys(local.tasks).length, 9);
-  assert.deepEqual(local.tasks.practice, { ref: { providerId: 'http', model: 'm-42' }, reasoningEffort: 'none' });
-  assert.equal(local.tasks.grammar.reasoningEffort, 'max');
-  assert.equal(local.tasks.topic.reasoningEffort, 'medium');
-  assert.equal(local.tasks.reading.ref, undefined);
+  assert.deepEqual(local.tasks, {
+    correction: { ref: { providerId: 'http', model: 'm-42' }, reasoningEffort: 'none' },
+    generation: { ref: { providerId: 'disabled', model: 'private' }, reasoningEffort: 'max' },
+    'card-organize': { reasoningEffort: 'none' },
+  });
   const room = migrated.providers.find(p => p.baseUrl === 'mist-network://legacy-room');
   assert.deepEqual(local.roomProvide[room.id], { enabled: true, shared: [{ providerId: 'http', model: 'm-42' }] });
   assert.equal(local.autoExtractCards, false);
@@ -66,17 +66,67 @@ test('migrates shared/local data once, preserving legacy config, effort, languag
   assert.equal(writes, count);
 });
 
+test('migrates legacy group settings and uses the first member with values when present', () => {
+  const { local } = seed();
+  local.taskPresetIds = { generation: 'default' };
+  local.taskModels = { conversation: 'm-42' };
+  local.taskReasoningEfforts = { correction: 'high' };
+  localStorage.setItem('tc-lingo:settings-v1', JSON.stringify(local));
+
+  const { tasks } = loadSettings();
+  assert.deepEqual(tasks.correction, { ref: { providerId: 'http', model: 'm-42' }, reasoningEffort: 'high' });
+  assert.deepEqual(tasks.generation, { ref: { providerId: 'http', model: 'm-0' }, reasoningEffort: 'medium' });
+});
+
+test('moves per-task overrides into missing groups in priority order and saves once', () => {
+  const { local } = seed();
+  const correction = { ref: { providerId: 'http', model: 'm-42' }, reasoningEffort: 'high' };
+  const generation = { ref: { providerId: 'http', model: 'm-30' }, reasoningEffort: 'medium' };
+  const embedding = { ref: { providerId: 'http', model: 'm-10' }, reasoningEffort: 'none' };
+  const decision = { ref: { providerId: 'http', model: 'm-15' }, reasoningEffort: 'none' };
+  local.tasks = { review: correction, conversation: generation, topic: correction, cards: generation,
+    reading: correction, grammar: correction, 'ui-translation': correction,
+    'card-organize': embedding, decision, future: null };
+  local.recentModels = {};
+  localStorage.setItem('tc-lingo:settings-v1', JSON.stringify(local));
+  const count = writes;
+
+  const expected = { correction, generation, 'card-organize': embedding, decision, future: null };
+  assert.deepEqual(loadSettings().tasks, expected);
+  assert.deepEqual(loadSettings().recentModels, []);
+  assert.deepEqual(JSON.parse(localStorage.getItem('tc-lingo:settings-v1')), { ...local, tasks: expected });
+  assert.equal(writes, count + 1);
+  for (const task of ['practice', 'review', 'conversation']) {
+    assert.equal(connectionForTask(task).target.model, 'm-42');
+    assert.equal(connectionForTask(task).target.reasoningEffort, 'high');
+  }
+  for (const task of ['cards', 'topic', 'reading', 'grammar', 'ui-translation']) {
+    assert.equal(connectionForTask(task).target.model, 'm-30');
+    assert.equal(connectionForTask(task).target.reasoningEffort, 'medium');
+  }
+  assert.equal(connectionForTask('card-organize').target.model, 'm-10');
+  assert.equal(connectionForTask('decision').target.model, 'm-15');
+});
+
+test('keeps an existing group and removes even malformed retired entries', () => {
+  const correction = { reasoningEffort: 'low' };
+  const tasks = { correction, practice: null, conversation: 'invalid', topic: { reasoningEffort: 'medium' } };
+  localStorage.setItem('tc-lingo:settings-v1', JSON.stringify({ tasks }));
+
+  assert.deepEqual(loadSettings().tasks, { correction, generation: tasks.topic });
+});
+
 test('disabled or deleted task targets use only a usable default and retain their refs', () => {
   seed(); const local = loadSettings();
   assert.equal(connectionForTask('grammar').target.model, 'm-0');
   const config = loadLlmConfig(); config.providers.find(p => p.id === 'http').enabled = false; saveLlmConfig(config);
   assert.equal(connectionForTask('grammar'), null);
-  assert.deepEqual(loadSettings().tasks.grammar, local.tasks.grammar);
+  assert.deepEqual(loadSettings().tasks.generation, local.tasks.generation);
 });
 
 test('room refs select their own room regardless of the legacy network room', () => {
   seed(); const local = loadSettings();
-  local.tasks.practice = { ref: { providerId: 'mirror', model: 'remote' }, reasoningEffort: 'high' };
+  local.tasks.correction = { ref: { providerId: 'mirror', model: 'remote' }, reasoningEffort: 'high' };
   saveSettings(local);
   assert.deepEqual(connectionForTask('practice'), { kind: 'network', roomId: 'existing', model: 'remote', reasoningEffort: 'high' });
 });

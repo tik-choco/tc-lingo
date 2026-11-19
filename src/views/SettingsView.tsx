@@ -6,7 +6,7 @@ import { loadSettings, subscribeSettings, llmLocalAdapter, addTargetLanguage, re
   normalizeReviewLimit, REVIEW_LIMITS, saveSettings, setAutoExtractCards, setShowReadingAids, setAutoOrganizeCards, setTtsVoiceOverride, voiceRefKey } from "../lib/settings";
 import { resolveVoice } from "../lib/llmConfig";
 import { languageVoiceRows } from "../lib/ttsVoiceByLanguage";
-import { CHAT_TASKS, decisionTargetForApp } from "../lib/llmConnection";
+import { CHAT_TASK_GROUPS, decisionTargetForApp } from "../lib/llmConnection";
 import { testDecisionTarget } from "../lib/decision";
 import { CEFR_BANDS, computedBand, loadLevels, setLevelOverride, subscribeLevels } from "../lib/level";
 import type { CefrBand } from "../types";
@@ -67,7 +67,9 @@ export function AiSettings() {
   const rows = languageVoiceRows([...settings.targetLanguages, settings.nativeLanguage]);
   const voices = target ? settings.ttsVoicesByRef[voiceRefKey(target)] ?? {} : {};
   return <LlmSettings
-    tasks={CHAT_TASKS.map(id => ({ id, label: t("ai-task-" + id), reasoning: id !== "card-organize" }))}
+    tasks={CHAT_TASK_GROUPS.map(id => ({
+      id, label: t("ai-task-group-" + id), tip: t("ai-task-group-" + id + "-hint"), reasoning: id !== "card-organize",
+    }))}
     localSettings={llmLocalAdapter}
     voice={{ tts: {} }}
     locale={getUiLanguage()}

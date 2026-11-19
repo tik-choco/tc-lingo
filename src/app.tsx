@@ -33,6 +33,7 @@ import { Onboarding } from "./components/Onboarding";
 import { KeyboardHelp } from "./components/KeyboardHelp";
 import { markOnboardingDone, shouldShowOnboarding, subscribeOnboardingRequests } from "./lib/onboarding";
 import { loadSettings, setActiveLanguage, subscribeSettings } from "./lib/settings";
+import { CHAT_TASK_GROUPS } from "./lib/llmConnection";
 import { languageDisplayName } from "./lib/languages";
 import { applyUiLanguageForNative, getUiSourceMessages, setUiOverlay, subscribeUiMessages, t } from "./i18n";
 import { translateUiMessages } from "./lib/uiTranslation";
@@ -96,7 +97,7 @@ export function App({ initialVaultCode = null }: { initialVaultCode?: string | n
   useEffect(() => subscribeOnboardingRequests(() => setShowOnboarding(true)), []);
 
   useRoomProviders({ config, roomProvide: settings.roomProvide, consumers: rooms,
-    taskRefs: Object.values(settings.tasks).map(task => task.ref), settingsOpen: tab === "settings" || showOnboarding });
+    taskRefs: [...CHAT_TASK_GROUPS, "decision"].map(id => settings.tasks[id]?.ref), settingsOpen: tab === "settings" || showOnboarding });
 
   // Silent background card-deck cleanup (settings.autoOrganizeCards) — see
   // lib/cardAutoOrganize.ts's header comment. Fire-and-forget: the function

@@ -1,15 +1,25 @@
 import { isModelRef, loadLlmConfig, resolveModel, resolveModelExact, providerKind, roomIdFromBaseUrl } from "./llmConfig";
 import type { ResolvedLlmTargetV1 } from "./llmConfig";
 import { loadSettings } from "./settings";
-import type { LlmTask, ReasoningEffort } from "../types";
+import type { LlmTask, LlmTaskGroup, ReasoningEffort } from "../types";
 
 export type LlmConnection =
   | { kind: "api"; target: ResolvedLlmTargetV1 }
   | { kind: "network"; roomId: string; model: string; reasoningEffort: ReasoningEffort };
 
-export const CHAT_TASKS: readonly Exclude<LlmTask, "decision">[] = [
-  "practice", "topic", "cards", "review", "reading", "conversation", "grammar", "ui-translation", "card-organize",
-];
+export const TASK_GROUP: Record<Exclude<LlmTask, "decision">, LlmTaskGroup> = {
+  practice: "correction",
+  review: "correction",
+  conversation: "correction",
+  topic: "generation",
+  cards: "generation",
+  reading: "generation",
+  grammar: "generation",
+  "ui-translation": "generation",
+  "card-organize": "card-organize",
+};
+
+export const CHAT_TASK_GROUPS: readonly LlmTaskGroup[] = ["correction", "generation", "card-organize"];
 
 function connectionFromTarget(target: ResolvedLlmTargetV1 | null, effort: ReasoningEffort): LlmConnection | null {
   if (!target) return null;
@@ -30,8 +40,10 @@ export function connectionForTask(task: LlmTask): LlmConnection | null {
   if (task === "decision") return connectionFromTarget(decisionTargetForApp(), "none");
   const settings = loadSettings();
   const config = loadLlmConfig();
-  const local = settings.tasks[task];
-  return connectionFromTarget(config ? resolveModel(config, local?.ref) : null, local?.reasoningEffort ?? "none");
+  const group = TASK_GROUP[task];
+  const local = settings.tasks[group];
+  const ref = isModelRef(local?.ref) ? local.ref : undefined;
+  return connectionFromTarget(config ? resolveModel(config, ref) : null, group === "card-organize" ? "none" : local?.reasoningEffort ?? "none");
 }
 
 export function decisionTargetForApp(): ResolvedLlmTargetV1 | null {

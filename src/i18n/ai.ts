@@ -10,15 +10,12 @@ export const aiMessages = {
     "ai-decision-test-testing": "Testing…",
     "ai-decision-test-ok": "The decision model responded successfully.",
     "ai-decision-test-error": "Couldn’t get a valid response from the decision model. Check the model and endpoint.",
-    "ai-task-practice": "Practice feedback",
-    "ai-task-topic": "Topic suggestions",
-    "ai-task-cards": "Cards",
-    "ai-task-review": "Review",
-    "ai-task-reading": "Reading",
-    "ai-task-conversation": "Conversation",
-    "ai-task-grammar": "Grammar",
-    "ai-task-ui-translation": "UI translation",
-    "ai-task-card-organize": "Similar-card detection model"
+    "ai-task-group-correction": "Correction & conversation",
+    "ai-task-group-correction-hint": "Practice feedback, review, and conversation.",
+    "ai-task-group-generation": "Content generation",
+    "ai-task-group-generation-hint": "Topic suggestions, cards, reading, grammar, and UI translation.",
+    "ai-task-group-card-organize": "Similar-card detection model",
+    "ai-task-group-card-organize-hint": "Uses embeddings to find similar cards."
   },
   "ja": {
     "ai-settings": "AI設定",
@@ -29,15 +26,12 @@ export const aiMessages = {
     "ai-decision-test-testing": "テスト中…",
     "ai-decision-test-ok": "判定モデルから正常な応答がありました。",
     "ai-decision-test-error": "判定モデルから有効な応答が得られませんでした。モデルと接続先を確認してください。",
-    "ai-task-practice": "練習の添削",
-    "ai-task-topic": "トピック提案",
-    "ai-task-cards": "カード",
-    "ai-task-review": "復習",
-    "ai-task-reading": "読解",
-    "ai-task-conversation": "会話",
-    "ai-task-grammar": "文法",
-    "ai-task-ui-translation": "UI翻訳",
-    "ai-task-card-organize": "類似カード検出モデル"
+    "ai-task-group-correction": "添削・会話",
+    "ai-task-group-correction-hint": "練習の添削、復習、会話に使います。",
+    "ai-task-group-generation": "生成",
+    "ai-task-group-generation-hint": "トピック提案、カード、読解、文法、UI翻訳に使います。",
+    "ai-task-group-card-organize": "類似カード検出モデル",
+    "ai-task-group-card-organize-hint": "埋め込みを使って類似カードを検出します。"
   },
   "zh-CN": {
     "ai-settings": "AI设置",
@@ -48,15 +42,12 @@ export const aiMessages = {
     "ai-decision-test-testing": "正在测试…",
     "ai-decision-test-ok": "判定模型已正常响应。",
     "ai-decision-test-error": "未收到判定模型的有效响应。请检查模型和端点。",
-    "ai-task-practice": "练习纠错",
-    "ai-task-topic": "话题建议",
-    "ai-task-cards": "卡片",
-    "ai-task-review": "复习",
-    "ai-task-reading": "阅读",
-    "ai-task-conversation": "对话",
-    "ai-task-grammar": "语法",
-    "ai-task-ui-translation": "界面翻译",
-    "ai-task-card-organize": "相似卡片检测模型"
+    "ai-task-group-correction": "纠错与对话",
+    "ai-task-group-correction-hint": "用于练习纠错、复习和对话。",
+    "ai-task-group-generation": "内容生成",
+    "ai-task-group-generation-hint": "用于话题建议、卡片、阅读、语法和界面翻译。",
+    "ai-task-group-card-organize": "相似卡片检测模型",
+    "ai-task-group-card-organize-hint": "使用向量嵌入查找相似卡片。"
   },
   "zh-TW": {
     "ai-settings": "AI設定",
@@ -67,14 +58,11 @@ export const aiMessages = {
     "ai-decision-test-testing": "測試中…",
     "ai-decision-test-ok": "判定模型已正常回應。",
     "ai-decision-test-error": "未收到判定模型的有效回應。請檢查模型和端點。",
-    "ai-task-practice": "練習糾錯",
-    "ai-task-topic": "話題建議",
-    "ai-task-cards": "卡片",
-    "ai-task-review": "複習",
-    "ai-task-reading": "閱讀",
-    "ai-task-conversation": "對話",
-    "ai-task-grammar": "文法",
-    "ai-task-ui-translation": "介面翻譯",
-    "ai-task-card-organize": "相似卡片偵測模型"
+    "ai-task-group-correction": "訂正與對話",
+    "ai-task-group-correction-hint": "用於練習訂正、複習和對話。",
+    "ai-task-group-generation": "內容生成",
+    "ai-task-group-generation-hint": "用於話題建議、卡片、閱讀、文法和介面翻譯。",
+    "ai-task-group-card-organize": "相似卡片偵測模型",
+    "ai-task-group-card-organize-hint": "使用向量嵌入尋找相似卡片。"
   }
 } satisfies MessageBundle;

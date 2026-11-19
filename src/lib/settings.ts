@@ -1,4 +1,4 @@
-import type { LingoSettings, LlmTask, ReasoningEffort } from "../types";
+import type { LingoSettings, LlmTask, LlmTaskGroup, ReasoningEffort } from "../types";
 import type { LlmLocalSettings, TaskModelV1 } from "@tik-choco/mistai/preact";
 import { loadLlmConfig, emptyLlmConfig, presetIdToRef, providerKind, roomIdFromBaseUrl, isModelRef, setDefaultModel, saveLlmConfig } from "./llmConfig";
 import { loadJson, saveJson, subscribeStorage } from "./storage";
@@ -16,7 +16,12 @@ export function normalizeReviewLimit(field: keyof typeof REVIEW_LIMITS, value: u
     : fallback;
 }
 
-const TASKS: LlmTask[] = ["practice", "topic", "cards", "review", "reading", "conversation", "grammar", "ui-translation", "card-organize"];
+// Members are listed in migration priority order.
+const TASKS: Record<LlmTaskGroup, readonly Exclude<LlmTask, "decision">[]> = {
+  correction: ["practice", "review", "conversation"],
+  generation: ["cards", "topic", "reading", "grammar", "ui-translation"],
+  "card-organize": ["card-organize"],
+};
 const browserLanguageNames: Record<string, string> = {
   ja: "Japanese",
   en: "English",
@@ -57,7 +62,6 @@ export function voiceRefKey(ref: { providerId: string; model: string }): string 
   return JSON.stringify([ref.providerId, ref.model]);
 }
 
-// The presence of tasks marks completion. Never re-import retired IDs on later loads.
 export function loadSettings(): LingoSettings {
   const raw = loadJson<Record<string, any>>(STORAGE_NAME, {}) ?? {};
   const nativeLanguage = typeof raw.nativeLanguage === "string" ? raw.nativeLanguage : detectNativeLanguage();
@@ -73,8 +77,25 @@ export function loadSettings(): LingoSettings {
     newCardsPerDay: normalizeReviewLimit("newCardsPerDay", raw.newCardsPerDay),
     ttsVoicesByRef: raw.ttsVoicesByRef ?? {},
   };
-  if (raw.tasks && typeof raw.tasks === "object") {
-    return { ...base, tasks: raw.tasks, roomProvide: raw.roomProvide ?? {}, recentModels: (raw.recentModels ?? []).filter(isModelRef).slice(0, 8) };
+  if (raw.tasks && typeof raw.tasks === "object" && !Array.isArray(raw.tasks)) {
+    const storedTasks: LlmLocalSettings["tasks"] = raw.tasks;
+    const tasks = { ...storedTasks };
+    let changed = false;
+    for (const [group, members] of Object.entries(TASKS)) {
+      if (group === "card-organize") continue;
+      if (!Object.hasOwn(tasks, group)) {
+        const first = members.find(id => storedTasks[id] !== undefined);
+        if (first) tasks[group] = storedTasks[first];
+      }
+      for (const id of members) {
+        if (Object.hasOwn(tasks, id)) {
+          delete tasks[id];
+          changed = true;
+        }
+      }
+    }
+    if (changed) saveJson(STORAGE_NAME, { ...raw, tasks });
+    return { ...base, tasks, roomProvide: raw.roomProvide ?? {}, recentModels: Array.isArray(raw.recentModels) ? raw.recentModels.filter(isModelRef).slice(0, 8) : [] };
   }
   const config = loadLlmConfig() ?? emptyLlmConfig();
   if (!config.defaultModel && typeof raw.presetId === "string") {
@@ -82,8 +103,9 @@ export function loadSettings(): LingoSettings {
     if (ref) { setDefaultModel(config, ref); saveLlmConfig(config); }
   }
   const tasks: Record<string, TaskModelV1> = {};
-  for (const id of TASKS) {
-    const group = id === "practice" || id === "review" ? "correction" : id === "card-organize" ? id : "generation";
+  for (const [group, members] of Object.entries(TASKS)) {
+    const id = members.find(id => typeof raw.taskPresetIds?.[id] === "string" ||
+      typeof raw.taskModels?.[id] === "string" || effort(raw.taskReasoningEfforts?.[id]) !== undefined) ?? group;
     const presetId = raw.taskPresetIds?.[id] ?? raw.taskPresetIds?.[group] ?? raw.presetId;
     const preset = config.presets.find(p => p.id === presetId);
     let ref = presetId ? presetIdToRef(config, presetId) : undefined;
@@ -91,14 +113,20 @@ export function loadSettings(): LingoSettings {
       const old = config.presets.find(p => p.model === raw.taskModels[id] && config.providers.some(pr => pr.id === p.providerId && providerKind(pr) === "http"));
       if (old) ref = presetIdToRef(config, old.id);
     }
-    tasks[id] = { ...(ref ? { ref } : {}), reasoningEffort: effort(raw.taskReasoningEfforts?.[id] ?? raw.taskReasoningEfforts?.[group]) ?? effort(preset?.reasoningEffort) ?? effort(raw.defaultReasoningEffort) ?? "none" };
+    const reasoningEffort = group === "card-organize" ? "none" :
+      effort(raw.taskReasoningEfforts?.[id]) ?? effort(raw.taskReasoningEfforts?.[group]) ?? effort(preset?.reasoningEffort) ?? effort(raw.defaultReasoningEffort) ?? "none";
+    tasks[group] = { ...(ref ? { ref } : {}), reasoningEffort };
   }
   const room = config.providers.find(p => providerKind(p) === "room" && roomIdFromBaseUrl(p.baseUrl) === config.network.roomId.trim());
-  const shared = (raw.networkProviderPresetIds ?? []).map((id: string) => presetIdToRef(config, id)).filter((ref: unknown) => isModelRef(ref) && config.providers.some(p => p.id === ref.providerId && providerKind(p) === "http"));
+  const sharedPresetIds = Array.isArray(raw.networkProviderPresetIds) ? raw.networkProviderPresetIds : [];
+  const shared = sharedPresetIds.map((id: string) => presetIdToRef(config, id)).filter(isModelRef)
+    .filter(ref => config.providers.some(p => p.id === ref.providerId && providerKind(p) === "http"));
   const voiceProviderId = config.tts?.providerId ?? config.defaultModel?.providerId;
   const voiceRef = config.tts && voiceProviderId ? { providerId: voiceProviderId, model: config.tts.model } : undefined;
   const next: LingoSettings = { ...base, tasks, roomProvide: room ? { [room.id]: { enabled: raw.networkProviderEnabled === true, shared } } : {}, recentModels: [] };
-  if (voiceRef && raw.ttsVoiceByLanguage) next.ttsVoicesByRef[voiceRefKey(voiceRef)] = { ...raw.ttsVoiceByLanguage };
+  if (voiceRef && raw.ttsVoiceByLanguage) {
+    next.ttsVoicesByRef = { ...next.ttsVoicesByRef, [voiceRefKey(voiceRef)]: { ...raw.ttsVoiceByLanguage } };
+  }
   // Persist before consumers subscribe; raw migration fields are no longer app-local settings.
   saveJson(STORAGE_NAME, next);
   return next;

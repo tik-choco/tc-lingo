@@ -230,6 +230,7 @@ export interface LanguageLevelRecord {
 export type ReasoningEffort = import("@tik-choco/mistai/preact").ReasoningEffort;
 export type TtsEngine = "browser" | "api" | "network";
 export type LlmTask = "practice" | "topic" | "cards" | "review" | "reading" | "conversation" | "grammar" | "ui-translation" | "card-organize" | "decision";
+export type LlmTaskGroup = "correction" | "generation" | "card-organize";
 
 export interface LingoSettings extends LlmLocalSettings {
   targetLanguages: string[];
