@@ -938,6 +938,129 @@ button:disabled {
 .activity-heatmap-legend > span:first-child { margin-inline-end: var(--space-1); }
 .activity-heatmap-legend > span:last-child { margin-inline-start: var(--space-1); }
 
+.leaderboard-controls,
+.leaderboard-periods {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-4);
+}
+
+.leaderboard-opt-in,
+.leaderboard-name {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.leaderboard-opt-in input {
+  accent-color: var(--primary);
+}
+
+.leaderboard-name {
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.leaderboard-name input,
+.leaderboard-periods button {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-s);
+  padding: var(--space-2) var(--space-3);
+}
+
+.leaderboard-name input {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.leaderboard-periods button[aria-pressed="true"] {
+  background: var(--primary-soft-strong);
+  border-color: var(--primary-border);
+  font-weight: 700;
+}
+
+.leaderboard-room,
+.leaderboard-row {
+  overflow-wrap: anywhere;
+}
+
+.leaderboard-status:empty {
+  position: absolute;
+}
+
+.leaderboard-error {
+  color: var(--danger-text);
+}
+
+.leaderboard-list {
+  display: grid;
+  gap: var(--space-1);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.leaderboard-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) fit-content(50%);
+  align-items: start;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-s);
+}
+
+.leaderboard-self {
+  background: var(--primary-soft);
+  border-color: var(--primary-border);
+}
+
+.leaderboard-rank,
+.leaderboard-you,
+.leaderboard-language,
+.leaderboard-streak {
+  color: var(--text-muted);
+}
+
+.leaderboard-person {
+  font-weight: 600;
+}
+
+.leaderboard-you {
+  margin-inline-start: var(--space-2);
+}
+
+.leaderboard-you,
+.leaderboard-language,
+.leaderboard-streak {
+  font-size: 0.85em;
+  font-weight: 400;
+}
+
+.leaderboard-rank,
+.leaderboard-results {
+  font-variant-numeric: tabular-nums;
+}
+
+.leaderboard-results {
+  display: grid;
+  justify-items: end;
+  text-align: end;
+}
+
+.leaderboard-streak {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.leaderboard-streak svg {
+  flex-shrink: 0;
+  color: var(--warning);
+}
+
 .history-topic-toggle {
   font-size: 1.05rem;
   font-weight: 700;

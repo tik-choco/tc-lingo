@@ -173,6 +173,10 @@ export function saveJsonBatch(writes: JsonWrite[], options?: StorageWriteOptions
   }
 }
 
+export function validId(id: unknown): id is string {
+  return typeof id === "string" && id.trim().length > 0 && id.length <= 512;
+}
+
 export function newId(): string {
   try {
     if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {

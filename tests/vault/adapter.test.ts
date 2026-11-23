@@ -1,9 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  DEVICE_ID_STORAGE, loadAllReviewDays, loadDeviceId, loadReviewActivity, localDateKey,
+  REVIEW_ACTIVITY_REMOTE_STORAGE, REVIEW_ACTIVITY_STORAGE,
+} from "../../src/lib/activityLog";
 import { addCard, deleteCard, gradeCard, loadCards, setCardSuspended, updateCard } from "../../src/lib/cards";
 import { addConversation, deleteConversation, loadConversations, newTurn, updateConversation } from "../../src/lib/conversation";
 import { loadLevels, recordOutputSample, setLevelOverride } from "../../src/lib/level";
 import { addPassage, loadPassages } from "../../src/lib/reading";
-import { saveJson, subscribeStorage } from "../../src/lib/storage";
+import { loadJson, saveJson, subscribeStorage, subscribeStorageChanges } from "../../src/lib/storage";
 import { mergeSyncSnapshot } from "../../src/lib/sync/snapshot";
 import { loadTombstones, recordTombstones } from "../../src/lib/sync/tombstones";
 import { addAttempt, addTopic, deleteTopic, loadAttempts, loadTopics, updateAttempt } from "../../src/lib/topics";
@@ -54,6 +58,118 @@ function clone<T>(value: T): T {
 }
 
 describe("vault adapter", () => {
+  it("parses a legacy checkpoint without review activity under the same schema", () => {
+    const { reviewActivity, ...legacy } = seed();
+    const adapter = createVaultAdapter();
+    expect(adapter.schema).toBe("tc-lingo/vault/1");
+    expect(adapter.parse(legacy)).toEqual({ ...legacy, reviewActivity: {} });
+  });
+
+  it("validates and sorts review activity keys", () => {
+    const checkpoint = snapshot();
+    const adapter = createVaultAdapter();
+    const recent = {
+      "2026-11-14": { Japanese: 2, "": 0 },
+      "2026-11-13": { Japanese: 1 },
+    };
+    const parsed = adapter.parse({ ...checkpoint, reviewActivity: { z: recent, a: recent } });
+    expect(Object.keys(parsed.reviewActivity!)).toEqual(["a", "z"]);
+    expect(Object.keys(parsed.reviewActivity!.a)).toEqual(["2026-11-13", "2026-11-14"]);
+    expect(Object.keys(parsed.reviewActivity!.a["2026-11-14"])).toEqual(["", "Japanese"]);
+    for (const reviewActivity of [
+      undefined, null, [], { " ": recent }, { a: [] }, { a: { "2026-02-30": { English: 1 } } },
+      ...[-1, 1.5, Number.MAX_SAFE_INTEGER + 1, "1"].map((count) => ({ a: { "2026-11-14": { English: count } } })),
+      Object.fromEntries(Array.from({ length: 129 }, (_, i) => [`device-${i}`, {}])),
+    ]) {
+      expect(() => adapter.parse({ ...checkpoint, reviewActivity })).toThrow("Invalid vault checkpoint");
+    }
+  });
+
+  it("merges review counters by device, day and language using max and remains idempotent", () => {
+    const base = snapshot();
+    const day = "2026-11-14";
+    const a = { ...base, reviewActivity: { first: { [day]: { English: 7, Japanese: 1 } } } };
+    const b = { ...base, reviewActivity: {
+      second: { [day]: { English: 4 } },
+      first: { [day]: { English: 2, Japanese: 5, "": 1 }, "2026-11-13": { English: 3 } },
+    } };
+    const adapter = createVaultAdapter();
+    const merged = adapter.merge(a, b);
+    expect(merged.reviewActivity).toEqual({
+      first: { "2026-11-13": { English: 3 }, [day]: { English: 7, Japanese: 5, "": 1 } },
+      second: { [day]: { English: 4 } },
+    });
+    expect(JSON.stringify(adapter.merge(b, a))).toBe(JSON.stringify(merged));
+    expect(JSON.stringify(adapter.merge(a, merged))).toBe(JSON.stringify(merged));
+  });
+
+  it("restores remote activity and raises only the lower own counters", () => {
+    const day = "2026-11-14";
+    const id = loadDeviceId();
+    saveJson(REVIEW_ACTIVITY_STORAGE, { v: 1, days: { [day]: { English: 4, Japanese: 7 } } });
+    const adapter = createVaultAdapter();
+    const checkpoint = adapter.snapshot() as VaultState;
+    const remote = { [day]: { English: 3 } };
+    checkpoint.reviewActivity = { [id]: { [day]: { English: 6, Japanese: 1 } }, other: remote };
+    const changed = vi.fn();
+    const storageChanged = vi.fn();
+    const stop = adapter.subscribe(changed);
+    const stopStorage = subscribeStorageChanges(storageChanged);
+
+    adapter.apply(checkpoint);
+    expect(loadReviewActivity().days).toEqual({ [day]: { English: 6, Japanese: 7 } });
+    expect(loadJson(REVIEW_ACTIVITY_REMOTE_STORAGE, null)).toEqual({ v: 1, devices: { other: remote } });
+    expect(storageChanged).toHaveBeenCalledWith({ name: REVIEW_ACTIVITY_REMOTE_STORAGE, source: "vault" });
+    expect(changed).not.toHaveBeenCalled();
+    expect(snapshot().reviewActivity).toEqual({
+      [id]: { [day]: { English: 6, Japanese: 7 } }, other: remote,
+    });
+    storageChanged.mockClear();
+    adapter.apply(checkpoint);
+    expect(storageChanged).not.toHaveBeenCalled();
+    saveJson(REVIEW_ACTIVITY_STORAGE, { v: 1, days: { [day]: { English: 7, Japanese: 7 } } });
+    expect(changed).toHaveBeenCalledOnce();
+    stop();
+    stopStorage();
+  });
+
+  it("sums valid review counts across devices and takes max for a matching device id", () => {
+    const day = "2026-11-14";
+    saveJson(DEVICE_ID_STORAGE, "own");
+    saveJson(REVIEW_ACTIVITY_STORAGE, { v: 1, days: { [day]: { English: 2, Japanese: 8 } } });
+    saveJson(REVIEW_ACTIVITY_REMOTE_STORAGE, { v: 1, devices: {
+      own: { [day]: { English: 4, Japanese: 5 } },
+      other: {
+        [day]: { English: 3, "": 1, ["__proto__"]: 2, invalid: Number.MAX_SAFE_INTEGER + 1 },
+        "2026-02-30": { English: 9 },
+        "2025-01-01": { English: 9 },
+      },
+      third: { [day]: { English: 5, Japanese: 1 } },
+    } });
+    const days = loadAllReviewDays();
+    expect(days).toEqual({ [day]: { English: 12, Japanese: 9, "": 1, ["__proto__"]: 2 } });
+    expect(Object.getPrototypeOf(days)).toBeNull();
+    expect(Object.getPrototypeOf(days[day])).toBeNull();
+  });
+
+  it("restores onto a new device without seeding duplicate reviews from restored cards", () => {
+    const card = addCard({ front: "train", meaning: "vehicle", language: "English" });
+    gradeCard(card.id, "good");
+    const day = localDateKey(new Date(now));
+    const original = snapshot();
+    const originalId = loadDeviceId();
+    expect(original.reviewActivity).toEqual({ [originalId]: { [day]: { English: 1 } } });
+    storage.clear();
+
+    const adapter = createVaultAdapter();
+    adapter.apply(adapter.parse(JSON.parse(JSON.stringify(original))));
+    expect(loadDeviceId()).not.toBe(originalId);
+    expect(loadReviewActivity(loadCards).days).toEqual({});
+    expect(loadAllReviewDays()).toEqual({ [day]: { English: 1 } });
+    gradeCard(card.id, "good");
+    expect(loadAllReviewDays()).toEqual({ [day]: { English: 2 } });
+  });
+
   it("round trips every shared store through snapshot, parse and apply and refreshes existing listeners", () => {
     const original = seed();
     const adapter = createVaultAdapter();

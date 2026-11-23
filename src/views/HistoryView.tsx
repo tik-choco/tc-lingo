@@ -10,6 +10,7 @@ import type { Topic } from "../types";
 import { diffChars } from "../lib/diff";
 import { ActivityHeatmap } from "../components/ActivityHeatmap";
 import { FeedbackPanel } from "../components/FeedbackPanel";
+import { Leaderboard } from "../components/Leaderboard";
 import { loadSettings, subscribeSettings } from "../lib/settings";
 import { languageDisplayName } from "../lib/languages";
 import { t, getUiLanguage } from "../i18n";
@@ -51,6 +52,7 @@ export function HistoryView() {
       <section class="card-panel">
         <ActivityHeatmap />
       </section>
+      <Leaderboard />
       {topics.length === 0 && (
         <section class="card-panel">
           <p class="hint-text">{t("history-empty-state")}</p>

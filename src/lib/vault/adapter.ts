@@ -1,23 +1,32 @@
 import type {
   Card, ConversationSession, ConversationTurn, LanguageLevelRecord, PracticeAttempt, ReadingPassage, Topic,
 } from "../../types";
+import { applyReviewActivityFromVault, isDateKey, isReviewCount, loadReviewActivityForVault, REVIEW_ACTIVITY_STORAGE } from "../activityLog";
+import type { ReviewActivity, ReviewActivityByDevice } from "../activityLog";
 import { isCard, sanitizeCards } from "../cards";
 import { isConversationSession, sanitizeConversations } from "../conversation";
 import { isLevelRecord } from "../level";
 import { isReadingPassage } from "../reading";
-import { legacyBaseline, subscribeStorageChanges } from "../storage";
+import { legacyBaseline, subscribeStorageChanges, validId } from "../storage";
 import { buildSyncSnapshot, mergeStore, replaceSyncSnapshot } from "../sync/snapshot";
 import { pruneTombstones, unionTombstones } from "../sync/tombstones";
 import type { SyncSnapshot, SyncStoreName, Tombstone } from "../sync/types";
 import { isAttempt, isTopic } from "../topics";
 import type { VaultAdapter } from "./types";
 
-export type VaultState = SyncSnapshot;
+export type VaultState = SyncSnapshot & { reviewActivity?: ReviewActivityByDevice };
+
+type ParsedVaultState = SyncSnapshot & { reviewActivity: ReviewActivityByDevice };
 
 const MAX_BYTES = 32 * 1024 * 1024;
 const MAX_STRING_LENGTH = 2 * 1024 * 1024;
 const MAX_RECORDS = 100_000;
 const MAX_NESTED_ITEMS = 10_000;
+const MAX_ACTIVITY_DEVICES = 128;
+const MAX_ACTIVITY_DAYS = 512;
+const MAX_ACTIVITY_LANGUAGES = 256;
+const MAX_KEY_LENGTH = 512;
+const MAX_JSON_NODES = 1_000_000;
 
 const LEGACY_CARD_KEYS = ["id", "front", "reading", "meaning", "exampleSentence", "exampleSentenceTranslation", "context", "cloze", "source", "sourceTopicId", "language", "createdAt", "dueAt", "intervalDays", "easeFactor", "reps", "lapses", "updatedAt"] as const satisfies readonly (keyof Card)[];
 const CARD_REVIEW_KEYS = ["priority", "prioritySource", "suspended", "lastReviewedAt"] as const satisfies readonly (keyof Card)[];
@@ -35,7 +44,7 @@ const LEVEL_KEYS = ["language", "score", "samples", "override", "updatedAt"] as 
 const TOMBSTONE_KEYS = ["store", "id", "deletedAt"] as const satisfies readonly (keyof Tombstone)[];
 const STATE_KEYS = ["v", "app", "cards", "topics", "attempts", "passages", "conversations", "levels", "tombstones"] as const;
 const STORE_NAMES: SyncStoreName[] = ["cards", "topics", "attempts", "passages", "conversations", "levels"];
-const STORAGE_NAMES = new Set(["cards-v1", "topics-v1", "attempts-v1", "passages-v1", "conversations-v1", "levels-v1", "sync-tombstones-v1"]);
+const STORAGE_NAMES = new Set(["cards-v1", "topics-v1", "attempts-v1", "passages-v1", "conversations-v1", "levels-v1", "sync-tombstones-v1", REVIEW_ACTIVITY_STORAGE]);
 
 function invalid(): never {
   throw new Error("Invalid vault checkpoint");
@@ -53,35 +62,75 @@ function hasKeys(value: unknown, keys: readonly string[], optional: readonly str
     Object.keys(value).every((key) => keys.includes(key) || optional.includes(key));
 }
 
-function validId(id: unknown): id is string {
-  return typeof id === "string" && id.trim().length > 0 && id.length <= 512;
-}
-
 function validDate(value: unknown, ceiling: number): value is string {
   if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(value)) return false;
   const time = Date.parse(value);
   return Number.isSafeInteger(time) && time >= 0 && time <= ceiling && new Date(time).toISOString() === value;
 }
 
-function validateJson(value: unknown, depth = 0, budget = { nodes: 0 }): void {
-  if (++budget.nodes > 1_000_000 || depth > 8) invalid();
+function validateJson(value: unknown, budget: { nodes: number }, depth = 0): void {
+  if (++budget.nodes > MAX_JSON_NODES || depth > 8) invalid();
   if (typeof value === "string") {
     if (value.length > MAX_STRING_LENGTH) invalid();
   } else if (typeof value === "number") {
     if (!Number.isFinite(value)) invalid();
   } else if (Array.isArray(value)) {
     if (value.length > MAX_RECORDS) invalid();
-    for (const item of value) validateJson(item, depth + 1, budget);
+    for (const item of value) validateJson(item, budget, depth + 1);
   } else if (record(value)) {
     const entries = Object.entries(value);
     if (entries.length > 100) invalid();
     for (const [key, item] of entries) {
-      if (key.length > 512) invalid();
-      validateJson(item, depth + 1, budget);
+      if (key.length > MAX_KEY_LENGTH) invalid();
+      validateJson(item, budget, depth + 1);
     }
   } else if (value !== null && typeof value !== "boolean") {
     invalid();
   }
+}
+
+function validateReviewActivity(value: unknown, budget: { nodes: number }): asserts value is ReviewActivityByDevice {
+  if (!record(value) || Object.keys(value).length > MAX_ACTIVITY_DEVICES) invalid();
+  budget.nodes++;
+  for (const [deviceId, days] of Object.entries(value)) {
+    if (!validId(deviceId) || !record(days) || Object.keys(days).length > MAX_ACTIVITY_DAYS) invalid();
+    budget.nodes++;
+    for (const [day, counts] of Object.entries(days)) {
+      if (!isDateKey(day) || !record(counts)) invalid();
+      const entries = Object.entries(counts);
+      budget.nodes += entries.length + 1;
+      if (budget.nodes > MAX_JSON_NODES || entries.length > MAX_ACTIVITY_LANGUAGES ||
+        entries.some(([language, count]) => language.length > MAX_KEY_LENGTH || !isReviewCount(count))) invalid();
+    }
+  }
+  if (budget.nodes > MAX_JSON_NODES) invalid();
+}
+
+function sortedUnionKeys(a: object, b: object): string[] {
+  return [...new Set([...Object.keys(a), ...Object.keys(b)])].sort();
+}
+
+function mergeReviewActivity(local: ReviewActivityByDevice, remote: ReviewActivityByDevice): ReviewActivityByDevice {
+  const devices = Object.create(null) as ReviewActivityByDevice;
+  // Choose the same keys on both peers if the union exceeds a size limit.
+  for (const deviceId of sortedUnionKeys(local, remote).slice(0, MAX_ACTIVITY_DEVICES)) {
+    const a = Object.hasOwn(local, deviceId) ? local[deviceId] : {};
+    const b = Object.hasOwn(remote, deviceId) ? remote[deviceId] : {};
+    const days = devices[deviceId] = Object.create(null) as ReviewActivity["days"];
+    for (const day of sortedUnionKeys(a, b).slice(-MAX_ACTIVITY_DAYS)) {
+      const aCounts = a[day] ?? {};
+      const bCounts = b[day] ?? {};
+      const counts = days[day] = Object.create(null) as Record<string, number>;
+      const languages = sortedUnionKeys(aCounts, bCounts).filter((key) => key.length <= MAX_KEY_LENGTH);
+      for (const language of languages.slice(0, MAX_ACTIVITY_LANGUAGES)) {
+        counts[language] = Math.max(
+          Object.hasOwn(aCounts, language) ? aCounts[language] : 0,
+          Object.hasOwn(bCounts, language) ? bCounts[language] : 0,
+        );
+      }
+    }
+  }
+  return devices;
 }
 
 function unique<T>(items: T[], keyOf: (item: T) => string): void {
@@ -104,7 +153,7 @@ function byCreated<T extends { id: string; createdAt: string }>(newestFirst: boo
 }
 
 /** Project the domain fields explicitly; unrelated properties never enter a checkpoint. */
-function project(state: SyncSnapshot): VaultState {
+function project(state: SyncSnapshot): SyncSnapshot {
   return {
     v: 1,
     app: "tc-lingo",
@@ -124,18 +173,27 @@ function project(state: SyncSnapshot): VaultState {
   };
 }
 
-function parseState(value: unknown, ceiling = Date.now() + 366 * 86400000): VaultState {
+function parseState(value: unknown, ceiling = Date.now() + 366 * 86400000): ParsedVaultState {
   const date = (value: unknown) => validDate(value, ceiling);
   // Due dates are planned events and may exceed the revision clock limit.
   const dueDate = (value: unknown) => validDate(value, Infinity);
-  validateJson(value);
+  // Older clients use strict hasKeys checks and reject the new key until the static site updates.
+  if (!hasKeys(value, STATE_KEYS, ["reviewActivity"]) || !record(value)) invalid();
+  const { reviewActivity: rawActivity, ...domain } = value;
+  const budget = { nodes: 0 };
+  validateJson(domain, budget);
+  let reviewActivity: ReviewActivityByDevice = {};
+  if (Object.hasOwn(value, "reviewActivity")) {
+    validateReviewActivity(rawActivity, budget);
+    reviewActivity = rawActivity;
+  }
   let json: string;
   try {
     json = JSON.stringify(value);
   } catch {
     return invalid();
   }
-  if (new TextEncoder().encode(json).byteLength > MAX_BYTES || !hasKeys(value, STATE_KEYS) || !record(value)) invalid();
+  if (new TextEncoder().encode(json).byteLength > MAX_BYTES) invalid();
   if (value.v !== 1 || value.app !== "tc-lingo") invalid();
   const arrays = [value.cards, value.topics, value.attempts, value.passages, value.conversations, value.levels, value.tombstones];
   if (arrays.some((items) => !Array.isArray(items)) || arrays.reduce<number>((count, items) => count + (items as unknown[]).length, 0) > MAX_RECORDS) invalid();
@@ -166,13 +224,16 @@ function parseState(value: unknown, ceiling = Date.now() + 366 * 86400000): Vaul
   unique(levels, (item) => item.language);
   unique(tombstones, (item) => `${item.store}:${item.id}`);
   for (const item of conversations) unique(item.turns, (turn) => turn.id);
-  return project({ v: 1, app: "tc-lingo", cards: sanitizeCards(cards), topics, attempts, passages, conversations: sanitizeConversations(conversations), levels, tombstones });
+  return {
+    ...project({ v: 1, app: "tc-lingo", cards: sanitizeCards(cards), topics, attempts, passages, conversations: sanitizeConversations(conversations), levels, tombstones }),
+    reviewActivity: mergeReviewActivity(reviewActivity, {}),
+  };
 }
 
-function mergeStates(local: VaultState, remote: VaultState): VaultState {
+function mergeStates(local: ParsedVaultState, remote: ParsedVaultState): ParsedVaultState {
   const combined = unionTombstones(local.tombstones, remote.tombstones);
   const deleted = new Map(combined.map((item) => [`${item.store}:${item.id}`, item.deletedAt]));
-  return project({
+  const domain = project({
     v: 1,
     app: "tc-lingo",
     cards: mergeStore(local.cards, remote.cards, (item) => item.id, "cards", deleted).merged,
@@ -183,6 +244,7 @@ function mergeStates(local: VaultState, remote: VaultState): VaultState {
     levels: mergeStore(local.levels, remote.levels, (item) => item.language, "levels", deleted).merged,
     tombstones: combined,
   });
+  return { ...domain, reviewActivity: mergeReviewActivity(local.reviewActivity, remote.reviewActivity) };
 }
 
 function keepLocalFields<T>(current: T[], next: T[], keyOf: (item: T) => string): T[] {
@@ -190,7 +252,7 @@ function keepLocalFields<T>(current: T[], next: T[], keyOf: (item: T) => string)
   return next.map((item) => ({ ...byKey.get(keyOf(item)), ...item }));
 }
 
-function withLocalFields(next: VaultState, current: SyncSnapshot): SyncSnapshot {
+function withLocalFields(next: SyncSnapshot, current: SyncSnapshot): SyncSnapshot {
   const oldPassages = new Map(current.passages.map((item) => [item.id, item]));
   const oldConversations = new Map(current.conversations.map((item) => [item.id, item]));
   return {
@@ -214,19 +276,23 @@ function withLocalFields(next: VaultState, current: SyncSnapshot): SyncSnapshot 
   };
 }
 
-const EMPTY: VaultState = { v: 1, app: "tc-lingo", cards: [], topics: [], attempts: [], passages: [], conversations: [], levels: [], tombstones: [] };
+const EMPTY: ParsedVaultState = { v: 1, app: "tc-lingo", cards: [], topics: [], attempts: [], passages: [], conversations: [], levels: [], tombstones: [], reviewActivity: {} };
 
 export function createVaultAdapter(): VaultAdapter<VaultState> {
-  let captured: VaultState | undefined;
+  let captured: SyncSnapshot | undefined;
   return {
     app: "tc-lingo",
     schema: "tc-lingo/vault/1",
     snapshot() {
       // Persist migration revisions before using local records in a checkpoint.
       legacyBaseline(true);
-      const state = mergeStates(parseState(project(buildSyncSnapshot())), EMPTY);
+      const state = mergeStates(parseState({
+        ...project(buildSyncSnapshot()),
+        reviewActivity: mergeReviewActivity(loadReviewActivityForVault(), {}),
+      }), EMPTY);
       state.tombstones = pruneTombstones(state.tombstones);
-      captured = structuredClone(state);
+      const { reviewActivity, ...syncState } = state;
+      captured = structuredClone(syncState);
       return state;
     },
     parse: (value) => parseState(value),
@@ -238,7 +304,7 @@ export function createVaultAdapter(): VaultAdapter<VaultState> {
       return merged;
     },
     apply(next) {
-      const merged = mergeStates(parseState(next), EMPTY);
+      const { reviewActivity, ...merged } = mergeStates(parseState(next), EMPTY);
       legacyBaseline(true);
       const baseline = captured ?? project(buildSyncSnapshot());
       const written = new Map<SyncStoreName, Map<string, string>>();
@@ -287,6 +353,7 @@ export function createVaultAdapter(): VaultAdapter<VaultState> {
         if (store !== "tombstones") written.set(store, new Map(project(state)[store].map((item) => [keyOf(store, item), JSON.stringify(item)])));
         return state[store];
       });
+      applyReviewActivityFromVault(reviewActivity);
     },
     subscribe(onChange) {
       return subscribeStorageChanges((change) => {

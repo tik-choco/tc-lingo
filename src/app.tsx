@@ -19,6 +19,7 @@ import type { MainTab } from "./types";
 import { familyAppUrl } from "./lib/familyApps";
 import { onHashChange, readHash, writeHash } from "./lib/hashRoute";
 import type { HashState } from "./lib/hashRoute";
+import { startLeaderboard, stopLeaderboard } from "./lib/leaderboard/session";
 import { requestSyncJoin } from "./lib/sync/session";
 import { useTheme } from "./hooks/useTheme";
 import { paneEnterClass, useEnterDirection } from "./hooks/useEnterDirection";
@@ -80,6 +81,10 @@ export function App({ initialVaultCode = null }: { initialVaultCode?: string | n
   });
   const [settings, setSettings] = useState(loadSettings);
   useEffect(() => subscribeSettings(() => setSettings(loadSettings())), []);
+  useEffect(() => {
+    startLeaderboard();
+    return stopLeaderboard;
+  }, []);
   const dir = useEnterDirection(TAB_ORDER, tab);
   const mainRef = useRef<HTMLElement>(null);
 

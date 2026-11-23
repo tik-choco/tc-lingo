@@ -241,6 +241,8 @@ export interface LingoSettings extends LlmLocalSettings {
   autoOrganizeCards: boolean;
   reviewSessionLimit: number;
   newCardsPerDay: number;
+  leaderboardEnabled: boolean;
+  leaderboardName: string;
   lastCardAutoOrganizeAt: string;
   // Each model ref owns its language voices, so changing models cannot reuse stale voice IDs.
   ttsVoicesByRef: Record<string, Record<string, string>>;

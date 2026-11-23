@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import { getUiLanguage, t } from "../i18n";
 import { activityLevel, buildActivity } from "../lib/activity";
-import { loadReviewActivity } from "../lib/activityLog";
+import { loadAllReviewDays, loadReviewActivity } from "../lib/activityLog";
 import { loadCards } from "../lib/cards";
 import { loadConversations } from "../lib/conversation";
 import { loadPassages } from "../lib/reading";
@@ -33,7 +33,7 @@ export function ActivityHeatmap() {
   }, []);
 
   const activity = useMemo(() => buildActivity({
-    reviews: loadReviewActivity().days,
+    reviews: loadAllReviewDays(),
     topics: loadTopics(),
     attempts: loadAttempts(),
     passages: loadPassages(),

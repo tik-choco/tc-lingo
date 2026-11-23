@@ -1,5 +1,6 @@
 import type { LingoSettings, LlmTask, LlmTaskGroup, ReasoningEffort } from "../types";
 import type { LlmLocalSettings, TaskModelV1 } from "@tik-choco/mistai/preact";
+import { normalizeLeaderboardName } from "./leaderboard/protocol";
 import { loadLlmConfig, emptyLlmConfig, presetIdToRef, providerKind, roomIdFromBaseUrl, isModelRef, setDefaultModel, saveLlmConfig } from "./llmConfig";
 import { loadJson, saveJson, subscribeStorage } from "./storage";
 
@@ -75,6 +76,8 @@ export function loadSettings(): LingoSettings {
     autoOrganizeCards: raw.autoOrganizeCards !== false, lastCardAutoOrganizeAt: typeof raw.lastCardAutoOrganizeAt === "string" ? raw.lastCardAutoOrganizeAt : "",
     reviewSessionLimit: normalizeReviewLimit("reviewSessionLimit", raw.reviewSessionLimit),
     newCardsPerDay: normalizeReviewLimit("newCardsPerDay", raw.newCardsPerDay),
+    leaderboardEnabled: raw.leaderboardEnabled === true,
+    leaderboardName: normalizeLeaderboardName(raw.leaderboardName),
     ttsVoicesByRef: raw.ttsVoicesByRef ?? {},
   };
   if (raw.tasks && typeof raw.tasks === "object" && !Array.isArray(raw.tasks)) {
