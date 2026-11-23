@@ -4,8 +4,9 @@ import { initialSrsFields, scheduleReview } from "./srs";
 import { isDueForReview, isNewCard } from "./reviewQueue";
 import { loadReviewDaily, REVIEW_DAILY_STORAGE } from "./reviewDaily";
 import { loadDomainJson, newId, nextUpdatedAt, saveJson, saveJsonBatch, subscribeStorage } from "./storage";
-import type { StorageWriteOptions } from "./storage";
+import type { JsonWrite, StorageWriteOptions } from "./storage";
 import { persistDeletions } from "./sync/tombstones";
+import { nextReviewActivity, REVIEW_ACTIVITY_STORAGE } from "./activityLog";
 
 const STORAGE_NAME = "cards-v1";
 
@@ -210,17 +211,20 @@ export function gradeCard(id: string, grade: ReviewGrade, now: Date = new Date()
     lastReviewedAt: now.toISOString(),
     updatedAt: nextUpdatedAt(card.updatedAt, now),
   };
-  cards[index] = reviewed;
   try {
+    const updatedCards = cards.slice();
+    updatedCards[index] = reviewed;
+    const writes: JsonWrite[] = [{ name: STORAGE_NAME, value: updatedCards }];
     if (isNewCard(card)) {
       const daily = loadReviewDaily(now);
-      saveJsonBatch([
-        { name: STORAGE_NAME, value: cards },
-        { name: REVIEW_DAILY_STORAGE, value: { ...daily, newIntroduced: daily.newIntroduced + 1 } },
-      ], { throwOnError: true });
-    } else {
-      saveCards(cards, { throwOnError: true });
+      writes.push({ name: REVIEW_DAILY_STORAGE, value: { ...daily, newIntroduced: daily.newIntroduced + 1 } });
     }
+    writes.push({
+      name: REVIEW_ACTIVITY_STORAGE,
+      value: null,
+      refresh: () => nextReviewActivity(cards, card.language, now),
+    });
+    saveJsonBatch(writes, { throwOnError: true });
     return reviewed;
   } catch (error) {
     console.warn("tc-lingo: failed to persist card review", error);

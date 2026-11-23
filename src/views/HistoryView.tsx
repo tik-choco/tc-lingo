@@ -8,6 +8,7 @@ import { Loader2, Square, Volume2 } from "lucide-preact";
 import { attemptsForTopic, deleteTopic, loadTopics, subscribeTopics } from "../lib/topics";
 import type { Topic } from "../types";
 import { diffChars } from "../lib/diff";
+import { ActivityHeatmap } from "../components/ActivityHeatmap";
 import { FeedbackPanel } from "../components/FeedbackPanel";
 import { loadSettings, subscribeSettings } from "../lib/settings";
 import { languageDisplayName } from "../lib/languages";
@@ -45,18 +46,16 @@ export function HistoryView() {
 
   const speech = useSpeech();
 
-  if (topics.length === 0) {
-    return (
-      <div class="view-container history-view">
+  return (
+    <div class="view-container history-view">
+      <section class="card-panel">
+        <ActivityHeatmap />
+      </section>
+      {topics.length === 0 && (
         <section class="card-panel">
           <p class="hint-text">{t("history-empty-state")}</p>
         </section>
-      </div>
-    );
-  }
-
-  return (
-    <div class="view-container history-view">
+      )}
       {topics.map((topic) => {
         const attempts = attemptsForTopic(topic.id);
         const open = openTopicId === topic.id;

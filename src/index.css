@@ -39,6 +39,17 @@
   --primary-soft-strong: rgba(110, 151, 199, 0.16);
   --primary-border: rgba(110, 151, 199, 0.35);
 
+  /* Study activity heatmap */
+  --heat-0: var(--surface-3);
+  --heat-1: color-mix(in srgb, var(--primary) 25%, var(--surface));
+  --heat-2: color-mix(in srgb, var(--primary) 45%, var(--surface));
+  --heat-3: color-mix(in srgb, var(--primary) 70%, var(--surface));
+  --heat-4: var(--primary-active);
+  --heat-cell-size: 11px;
+  --heat-cell-gap: 3px;
+  --heat-cell-radius: 2px;
+  --history-view-width: 880px;
+
   /* Status */
   --success: #16a34a;
   --success-soft: rgba(22, 163, 74, 0.1);
@@ -152,6 +163,12 @@
   --primary-soft: rgba(143, 179, 221, 0.16);
   --primary-soft-strong: rgba(143, 179, 221, 0.24);
   --primary-border: rgba(143, 179, 221, 0.4);
+
+  --heat-0: var(--surface-3);
+  --heat-1: color-mix(in srgb, var(--primary) 28%, var(--surface));
+  --heat-2: color-mix(in srgb, var(--primary) 48%, var(--surface));
+  --heat-3: color-mix(in srgb, var(--primary) 72%, var(--surface));
+  --heat-4: var(--primary);
 
   --success: #4ade80;
   --success-soft: rgba(74, 222, 128, 0.14);

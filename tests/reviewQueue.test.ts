@@ -1,7 +1,9 @@
 import { afterEach, expect, it, vi } from "vitest";
+import { loadReviewActivity, REVIEW_ACTIVITY_STORAGE } from "../src/lib/activityLog";
 import { addCard, boostCardPriority, gradeCard, loadCards, sanitizeCards, setAutoCardPriority, setCardPriority } from "../src/lib/cards";
 import { loadReviewDaily } from "../src/lib/reviewDaily";
 import { buildReviewQueue } from "../src/lib/reviewQueue";
+import { storageKey } from "../src/lib/storage";
 import type { Card } from "../src/types";
 
 const now = new Date(2026, 10, 19, 23, 55);
@@ -64,8 +66,42 @@ it("counts only the first grade as an introduction and resets at local midnight"
   gradeCard(id, "again", now);
   expect(loadCards()[0]).toMatchObject({ lapses: 2, lastReviewedAt: date });
   expect(loadReviewDaily(now)).toEqual({ date: "2026-11-19", newIntroduced: 1 });
+  expect(loadReviewActivity().days["2026-11-19"]).toEqual({ "": 2 });
   const midnight = new Date(2026, 10, 20);
   expect(loadReviewDaily(midnight)).toEqual({ date: "2026-11-20", newIntroduced: 0 });
+});
+
+it.each(["new", "previously reviewed"])("rolls back the grade if a %s card's activity cannot be saved", (kind) => {
+  const existing = kind === "new" ? card("test") : card("test", { lastReviewedAt: date, reps: 1 });
+  const values = new Map([[storageKey("cards-v1"), JSON.stringify([existing])]]);
+  const activityKey = storageKey(REVIEW_ACTIVITY_STORAGE);
+  let failActivityWrite = true;
+  vi.stubGlobal("localStorage", {
+    getItem: (key: string) => values.get(key) ?? null,
+    setItem: (key: string, value: string) => {
+      if (key === activityKey && failActivityWrite) throw new Error("No storage space");
+      values.set(key, value);
+    },
+    removeItem: (key: string) => values.delete(key),
+  });
+  vi.stubGlobal("window", new EventTarget());
+  const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
+  const nextDay = new Date(2026, 10, 20);
+
+  try {
+    expect(gradeCard(existing.id, "good", nextDay)).toBeNull();
+    expect(loadCards()[0]).toEqual(existing);
+    expect(loadReviewDaily(nextDay).newIntroduced).toBe(0);
+    expect(values.has(activityKey)).toBe(false);
+
+    failActivityWrite = false;
+    expect(gradeCard(existing.id, "good", nextDay)).not.toBeNull();
+    expect(loadReviewActivity().days).toEqual(kind === "new"
+      ? { "2026-11-20": { English: 1 } }
+      : { "2026-11-19": { English: 1 }, "2026-11-20": { English: 1 } });
+  } finally {
+    warning.mockRestore();
+  }
 });
 
 it("normalizes legacy and out-of-range priority without changing revisions", () => {
