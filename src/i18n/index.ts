@@ -7,6 +7,7 @@
 import { loadSettings } from "../lib/settings";
 import { aiMessages } from "./ai";
 import { appMessages } from "./app";
+import { assistantMessages } from "./assistant";
 import { cardsMessages } from "./cards";
 import { domainMessages } from "./domain";
 import { grammarMessages } from "./grammar";
@@ -28,6 +29,7 @@ const UI_LANGUAGES: UiLanguage[] = ["en", "ja", "zh-CN", "zh-TW"];
 const BUNDLES: MessageBundle[] = [
   appMessages,
   aiMessages,
+  assistantMessages,
   practiceMessages,
   readingMessages,
   talkMessages,

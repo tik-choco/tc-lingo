@@ -15,6 +15,8 @@ const facts = [
   { id: "f2", label: "駐車場", detail: "Parking is available on Sundays." },
 ];
 
+const emptySuggestion = { suggestion: "", suggestionReading: "", suggestionTranslation: "", suggestionReason: "" };
+
 const start = {
   title: " ホテル ", scenario: "フロント係を演じる。", mission: "朝食と駐車場について質問しよう。",
   opening: "How can I help?", openingTranslation: "ご用件をお伺いします。", facts,
@@ -27,6 +29,7 @@ it("backfills legacy sessions and turns while retaining existing revisions", () 
     ...legacySession, updatedAt: legacySession.createdAt, mode: "free", mission: "", facts: [], retryOfId: "",
     turns: [{
       ...legacyTurn, reading: "", translation: "", correctedReading: "", correctedTranslation: "",
+      ...emptySuggestion,
       understanding: "", unclearReason: "", revealedFactIds: [],
     }],
   });
@@ -36,6 +39,7 @@ it("backfills legacy sessions and turns while retaining existing revisions", () 
 it("rejects wrong field types and filters malformed facts and unknown modes", () => {
   const badTurns = [
     { understanding: false }, { understanding: "unknown" }, { unclearReason: 10 }, { revealedFactIds: "f1" }, { revealedFactIds: [5] },
+    { suggestion: 10 }, { suggestionReading: null }, { suggestionTranslation: [] }, { suggestionReason: false },
   ];
   expect(sanitizeConversations([
     { ...legacySession, mode: 9 }, { ...legacySession, mission: false }, { ...legacySession, facts: "f1" },
@@ -81,12 +85,36 @@ it("validates and deduplicates revealed IDs and defaults unknown understanding t
     understanding: "unknown", unclearReason: "Ignored", reply: " Breakfast starts at seven. ",
     replyReading: "reading", replyTranslation: "朝食は7時からです。", revealedFactIds: ["f1", "unknown", 99, "f1"],
     corrected: "When does breakfast start?", correctedReading: "corrected reading", correctedTranslation: "朝食は何時からですか？", reasons: "理由",
+    suggestion: "Could you tell me when breakfast starts?", suggestionReason: "より丁寧な質問です。",
   }), facts);
   expect(result).toEqual({
     understanding: "full", unclearReason: "", reply: "Breakfast starts at seven.", replyReading: "reading",
     replyTranslation: "朝食は7時からです。", revealedFactIds: ["f1"], corrected: "When does breakfast start?",
     correctedReading: "corrected reading", correctedTranslation: "朝食は何時からですか？", reasons: "理由",
+    ...emptySuggestion,
   });
+});
+
+it("parses a better expression with its reading, translation and reason", () => {
+  expect(parseInquiryReply(JSON.stringify({
+    reply: "早餐七点开始。",
+    suggestion: " 请问，早餐几点开始？ ",
+    suggestionReading: "Qǐngwèn, zǎocān jǐ diǎn kāishǐ?",
+    suggestionTranslation: "すみません、朝食は何時からですか？",
+    suggestionReason: "受付の人への質問がより丁寧になります。",
+  }), facts)).toMatchObject({
+    corrected: "",
+    suggestion: "请问，早餐几点开始？",
+    suggestionReading: "Qǐngwèn, zǎocān jǐ diǎn kāishǐ?",
+    suggestionTranslation: "すみません、朝食は何時からですか？",
+    suggestionReason: "受付の人への質問がより丁寧になります。",
+  });
+});
+
+it("ignores suggestion details when the suggestion is missing or invalid", () => {
+  expect(parseInquiryReply(JSON.stringify({
+    reply: "Breakfast starts at seven.", suggestion: false, suggestionReason: "A reason without a suggestion",
+  }), facts)).toMatchObject(emptySuggestion);
 });
 
 it.each(["partial", "none"])("clears revealed IDs when understanding is %s", (understanding) => {
@@ -95,6 +123,7 @@ it.each(["partial", "none"])("clears revealed IDs when understanding is %s", (un
   }), facts)).toEqual({
     understanding, unclearReason: "曜日を指定してください。", reply: "Do you mean Sunday?", revealedFactIds: [],
     replyReading: "", replyTranslation: "", corrected: "", correctedReading: "", correctedTranslation: "", reasons: "",
+    ...emptySuggestion,
   });
 });
 
@@ -129,7 +158,7 @@ it("uses three clarification thresholds across CEFR bands", () => {
   expect(new Set([lenient, moderate, strict]).size).toBe(3);
 });
 
-it("preserves inquiry metadata in vault checkpoints and accepts checkpoints predating it", () => {
+it("preserves inquiry metadata and suggestions in vault checkpoints and accepts older checkpoints", () => {
   const adapter = createVaultAdapter();
   const checkpoint = { v: 1, app: "tc-lingo", cards: [], topics: [], attempts: [], passages: [], levels: [], tombstones: [] };
   const legacy = [{
@@ -143,6 +172,11 @@ it("preserves inquiry metadata in vault checkpoints and accepts checkpoints pred
     turns: [
       newTurn({ role: "assistant", text: facts[0].detail, revealedFactIds: ["f1"] }),
       newTurn({ role: "learner", text: "And Sunday?", understanding: "partial", unclearReason: "曜日と項目を指定してください。" }),
+      newTurn({
+        role: "learner", text: "Tell me the breakfast hours.",
+        suggestion: "Could you tell me the breakfast hours?", suggestionTranslation: "朝食の時間を教えていただけますか？",
+        suggestionReason: "受付の人への依頼が柔らかくなります。",
+      }),
     ],
   }]);
   expect(adapter.parse({ ...checkpoint, conversations: inquiry }).conversations).toEqual(inquiry);

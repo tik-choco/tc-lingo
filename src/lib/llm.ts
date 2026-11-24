@@ -39,6 +39,12 @@ function chatConfig(target: ResolvedLlmTargetV1) {
   };
 }
 
+export function chatText(connection: LlmConnection, messages: ChatMessage[], onDelta?: (delta: string) => void): Promise<string> {
+  return connection.kind === "network"
+    ? requestNetworkChat(connection.roomId, messages, connection.model, connection.reasoningEffort, onDelta)
+    : streamChatCompletion(chatConfig(connection.target), messages, onDelta);
+}
+
 /** Shared one-shot JSON round-trip over the configured transport. Exported
  * for the sibling LLM-call modules (lib/reading.ts, lib/conversation.ts,
  * lib/grammar.ts) so they don't each reimplement the transport branch. */
@@ -47,10 +53,7 @@ export async function chatJson(connection: LlmConnection, systemPrompt: string, 
     { role: "system", content: systemPrompt },
     { role: "user", content: JSON.stringify(userPayload) },
   ];
-  const content =
-    connection.kind === "network"
-      ? await requestNetworkChat(connection.roomId, messages, connection.model, connection.reasoningEffort)
-      : await streamChatCompletion(chatConfig(connection.target), messages);
+  const content = await chatText(connection, messages);
   if (!content.trim()) throw new Error(t("error-empty-response"));
   return content;
 }

@@ -14,8 +14,9 @@ import { languageDisplayName } from "../lib/languages";
 import { LanguageSelect } from "../components/LanguageSelect";
 import { requestOnboarding } from "../lib/onboarding";
 import { useSpeech } from "../hooks/useSpeech";
-import { getSyncState } from "../lib/sync/session";
+import { getSyncState, subscribeSync } from "../lib/sync/session";
 import { SyncPanel } from "../components/SyncPanel";
+import { DidSyncPanel } from "../components/DidSyncPanel";
 import { getUiLanguage, t } from "../i18n";
 import { vaultMessage } from "@tik-choco/mistvault";
 import { VaultPanel } from "@tik-choco/mistvault/preact";
@@ -136,6 +137,9 @@ export function SettingsView({ pendingVaultCode, onVaultLinkHandled }: {
     const state = getSyncState();
     return pendingVaultCode || state.pendingJoinRoomId || state.phase !== "idle" ? "sync" : "general";
   });
+  const [syncState, setSyncState] = useState(getSyncState);
+  useEffect(() => subscribeSync(() => setSyncState(getSyncState())), []);
+  const qrSyncActive = !!syncState.pendingJoinRoomId || syncState.phase !== "idle";
   useEffect(() => { if (pendingVaultCode) setActiveTab("sync"); }, [pendingVaultCode]);
   const [settings, setSettings] = useState(loadSettings);
   useEffect(() => subscribeSettings(() => setSettings(loadSettings())), []);
@@ -327,7 +331,13 @@ export function SettingsView({ pendingVaultCode, onVaultLinkHandled }: {
         </div>}
         <VaultPanel controller={vault} locale={getUiLanguage()} appName="TC Lingo" />
       </div>
-      <SyncPanel />
+      <DidSyncPanel enabled={settings.didAutoSync} />
+      {/* QR/invite sync is the fallback for devices without a mistl-issued
+          DID link; collapsed unless a session or deep-link join is active. */}
+      <details class="sync-fallback" open={qrSyncActive}>
+        <summary>{t("settings-sync-fallback-summary")}</summary>
+        <SyncPanel />
+      </details>
     </div>}
     <footer style={{ padding: "12px 0" }}><MistBuildBanner view="settings" /></footer>
   </div>;

@@ -11,6 +11,7 @@ export const TASK_GROUP: Record<Exclude<LlmTask, "decision">, LlmTaskGroup> = {
   practice: "correction",
   review: "correction",
   conversation: "correction",
+  assistant: "correction",
   topic: "generation",
   cards: "generation",
   reading: "generation",

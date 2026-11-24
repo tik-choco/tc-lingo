@@ -20,6 +20,7 @@ import { familyAppUrl } from "./lib/familyApps";
 import { onHashChange, readHash, writeHash } from "./lib/hashRoute";
 import type { HashState } from "./lib/hashRoute";
 import { startLeaderboard, stopLeaderboard } from "./lib/leaderboard/session";
+import { startDidSync } from "./lib/sync/didSync";
 import { requestSyncJoin } from "./lib/sync/session";
 import { useTheme } from "./hooks/useTheme";
 import { paneEnterClass, useEnterDirection } from "./hooks/useEnterDirection";
@@ -32,6 +33,7 @@ import { HistoryView } from "./views/HistoryView";
 import { SettingsView } from "./views/SettingsView";
 import { Onboarding } from "./components/Onboarding";
 import { KeyboardHelp } from "./components/KeyboardHelp";
+import { AssistantChat } from "./components/AssistantChat";
 import { markOnboardingDone, shouldShowOnboarding, subscribeOnboardingRequests } from "./lib/onboarding";
 import { loadSettings, setActiveLanguage, subscribeSettings } from "./lib/settings";
 import { CHAT_TASK_GROUPS } from "./lib/llmConnection";
@@ -70,6 +72,7 @@ const TABS: { id: MainTab; labelKey: string; icon: typeof PenLine }[] = [
 ];
 
 const TAB_ORDER = TABS.map((t) => t.id);
+const MOBILE_QUERY = "(max-width: 640px)";
 
 export function App({ initialVaultCode = null }: { initialVaultCode?: string | null }) {
   const { theme, toggleTheme } = useTheme();
@@ -85,8 +88,20 @@ export function App({ initialVaultCode = null }: { initialVaultCode?: string | n
     startLeaderboard();
     return stopLeaderboard;
   }, []);
+  useEffect(startDidSync, []);
   const dir = useEnterDirection(TAB_ORDER, tab);
+  const headerRef = useRef<HTMLElement>(null);
   const mainRef = useRef<HTMLElement>(null);
+  const [assistantOpen, setAssistantOpen] = useState(false);
+  const [mobile, setMobile] = useState(() => window.matchMedia(MOBILE_QUERY).matches);
+  useEffect(() => {
+    const query = window.matchMedia(MOBILE_QUERY);
+    const update = () => setMobile(query.matches);
+    update();
+    query.addEventListener("change", update);
+    return () => query.removeEventListener("change", update);
+  }, []);
+  const assistantModal = assistantOpen && mobile;
 
   // The UI language follows the native language (i18n/index.ts). Re-render
   // the whole tree whenever the active message table changes (language
@@ -193,7 +208,7 @@ export function App({ initialVaultCode = null }: { initialVaultCode?: string | n
 
   return (
     <div class="app-shell">
-      <header class="app-header">
+      <header class="app-header" ref={headerRef} inert={assistantModal}>
         <div class="app-header-brand">
           <Languages size={20} />
           <span>TC Lingo</span>
@@ -255,7 +270,7 @@ export function App({ initialVaultCode = null }: { initialVaultCode?: string | n
           </button>
         </div>
       </header>
-      <main class="app-main" ref={mainRef} tabIndex={-1}>
+      <main class="app-main" ref={mainRef} tabIndex={-1} inert={assistantModal}>
         <div key={tab} class={paneEnterClass(dir)} style={{ height: "100%" }}>
           {tab === "practice" && <PracticeView />}
           {tab === "reading" && <ReadingView />}
@@ -266,6 +281,8 @@ export function App({ initialVaultCode = null }: { initialVaultCode?: string | n
           {tab === "settings" && <SettingsView pendingVaultCode={pendingVaultCode} onVaultLinkHandled={() => setPendingVaultCode(null)} />}
         </div>
       </main>
+      <AssistantChat open={assistantOpen} mobile={mobile} headerRef={headerRef}
+        onOpenChange={setAssistantOpen} onOpenSettings={() => selectTab("settings")} />
       {showOnboarding && <Onboarding onClose={closeOnboarding} />}
       {showKbdHelp && <KeyboardHelp onClose={() => setShowKbdHelp(false)} />}
     </div>

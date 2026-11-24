@@ -166,7 +166,7 @@ export interface ConversationTurn {
    * ReadingPassage's per-sentence translation); "" for learner turns and
    * turns saved before this feature existed. */
   translation: string;
-  /** Corrected version of a learner turn; "" when it was already natural. */
+  /** Corrected version of a learner turn; "" when there is nothing to correct. */
   corrected: string;
   /** Reading aid for `corrected`; "" when no correction / no aid. */
   correctedReading: string;
@@ -176,6 +176,14 @@ export interface ConversationTurn {
   correctedTranslation: string;
   /** Why, in the learner's native language. "" when no correction. */
   reasons: string;
+  /** More natural or context-appropriate phrasing for a learner turn; "" when none. */
+  suggestion: string;
+  /** Reading aid for `suggestion`; "" when no suggestion / no aid. */
+  suggestionReading: string;
+  /** Native-language translation of `suggestion`, revealed on demand; "" when none. */
+  suggestionTranslation: string;
+  /** Why the suggestion fits better, in the learner's native language; "" when none. */
+  suggestionReason: string;
   /** How well the partner understood a learner turn in inquiry mode. */
   understanding: InquiryUnderstanding;
   /** What was unclear, in the learner's native language. */
@@ -229,7 +237,7 @@ export interface LanguageLevelRecord {
 
 export type ReasoningEffort = import("@tik-choco/mistai/preact").ReasoningEffort;
 export type TtsEngine = "browser" | "api" | "network";
-export type LlmTask = "practice" | "topic" | "cards" | "review" | "reading" | "conversation" | "grammar" | "ui-translation" | "card-organize" | "decision";
+export type LlmTask = "practice" | "topic" | "cards" | "review" | "reading" | "conversation" | "assistant" | "grammar" | "ui-translation" | "card-organize" | "decision";
 export type LlmTaskGroup = "correction" | "generation" | "card-organize";
 
 export interface LingoSettings extends LlmLocalSettings {
@@ -242,6 +250,7 @@ export interface LingoSettings extends LlmLocalSettings {
   reviewSessionLimit: number;
   newCardsPerDay: number;
   leaderboardEnabled: boolean;
+  didAutoSync: boolean;
   leaderboardName: string;
   lastCardAutoOrganizeAt: string;
   // Each model ref owns its language voices, so changing models cannot reuse stale voice IDs.

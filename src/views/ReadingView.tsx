@@ -2,7 +2,8 @@
 // core loop (comprehensible input → retrieval practice → output → feedback →
 // spaced re-use, see CLAUDE.md). Self-contained like every other view — no
 // props, reads the store directly.
-import { useEffect, useRef, useState } from "preact/hooks";
+import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
+import { setAssistantContext } from "../lib/assistantContext";
 import { Loader2, Sparkles, Square, Volume2 } from "lucide-preact";
 import { deletePassage, loadPassages, requestReadingPassage, subscribePassages } from "../lib/reading";
 import type { ReadingPassage } from "../types";
@@ -50,6 +51,13 @@ export function ReadingView() {
 
   const [openPassageId, setOpenPassageId] = useState<string | null>(null);
   const openPassage = passages.find((p) => p.id === openPassageId) ?? null;
+
+  useLayoutEffect(() => {
+    setAssistantContext("reading", openPassage
+      ? `${openPassage.title}\n${openPassage.sentences.map((sentence) => sentence.text).join(" ")}`.slice(0, 2000)
+      : null);
+    return () => setAssistantContext("reading", null);
+  }, [openPassage]);
 
   useEffect(() => {
     setPassages(loadPassages(settings.activeLanguage));

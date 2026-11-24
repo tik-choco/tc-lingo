@@ -7,7 +7,7 @@ import { useEffect, useState } from "preact/hooks";
 import { Loader2, Square, Volume2 } from "lucide-preact";
 import { attemptsForTopic, deleteTopic, loadTopics, subscribeTopics } from "../lib/topics";
 import type { Topic } from "../types";
-import { diffChars } from "../lib/diff";
+import { diffWords } from "../lib/diff";
 import { ActivityHeatmap } from "../components/ActivityHeatmap";
 import { FeedbackPanel } from "../components/FeedbackPanel";
 import { Leaderboard } from "../components/Leaderboard";
@@ -21,7 +21,7 @@ function formatAttemptDate(createdAt: string): string {
 }
 
 function DiffLine({ before, after }: { before: string; after: string }) {
-  const chunks = diffChars(before, after);
+  const chunks = diffWords(before, after);
   return (
     <p class="feedback-diff">
       {chunks.map((chunk, i) => (

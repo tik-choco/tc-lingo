@@ -1,8 +1,12 @@
-// Minimal character-level LCS diff for the topic-history view (compares
-// round-over-round attempts, e.g. 初回 vs 改善版). Character granularity
-// (not word/space-split) so it works reasonably for languages without
-// whitespace-delimited words (Japanese, Chinese) as well as ones with them.
-// No new dependency — inputs here are a sentence or two, so O(n*m) is fine.
+// Minimal LCS diff with no dependency — inputs here are a sentence or two, so
+// O(n*m) is fine. Two granularities:
+// - diffChars: character-level, for spelling-style checks (SpellingDrill,
+//   the review answer check) where single-letter mistakes matter.
+// - diffWords: word-level for whitespace-delimited scripts, falling back to
+//   one token per character for scripts without spaces (Japanese, Chinese,
+//   Thai). Used for sentence corrections (FeedbackPanel, the retry check,
+//   HistoryView) so a changed word is highlighted whole instead of being
+//   split into scattered letter fragments.
 
 export type DiffOp = "same" | "added" | "removed";
 
@@ -11,9 +15,7 @@ export interface DiffChunk {
   text: string;
 }
 
-export function diffChars(before: string, after: string): DiffChunk[] {
-  const a = [...before];
-  const b = [...after];
+function diffTokens(a: string[], b: string[]): DiffChunk[] {
   const n = a.length;
   const m = b.length;
   const dp: Uint32Array[] = Array.from({ length: n + 1 }, () => new Uint32Array(m + 1));
@@ -25,10 +27,10 @@ export function diffChars(before: string, after: string): DiffChunk[] {
   }
 
   const chunks: DiffChunk[] = [];
-  function push(op: DiffOp, ch: string) {
+  function push(op: DiffOp, text: string) {
     const last = chunks[chunks.length - 1];
-    if (last && last.op === op) last.text += ch;
-    else chunks.push({ op, text: ch });
+    if (last && last.op === op) last.text += text;
+    else chunks.push({ op, text });
   }
 
   let i = 0;
@@ -56,4 +58,23 @@ export function diffChars(before: string, after: string): DiffChunk[] {
   }
 
   return chunks;
+}
+
+export function diffChars(before: string, after: string): DiffChunk[] {
+  return diffTokens([...before], [...after]);
+}
+
+// Scripts written without spaces between words: tokenized per character.
+const UNSPACED = String.raw`\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Thai}\p{Script=Lao}\p{Script=Khmer}\p{Script=Myanmar}ー`;
+const TOKEN_RE = new RegExp(
+  String.raw`(?:(?![${UNSPACED}])[\p{L}\p{M}\p{N}'’])+|\s+|[\s\S]`,
+  "gu",
+);
+
+function tokenize(text: string): string[] {
+  return text.match(TOKEN_RE) ?? [];
+}
+
+export function diffWords(before: string, after: string): DiffChunk[] {
+  return diffTokens(tokenize(before), tokenize(after));
 }

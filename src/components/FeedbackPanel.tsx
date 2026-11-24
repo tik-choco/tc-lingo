@@ -5,7 +5,7 @@
 // hooks/useSpeech.ts) — the panel is otherwise language-agnostic.
 import { useEffect, useState } from "preact/hooks";
 import { Loader2, Square, Volume2 } from "lucide-preact";
-import { diffChars } from "../lib/diff";
+import { diffWords } from "../lib/diff";
 import { GrammarExplain } from "./GrammarExplain";
 import { useSpeech } from "../hooks/useSpeech";
 import { loadSettings, subscribeSettings } from "../lib/settings";
@@ -112,7 +112,7 @@ export function FeedbackPanel({
   language,
   showRetryPrompt,
 }: FeedbackPanelProps) {
-  const chunks = diffChars(original, corrected);
+  const chunks = diffWords(original, corrected);
   const speech = useSpeech();
   const speakId = "feedback-corrected";
   const speaking = speech.speakingId === speakId;
@@ -146,9 +146,9 @@ export function FeedbackPanel({
           )}
         </div>
         <p class="feedback-diff">
-          {chunks.map((chunk, i) => (
+          {chunks.filter((chunk) => chunk.op !== "removed").map((chunk, i) => (
             <span key={i} class={chunk.op === "same" ? undefined : `diff-${chunk.op}`}>
-              {chunk.op === "removed" ? null : chunk.text}
+              {chunk.text}
             </span>
           ))}
         </p>

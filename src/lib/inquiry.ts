@@ -1,7 +1,7 @@
 import type { CefrBand, ConversationSession, ConversationTurn, InquiryFact, InquiryUnderstanding } from "../types";
 import type { ConversationReplyResult, ConversationStartResult } from "./conversation";
 import type { LlmConnection } from "./llmConnection";
-import { revealedFactIds } from "./conversation";
+import { APPROPRIATENESS_REVIEW, parseReplySuggestion, revealedFactIds, suggestionKeys } from "./conversation";
 import { readingAid } from "./languages";
 import { effectiveBand, levelInstruction } from "./level";
 import { chatJson } from "./llm";
@@ -105,6 +105,7 @@ export function parseInquiryReply(content: string, facts: InquiryFact[]): Inquir
   const ids = understanding === "full" && Array.isArray(parsed.revealedFactIds)
     ? parsed.revealedFactIds.filter((id): id is string => typeof id === "string" && knownIds.has(id))
     : [];
+  const corrected = readString(parsed.corrected);
   return {
     understanding,
     unclearReason: understanding === "full" ? "" : readString(parsed.unclearReason),
@@ -112,10 +113,11 @@ export function parseInquiryReply(content: string, facts: InquiryFact[]): Inquir
     replyReading: readString(parsed.replyReading),
     replyTranslation: readString(parsed.replyTranslation),
     revealedFactIds: [...new Set(ids)],
-    corrected: readString(parsed.corrected),
+    corrected,
     correctedReading: readString(parsed.correctedReading),
     correctedTranslation: readString(parsed.correctedTranslation),
     reasons: readString(parsed.reasons),
+    ...parseReplySuggestion(parsed, corrected),
   };
 }
 
@@ -144,15 +146,16 @@ export async function requestInquiryReply(params: {
   if (aid) keys.push(`"correctedReading" (the reading of "corrected", as ${aid.llmInstruction}, or "" if "corrected" is "")`);
   keys.push(`"correctedTranslation" (translation of "corrected" in ${nativeLanguage}, or "" if "corrected" is "")`);
   keys.push(`"reasons" (concise explanation in ${nativeLanguage}, or "" if nothing to correct)`);
+  keys.push(...suggestionKeys(targetLanguage, nativeLanguage, aid?.llmInstruction));
   const content = await chatJson(
     connection,
     [
       `You are TC Lingo's conversation partner for a learner of ${targetLanguage} (native language: ${nativeLanguage}). Stay in the role described in scenario and use facts as the source of your information. Answer only what was asked, never volunteer facts the learner didn't ask for, and use 1-2 short sentences.`,
       `Before replying, judge understanding from learnerText in the context of the dialogue as a real native listener would. Use "full" when the intended meaning is clear, "partial" when part of it is unclear, and "none" when you cannot recover what the learner means. Do not pretend to misunderstand a clear message. Grammar mistakes alone are not a reason to ask back if meaning is recoverable. ${inquiryStrictnessInstruction(effectiveBand(targetLanguage))}`,
       `When understanding is "partial" or "none", reply with exactly one realistic clarification request in ${targetLanguage} and reveal no facts. Prefer confirming the most likely interpretation ("Do you mean ...?") or ask about the specific unclear part. If the question is vague but answerable and understanding is "full", you may answer the clear scope and ask a follow-up.`,
-      `Roughly once every 3-4 replies, naturally use one word or phrase slightly above the learner's level so they can practice asking what it means. When the learner asks for clarification of your words, rephrase simply. Asking for clarification is a good move and must never be corrected as an error.`,
+      `Roughly once every 3-4 replies, naturally use one word or phrase slightly above the learner's level so they can practice asking what it means. When the learner asks for clarification of your words, rephrase simply. Treat asking for clarification as a valid turn.`,
       `For revealedFactIds, report only the ids whose information this reply actually conveys, even if it repeats one. Return [] for a clarification request. Do not disclose additional facts in translations or feedback. You may wrap up naturally when all facts have been revealed across the dialogue.`,
-      `Separately correct grammar, word choice, or unnatural phrasing in learnerText where needed. If it is already natural or asks for clarification of your words, leave all correction fields empty. Return only JSON with these keys in this exact order: ${keys.join(", ")}.${levelInstruction(targetLanguage)}`,
+      `Separately review learnerText as feedback (this never affects your in-role reply): ${APPROPRIATENESS_REVIEW} When learnerText asks for clarification of your words (e.g. "What does X mean?"), leave all suggestion fields empty unless the request itself is phrased unnaturally or rudely. Return only JSON with these keys in this exact order: ${keys.join(", ")}.${levelInstruction(targetLanguage)}`,
     ].join(" "),
     { scenario, mission, facts, revealedFactIds: [...params.revealedFactIds], turns: turns.map(({ role, text }) => ({ role, text })), learnerText },
   );

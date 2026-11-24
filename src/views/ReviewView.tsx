@@ -32,7 +32,8 @@
 // Misses are requeued later in the session (see REQUEUE_OFFSET). While the
 // learner answers, the app prefetches consistency fixes and cloze variations
 // for the next card whenever an LLM connection is available.
-import { useEffect, useRef, useState } from "preact/hooks";
+import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
+import { setAssistantContext } from "../lib/assistantContext";
 import { Loader2, RotateCw, SkipForward, Square, Volume2 } from "lucide-preact";
 import { gradeCard, LEECH_THRESHOLD, loadCards, PRIORITY_LOW, priorityLevel, setCardPriority, setCardSuspended } from "../lib/cards";
 import { buildReviewQueue } from "../lib/reviewQueue";
@@ -230,6 +231,17 @@ export function ReviewView() {
   // Expanded (or capped) rendering of displayCloze's blank(s) — see
   // expandClozeBlank's doc comment for when each branch applies.
   const clozeDisplay = expandClozeBlank(displayCloze, expectedFill);
+  useLayoutEffect(() => {
+    // The target expression and full example only appear in the result phase.
+    const prompt = current?.cloze ? clozeDisplay.cloze : current?.meaning;
+    const answer = current && result ? [
+      `Revealed target expression: ${current.front}`,
+      current.cloze && `Revealed fill: ${expectedFill}`,
+      current.exampleSentence && `Example: ${current.exampleSentence}`,
+    ].filter(Boolean).join("\n").slice(0, 1500) : "Review answer is hidden.";
+    setAssistantContext("review", current ? `Visible review cue: ${prompt?.slice(0, 1000)}\n${answer}` : null);
+    return () => setAssistantContext("review", null);
+  }, [current, clozeDisplay.cloze, expectedFill, result]);
   // Translation of the DISPLAYED sentence (question phase, before checking):
   // the variation's own translation when a variation is showing (never the
   // card's own exampleSentenceTranslation, which describes a different

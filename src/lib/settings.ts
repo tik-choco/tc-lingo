@@ -19,7 +19,7 @@ export function normalizeReviewLimit(field: keyof typeof REVIEW_LIMITS, value: u
 
 // Members are listed in migration priority order.
 const TASKS: Record<LlmTaskGroup, readonly Exclude<LlmTask, "decision">[]> = {
-  correction: ["practice", "review", "conversation"],
+  correction: ["practice", "review", "conversation", "assistant"],
   generation: ["cards", "topic", "reading", "grammar", "ui-translation"],
   "card-organize": ["card-organize"],
 };
@@ -77,6 +77,7 @@ export function loadSettings(): LingoSettings {
     reviewSessionLimit: normalizeReviewLimit("reviewSessionLimit", raw.reviewSessionLimit),
     newCardsPerDay: normalizeReviewLimit("newCardsPerDay", raw.newCardsPerDay),
     leaderboardEnabled: raw.leaderboardEnabled === true,
+    didAutoSync: raw.didAutoSync !== false,
     leaderboardName: normalizeLeaderboardName(raw.leaderboardName),
     ttsVoicesByRef: raw.ttsVoicesByRef ?? {},
   };

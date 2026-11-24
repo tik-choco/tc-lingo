@@ -6,6 +6,7 @@
 // #/history  #/settings  #/sync/<roomId> (device-to-device sync invite link —
 // resolves to the settings tab with syncRoomId set; see lib/sync/types.ts)
 import type { MainTab } from "../types";
+import { DID_ROOM_PREFIX } from "./sync/protocol";
 
 export interface HashState {
   tab: MainTab | null;
@@ -38,7 +39,7 @@ export function parseHash(hash: string): HashState {
   const [tabPart] = parts;
   if (tabPart === "sync") {
     const roomId = parts.slice(1).join("/");
-    return roomId ? { tab: "settings", syncRoomId: roomId } : EMPTY_STATE;
+    return roomId && !roomId.startsWith(DID_ROOM_PREFIX) ? { tab: "settings", syncRoomId: roomId } : EMPTY_STATE;
   }
   return isMainTab(tabPart) ? { tab: tabPart } : EMPTY_STATE;
 }

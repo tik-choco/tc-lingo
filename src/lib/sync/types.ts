@@ -1,13 +1,21 @@
 // Shared contract for the device-to-device data sync feature (設定 > 同期).
 //
-// How sync works (one-shot session, no background replication):
+// One-shot QR / invite sessions:
 // - The HOST opens 設定 > 同期 and starts a session: a random mist room id
 //   (`lingo-sync-<randomId>`) is joined via the shared MistNode and shown as
 //   a URL + QR code (`#/sync/<roomId>` deep link — see lib/hashRoute.ts).
 // - The GUEST opens that URL on another device (scanning the QR with the
 //   phone camera opens the browser — no in-app QR decoding needed), confirms,
 //   and joins the same room.
-// - Both peers exchange their full `SyncSnapshot` (chunked over the wire —
+//
+// Automatic same-user sessions (didSync.ts): devices with didAutoSync
+// enabled and a verified root → leaf delegation join a root-hashed room.
+// Each leaf signs both challenges and ephemeral P-256 keys. A peer must
+// prove the same root and confirm its ECDH/HKDF key with an encrypted hello
+// before receiving AES-GCM-encrypted snapshot chunks. Connections use a
+// dedicated shared-node handle and end on disable, expiry or unlink.
+//
+// In either mode both peers exchange their full `SyncSnapshot` (chunked over the wire —
 //   see lib/sync/protocol.ts) and each side merges the remote snapshot into
 //   local storage (lib/sync/snapshot.ts). The merge is symmetric, so both
 //   devices converge without a designated "master".

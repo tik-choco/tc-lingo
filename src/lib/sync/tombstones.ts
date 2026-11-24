@@ -92,7 +92,10 @@ export function recordTombstone(store: SyncStoreName, id: string, updatedAt?: st
 
 /** Merges and persists tombstones, keeping the latest per record. */
 export function mergeTombstones(remote: Tombstone[]): void {
-  saveTombstones(unionTombstones(loadTombstones(), remote));
+  const local = loadTombstones();
+  const merged = unionTombstones(local, remote);
+  // An unchanged merge must not trigger another background snapshot exchange.
+  if (JSON.stringify(local) !== JSON.stringify(merged)) saveTombstones(merged);
 }
 
 export function replaceTombstonesForSync(tombstones: Tombstone[], options?: StorageWriteOptions): void {

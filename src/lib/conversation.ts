@@ -18,6 +18,23 @@ import { extractJson } from "./parse";
 import { t } from "../i18n";
 
 const STORAGE_NAME = "conversations-v1";
+
+/** Shared feedback rubric for the Talk tab's free and inquiry modes. */
+export const APPROPRIATENESS_REVIEW =
+  "Check grammar, word choice, naturalness, and whether the politeness and register fit the scenario's setting and the relationship between the speakers (e.g. customer and staff, strangers, friends, or a tenant and landlord). If there are errors, including wording that would come across as plainly rude, overly demanding, or otherwise clearly inappropriate, give the best version for the situation in \"corrected\" and explain the issue in \"reasons\", including how the wording would come across for a register error. Otherwise, if there is a clearly better way to phrase it here, give it in \"suggestion\" and explain the improvement in \"suggestionReason\". Fill in only the fields for the chosen correction or suggestion. If neither applies, leave all correction and suggestion fields empty.";
+
+export function suggestionKeys(targetLanguage: string, nativeLanguage: string, readingInstruction?: string): string[] {
+  const keys = [
+    `"suggestion" (a better ${targetLanguage} way to say learnerText without changing its meaning, more natural or better suited to this situation's politeness/register, only if there are no errors to correct and a native speaker would clearly phrase it differently here. Use "" whenever "corrected" is non-empty or the original is already natural and appropriate. Do not suggest mere synonyms or stylistic trivia.)`,
+  ];
+  if (readingInstruction) keys.push(`"suggestionReading" (the reading of "suggestion", as ${readingInstruction}, or "" if "suggestion" is "")`);
+  keys.push(
+    `"suggestionTranslation" (translation of "suggestion" in ${nativeLanguage}, or "" if "suggestion" is "")`,
+    `"suggestionReason" (concise explanation in ${nativeLanguage} of why the suggestion fits better, e.g. it sounds more polite when speaking to staff, or "" if "suggestion" is "")`,
+  );
+  return keys;
+}
+
 const MAX_SESSIONS = 20;
 
 function isConversationRole(value: unknown): value is ConversationRole {
@@ -49,6 +66,10 @@ function isConversationTurn(value: unknown): value is ConversationTurn {
     (r.correctedReading === undefined || typeof r.correctedReading === "string") &&
     (r.correctedTranslation === undefined || typeof r.correctedTranslation === "string") &&
     typeof r.reasons === "string" &&
+    (r.suggestion === undefined || typeof r.suggestion === "string") &&
+    (r.suggestionReading === undefined || typeof r.suggestionReading === "string") &&
+    (r.suggestionTranslation === undefined || typeof r.suggestionTranslation === "string") &&
+    (r.suggestionReason === undefined || typeof r.suggestionReason === "string") &&
     (r.understanding === undefined || isInquiryUnderstanding(r.understanding)) &&
     (r.unclearReason === undefined || typeof r.unclearReason === "string") &&
     (r.revealedFactIds === undefined || (Array.isArray(r.revealedFactIds) && r.revealedFactIds.every((id) => typeof id === "string")))
@@ -96,6 +117,10 @@ export function sanitizeConversations(raw: unknown): ConversationSession[] {
       translation: turn.translation ?? "",
       correctedReading: turn.correctedReading ?? "",
       correctedTranslation: turn.correctedTranslation ?? "",
+      suggestion: turn.suggestion ?? "",
+      suggestionReading: turn.suggestionReading ?? "",
+      suggestionTranslation: turn.suggestionTranslation ?? "",
+      suggestionReason: turn.suggestionReason ?? "",
       understanding: turn.understanding ?? "",
       unclearReason: turn.unclearReason ?? "",
       revealedFactIds: turn.revealedFactIds ?? [],
@@ -192,6 +217,10 @@ export function newTurn(input: {
   correctedReading?: string;
   correctedTranslation?: string;
   reasons?: string;
+  suggestion?: string;
+  suggestionReading?: string;
+  suggestionTranslation?: string;
+  suggestionReason?: string;
   understanding?: InquiryUnderstanding;
   unclearReason?: string;
   revealedFactIds?: string[];
@@ -206,6 +235,10 @@ export function newTurn(input: {
     correctedReading: input.correctedReading ?? "",
     correctedTranslation: input.correctedTranslation ?? "",
     reasons: input.reasons ?? "",
+    suggestion: input.suggestion ?? "",
+    suggestionReading: input.suggestionReading ?? "",
+    suggestionTranslation: input.suggestionTranslation ?? "",
+    suggestionReason: input.suggestionReason ?? "",
     understanding: input.understanding ?? "",
     unclearReason: input.unclearReason ?? "",
     revealedFactIds: input.revealedFactIds ?? [],
@@ -298,6 +331,22 @@ export interface ConversationReplyResult {
    * when there is nothing to correct. */
   correctedTranslation: string;
   reasons: string;
+  suggestion: string;
+  suggestionReading: string;
+  suggestionTranslation: string;
+  suggestionReason: string;
+}
+
+export function parseReplySuggestion(parsed: Record<string, unknown>, corrected: string): Pick<
+  ConversationReplyResult, "suggestion" | "suggestionReading" | "suggestionTranslation" | "suggestionReason"
+> {
+  const suggestion = !corrected && typeof parsed.suggestion === "string" ? parsed.suggestion.trim() : "";
+  return {
+    suggestion,
+    suggestionReading: suggestion && typeof parsed.suggestionReading === "string" ? parsed.suggestionReading.trim() : "",
+    suggestionTranslation: suggestion && typeof parsed.suggestionTranslation === "string" ? parsed.suggestionTranslation.trim() : "",
+    suggestionReason: suggestion && typeof parsed.suggestionReason === "string" ? parsed.suggestionReason.trim() : "",
+  };
 }
 
 function parseConversationReply(content: string): ConversationReplyResult {
@@ -310,15 +359,17 @@ function parseConversationReply(content: string): ConversationReplyResult {
   const correctedTranslation = typeof parsed.correctedTranslation === "string" ? parsed.correctedTranslation : "";
   const reasons = typeof parsed.reasons === "string" ? parsed.reasons : "";
   if (!reply) throw new Error(t("talk-error-missing-reply"));
-  return { reply, replyReading, replyTranslation, corrected, correctedReading, correctedTranslation, reasons };
+  return {
+    reply, replyReading, replyTranslation, corrected, correctedReading, correctedTranslation, reasons,
+    ...parseReplySuggestion(parsed, corrected),
+  };
 }
 
 /** Continues an in-progress 会話 session: the AI replies in character (per
  * `scenario`), always inviting the learner to keep talking, and separately
- * corrects the learner's latest message (empty corrected/reasons when it was
- * already natural). Prior turns are stripped down to `{role, text}` — the
- * learner's own past corrections aren't fed back in, only the raw dialogue
- * so far. */
+ * reviews the learner's latest message for a correction or a clearly better
+ * expression. Prior turns are stripped down to `{role, text}` so the model
+ * sees just the dialogue. */
 export async function requestConversationReply(params: {
   connection: LlmConnection;
   targetLanguage: string;
@@ -337,9 +388,10 @@ export async function requestConversationReply(params: {
   if (aid) keys.push(`"correctedReading" (the reading of "corrected", as ${aid.llmInstruction}, or "" if "corrected" is "")`);
   keys.push(`"correctedTranslation" (translation of "corrected" in ${params.nativeLanguage}, or "" if "corrected" is "")`);
   keys.push(`"reasons" (explanation in ${params.nativeLanguage}, or "" if nothing to correct)`);
+  keys.push(...suggestionKeys(params.targetLanguage, params.nativeLanguage, aid?.llmInstruction));
   const content = await chatJson(
     params.connection,
-    `You are TC Lingo's conversation partner for a learner of ${params.targetLanguage} (native language: ${params.nativeLanguage}), continuing a scripted-scenario dialogue. Follow the scenario instruction (scenario) and continue the conversation naturally in ${params.targetLanguage} — simple, natural language, 1-2 short sentences, always ending in a way that invites the learner to keep talking (a question or a prompt). Separately, correct the learner's latest message (learnerText): if it has grammar, word-choice, or naturalness issues, return the corrected version in ${params.targetLanguage} plus concise reasons in ${params.nativeLanguage}; if it is already natural, return empty strings for both corrected and reasons. Return only JSON with exactly these keys: ${keys.join(", ")}.${levelInstruction(params.targetLanguage)}`,
+    `You are TC Lingo's conversation partner for a learner of ${params.targetLanguage} (native language: ${params.nativeLanguage}), continuing a scripted-scenario dialogue. Follow the scenario instruction (scenario) and continue the conversation naturally in ${params.targetLanguage} — simple, natural language, 1-2 short sentences, always ending in a way that invites the learner to keep talking (a question or a prompt). Separately, review the learner's latest message (learnerText) as feedback: ${APPROPRIATENESS_REVIEW} Return only JSON with these keys in this exact order: ${keys.join(", ")}.${levelInstruction(params.targetLanguage)}`,
     {
       scenario: params.scenario,
       turns: params.turns.map((turn) => ({ role: turn.role, text: turn.text })),

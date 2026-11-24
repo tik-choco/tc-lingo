@@ -1,16 +1,9 @@
-// Wire messages for the device-to-device sync exchange (設定 > 同期) — see
-// lib/sync/types.ts for the full session contract. Unlike lib/p2p/protocol.ts
-// (which extends the @tik-choco/mistai library's own decode() so oai_*
-// messages coexist with the library's llm_*/tts_*/... traffic in a shared
-// room), this codec is standalone: sync rooms are private, ephemeral rooms
-// created solely for one device-pairing exchange (`lingo-sync-<randomId>`),
-// so no other mistai protocol messages are ever expected to arrive there —
-// decodeSync() doesn't call into the library's decode() at all, it only ever
-// returns a lingo_sync_* message or null.
-//
-// A SyncSnapshot (lib/sync/types.ts) is JSON, so it's UTF-8-encoded then
-// base64'd and chunked the same way lib/p2p/tunnel.ts chunks oai_* bodies
-// (mist's reliable data channel is only safe for ~16KB per message).
+// QR sessions send these messages directly. DID sessions carry hello, data
+// and done inside authenticated AES-GCM envelopes (didProtocol.ts). Both
+// paths reassemble the same base64-encoded UTF-8 snapshot with ChunkAssembler.
+
+/** Reserved for authenticated same-user sessions, never used by invite URLs. */
+export const DID_ROOM_PREFIX = "lingo-did-sync-";
 
 /** Announces this peer is ready to exchange snapshots; broadcast on join and re-sent to every newly connected peer. */
 export interface SyncHelloMsg {

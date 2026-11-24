@@ -351,7 +351,6 @@ button:disabled {
   background: var(--diff-added-soft);
   color: var(--diff-added);
   border-radius: 3px;
-  padding: 0 2px;
 }
 
 .diff-removed {
@@ -359,7 +358,12 @@ button:disabled {
   color: var(--diff-removed);
   text-decoration: line-through;
   border-radius: 3px;
-  padding: 0 2px;
+}
+
+/* A replaced word shows as struck-out old + new side by side; keep them
+   apart with a margin rather than padding inside words. */
+.diff-removed + .diff-added {
+  margin-left: 0.2em;
 }
 
 /* Retry block: groups the follow-up question, the retry textarea, its
@@ -1519,6 +1523,13 @@ button:disabled {
   font-size: 0.9rem;
 }
 
+.did-sync-controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
 .sync-spin {
   animation: sync-spin 1s linear infinite;
 }
@@ -1713,4 +1724,27 @@ button:disabled {
   color: var(--text-muted);
   font-size: 0.85rem;
   font-weight: 600;
+}
+
+/* 設定 > 同期: QR/invite sync collapsed below DID sync as the fallback for
+   devices without a mistl-issued DID link. */
+.sync-fallback > summary {
+  cursor: pointer;
+  padding: var(--space-2) var(--space-1);
+  color: var(--text-muted);
+  font-size: 0.92rem;
+  border-radius: var(--radius-s);
+}
+
+.sync-fallback > summary:hover {
+  color: var(--text);
+}
+
+.sync-fallback > summary:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.sync-fallback[open] > summary {
+  margin-bottom: var(--space-3);
 }

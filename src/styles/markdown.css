@@ -1,0 +1,147 @@
+/* Ported from tc-chat and adapted to TC Lingo's chat bubbles. */
+.md-body {
+  --md-accent: color-mix(in srgb, var(--primary) 70%, var(--text));
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+}
+
+/* Emphasis carries the key point of a tutoring answer (the target
+   expression, the rule), so it gets the accent colour plus a soft
+   highlighter underlay rather than weight alone. */
+.md-body strong {
+  font-weight: 700;
+  color: var(--md-accent);
+  background: linear-gradient(transparent 62%, var(--primary-soft-strong) 62%);
+}
+
+.md-body em {
+  color: var(--md-accent);
+}
+
+.md-body > :first-child,
+.md-quote > :first-child {
+  margin-block-start: 0;
+}
+
+.md-body > :last-child,
+.md-quote > :last-child {
+  margin-block-end: 0;
+}
+
+.md-p,
+.md-list,
+.md-quote,
+.md-pre,
+.md-table-wrap {
+  margin: var(--space-1) 0;
+}
+
+.md-h {
+  margin: var(--space-2) 0 var(--space-1);
+  font-weight: 700;
+  line-height: 1.25;
+  color: var(--md-accent);
+}
+
+.md-h1,
+.md-h2 {
+  padding-block-end: 2px;
+  border-block-end: 1px solid var(--primary-border);
+}
+
+.md-h1 { font-size: 1.25em; }
+.md-h2 { font-size: 1.15em; }
+.md-h3 { font-size: 1.05em; }
+
+.md-pre,
+.md-code {
+  background: var(--surface-3);
+  font-family: var(--mono);
+  font-size: 0.9em;
+}
+
+.md-pre {
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-s);
+  line-height: 1.4;
+  white-space: pre;
+}
+
+.md-pre code {
+  font: inherit;
+}
+
+.md-code {
+  padding-inline: var(--space-1);
+  border-radius: var(--radius-xs);
+  white-space: pre-wrap;
+  /* Inline code is mostly target-language examples: tint it with the accent. */
+  background: var(--primary-soft-strong);
+  color: var(--md-accent);
+}
+
+.md-quote {
+  padding-inline-start: var(--space-2);
+  border-inline-start: 3px solid var(--primary-border);
+  color: var(--text-muted);
+}
+
+.md-list {
+  padding-inline-start: var(--space-5);
+}
+
+.md-list li + li {
+  margin-block-start: var(--space-1);
+}
+
+.md-list--ordered {
+  list-style: decimal;
+}
+
+.md-list li::marker {
+  color: var(--primary);
+  font-weight: 700;
+}
+
+.md-pre,
+.md-table-wrap {
+  max-inline-size: 100%;
+  overflow-x: auto;
+}
+
+.md-table {
+  border-collapse: collapse;
+  font-size: 0.92em;
+  line-height: 1.4;
+}
+
+.md-table th,
+.md-table td {
+  min-inline-size: 3em;
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--border-strong);
+  text-align: start;
+  vertical-align: top;
+  overflow-wrap: normal;
+}
+
+.md-table th {
+  font-weight: 700;
+  background: var(--primary-soft-strong);
+  color: var(--md-accent);
+}
+
+.md-table tbody tr:nth-child(even) td {
+  background: var(--surface);
+}
+
+.md-body .msg-link {
+  color: var(--text);
+  text-decoration: underline;
+  text-decoration-color: var(--primary);
+  overflow-wrap: anywhere;
+}
+
+.md-body .msg-link:hover {
+  text-decoration-color: currentColor;
+}

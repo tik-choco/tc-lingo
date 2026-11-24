@@ -38,7 +38,10 @@ const SENTENCE_KEYS = ["text", "translation", "reading"] as const;
 const CONVERSATION_KEYS = ["id", "language", "title", "scenario", "turns", "createdAt", "endedAt", "updatedAt"] as const satisfies readonly (keyof ConversationSession)[];
 const INQUIRY_SESSION_KEYS = ["mode", "mission", "facts", "retryOfId"] as const satisfies readonly (keyof ConversationSession)[];
 const TURN_KEYS = ["id", "role", "text", "reading", "translation", "corrected", "correctedReading", "correctedTranslation", "reasons"] as const satisfies readonly (keyof ConversationTurn)[];
-const INQUIRY_TURN_KEYS = ["understanding", "unclearReason", "revealedFactIds"] as const satisfies readonly (keyof ConversationTurn)[];
+const OPTIONAL_TURN_KEYS = [
+  "suggestion", "suggestionReading", "suggestionTranslation", "suggestionReason",
+  "understanding", "unclearReason", "revealedFactIds",
+] as const satisfies readonly (keyof ConversationTurn)[];
 const FACT_KEYS = ["id", "label", "detail"] as const;
 const LEVEL_KEYS = ["language", "score", "samples", "override", "updatedAt"] as const satisfies readonly (keyof LanguageLevelRecord)[];
 const TOMBSTONE_KEYS = ["store", "id", "deletedAt"] as const satisfies readonly (keyof Tombstone)[];
@@ -165,7 +168,7 @@ function project(state: SyncSnapshot): SyncSnapshot {
     })).sort(byCreated(true)),
     conversations: state.conversations.map((item) => ({
       ...pick(item, [...CONVERSATION_KEYS, ...INQUIRY_SESSION_KEYS]),
-      turns: item.turns.map((turn) => pick(turn, [...TURN_KEYS, ...INQUIRY_TURN_KEYS])),
+      turns: item.turns.map((turn) => pick(turn, [...TURN_KEYS, ...OPTIONAL_TURN_KEYS])),
       facts: item.facts.map((fact) => pick(fact, FACT_KEYS)),
     })).sort(byCreated(true)),
     levels: state.levels.map((item) => pick(item, LEVEL_KEYS)).sort((a, b) => compare(a.language, b.language)),
@@ -210,7 +213,7 @@ function parseState(value: unknown, ceiling = Date.now() + 366 * 86400000): Pars
     item.sentences.length <= MAX_NESTED_ITEMS && item.reviewWords.length <= MAX_NESTED_ITEMS && item.sentences.every((sentence) => hasKeys(sentence, SENTENCE_KEYS)))) invalid();
   if (!conversations.every((item) => hasKeys(item, CONVERSATION_KEYS, INQUIRY_SESSION_KEYS) && isConversationSession(item) && validId(item.id) && date(item.createdAt) && date(item.updatedAt) &&
     (item.endedAt === "" || date(item.endedAt)) && item.turns.length <= MAX_NESTED_ITEMS &&
-    item.turns.every((turn) => hasKeys(turn, TURN_KEYS, INQUIRY_TURN_KEYS) && validId(turn.id)) &&
+    item.turns.every((turn) => hasKeys(turn, TURN_KEYS, OPTIONAL_TURN_KEYS) && validId(turn.id)) &&
     (item.facts === undefined || (item.facts.length <= MAX_NESTED_ITEMS && item.facts.every((fact) => hasKeys(fact, FACT_KEYS)))))) invalid();
   if (!levels.every((item) => hasKeys(item, LEVEL_KEYS) && isLevelRecord(item) && validId(item.language) && date(item.updatedAt) &&
     item.score >= 0 && item.score <= 1 && Number.isSafeInteger(item.samples) && item.samples >= 0)) invalid();

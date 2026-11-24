@@ -2,7 +2,8 @@
 // feedback (原文/修正版/理由/再回答問題), retry in place, and optionally turn
 // mistakes into review cards. Same-topic repetition (round 1/2/3) is driven
 // entirely by lib/topics.ts's nextRoundFor.
-import { useEffect, useRef, useState } from "preact/hooks";
+import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
+import { setAssistantContext } from "../lib/assistantContext";
 import { Loader2, Save, Sparkles, Square, Volume2 } from "lucide-preact";
 import { addAttempt, addTopic, attemptsForTopic, loadTopics, nextRoundFor, subscribeTopics, updateAttempt } from "../lib/topics";
 import type { AttemptRound, Card, PracticeAttempt, Topic } from "../types";
@@ -21,7 +22,7 @@ import type { CardCandidate, FeedbackResult } from "../lib/parse";
 import { FeedbackPanel, RetryPromptField } from "../components/FeedbackPanel";
 import { MistakeCardPicker } from "../components/MistakeCardPicker";
 import { SpellingDrill } from "../components/SpellingDrill";
-import { diffChars } from "../lib/diff";
+import { diffWords } from "../lib/diff";
 import { correctedSentences, misspelledWords } from "../lib/spelling";
 import { t } from "../i18n";
 import { languageDisplayName } from "../lib/languages";
@@ -57,7 +58,7 @@ function RetryCheckResult({
   language: string;
   showReadingAids: boolean;
 }) {
-  const chunks = diffChars(retryAnswer, retryCorrected);
+  const chunks = diffWords(retryAnswer, retryCorrected);
   const speech = useSpeech();
   const speakId = "retry-corrected";
   const speaking = speech.speakingId === speakId;
@@ -82,9 +83,9 @@ function RetryCheckResult({
         )}
       </div>
       <p class="feedback-diff">
-        {chunks.map((chunk, i) => (
+        {chunks.filter((chunk) => chunk.op !== "removed").map((chunk, i) => (
           <span key={i} class={chunk.op === "same" ? undefined : `diff-${chunk.op}`}>
-            {chunk.op === "removed" ? null : chunk.text}
+            {chunk.text}
           </span>
         ))}
       </p>
@@ -171,6 +172,18 @@ export function PracticeView() {
   const [submitting, setSubmitting] = useState(false);
   const [currentAttempt, setCurrentAttempt] = useState<PracticeAttempt | null>(null);
   const [retryAnswer, setRetryAnswer] = useState("");
+  useLayoutEffect(() => {
+    const answer = currentAttempt?.original ?? text;
+    setAssistantContext("practice", activeTopic ? [
+      `Topic prompt: ${activeTopic.prompt.slice(0, 1000)}`,
+      answer.trim() && `Learner's answer: ${answer.slice(0, 1500)}`,
+      currentAttempt && `Corrected: ${currentAttempt.corrected.slice(0, 1500)}\nReasons: ${currentAttempt.reasons.slice(0, 1500)}`,
+      currentAttempt?.retryPrompt && `Follow-up prompt: ${currentAttempt.retryPrompt.slice(0, 500)}`,
+      retryAnswer.trim() && `Learner's follow-up answer: ${retryAnswer.slice(0, 1000)}`,
+      currentAttempt?.retryCorrected && `Corrected follow-up: ${currentAttempt.retryCorrected.slice(0, 1000)}\nFollow-up reasons: ${currentAttempt.retryReasons.slice(0, 1000)}`,
+    ].filter(Boolean).join("\n") : null);
+    return () => setAssistantContext("practice", null);
+  }, [activeTopic, text, currentAttempt, retryAnswer]);
   const [checkingRetry, setCheckingRetry] = useState(false);
   const [showPrevious, setShowPrevious] = useState(false);
   // Toggle-on-demand translation of the topic prompt (same idea as

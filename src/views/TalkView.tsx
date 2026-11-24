@@ -2,8 +2,8 @@
 // the やり取り (interaction) leg of CLAUDE.md's core loop, distinct from
 // 練習's one-shot topic writing. No session: pick from past conversations or
 // start a fresh AI-invented scenario. Active session: a chat log (assistant
-// bubbles left, learner bubbles right) with a per-turn correction (collapsed
-// in inquiry mode), plus a composer (Ctrl+Enter submits, matching PracticeView's
+// bubbles left, learner bubbles right) with a per-turn correction (expanded by
+// default, collapsible), plus a composer (Ctrl+Enter submits, matching PracticeView's
 // convention). Every corrected reply also fires lib/autoExtract.ts's
 // background mistake-card extraction (settings.autoExtractCards) and feeds
 // lib/level.ts's per-language proficiency estimate. Ending a session offers
@@ -14,7 +14,8 @@
 // learner retypes their line, the old pair is dropped, and a fresh
 // reply replaces it, so the log always reads as one
 // coherent conversation rather than gaining visible "redo" branches.
-import { useEffect, useRef, useState } from "preact/hooks";
+import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
+import { setAssistantContext } from "../lib/assistantContext";
 import { Loader2, MessageCircle, Pencil, Send, Square, Trash2, Volume2 } from "lucide-preact";
 import type { Card, ConversationMode, ConversationSession, ConversationTurn } from "../types";
 import type { ConversationReplyResult } from "../lib/conversation";
@@ -48,7 +49,7 @@ import { InquiryDebrief } from "../components/InquiryDebrief";
 import { InquiryPanel } from "../components/InquiryPanel";
 import { scoreSavedCards } from "../lib/decision";
 import { SpellingDrill } from "../components/SpellingDrill";
-import { diffChars } from "../lib/diff";
+import { diffWords } from "../lib/diff";
 import { languageDisplayName } from "../lib/languages";
 import { correctedSentences, misspelledWords } from "../lib/spelling";
 import { t } from "../i18n";
@@ -59,8 +60,20 @@ import "../styles/talk.css";
  * sentenceCardsByTurn state. Absent = not yet attempted (show the button). */
 type SentenceCardsSaveState = { kind: "saving" } | { kind: "saved"; count: number } | { kind: "error"; message: string };
 
+function TalkTranslation({ text, revealed, onToggle }: { text: string; revealed: boolean; onToggle: () => void }) {
+  if (!text) return null;
+  return (
+    <div class="talk-bubble-translation-row">
+      <button type="button" class="link-button talk-bubble-translation-toggle" aria-expanded={revealed} onClick={onToggle}>
+        {revealed ? t("talk-translation-hide") : t("talk-translation-show")}
+      </button>
+      {revealed && <p class="talk-bubble-translation">{text}</p>}
+    </div>
+  );
+}
+
 /** Collapsible correction shown under a learner bubble that had something to fix. Reuses
- * lib/diff.ts's character diff the same way FeedbackPanel does, just scoped
+ * lib/diff.ts's word diff the same way FeedbackPanel does, just scoped
  * to one turn, so a corrected reply is visible without an extra click while
  * the log still reads as a conversation rather than a stack of feedback
  * panels. `autoAdded`, when non-empty, is the auto-extraction notice for this
@@ -117,10 +130,10 @@ function TalkCorrection({
   onToggleTranslation: () => void;
   inquiry: boolean;
 }) {
-  const [expanded, setExpanded] = useState(!inquiry);
+  const [expanded, setExpanded] = useState(true);
   const [typingPractice, setTypingPractice] = useState(false);
-  const showActions = !inquiry || expanded;
-  const chunks = diffChars(original, corrected);
+  const showActions = expanded;
+  const chunks = diffWords(original, corrected);
   const changedSentences = changedCorrectedSentences(original, corrected);
   // Typing-practice material for this turn's correction (see
   // lib/spelling.ts, reused from the 練習 tab's SpellingDrill). Computed once
@@ -155,26 +168,14 @@ function TalkCorrection({
             </div>
           )}
           <p class="feedback-diff">
-            {chunks.map((chunk, i) => (
+            {chunks.filter((chunk) => chunk.op !== "removed").map((chunk, i) => (
               <span key={i} class={chunk.op === "same" ? undefined : `diff-${chunk.op}`}>
-                {chunk.op === "removed" ? null : chunk.text}
+                {chunk.text}
               </span>
             ))}
           </p>
           {showReadingAids && correctedReading && <p class="reading-aid">{correctedReading}</p>}
-          {correctedTranslation && (
-            <div class="talk-bubble-translation-row">
-              <button
-                type="button"
-                class="link-button talk-bubble-translation-toggle"
-                aria-expanded={translationRevealed}
-                onClick={onToggleTranslation}
-              >
-                {translationRevealed ? t("talk-translation-hide") : t("talk-translation-show")}
-              </button>
-              {translationRevealed && <p class="talk-bubble-translation">{correctedTranslation}</p>}
-            </div>
-          )}
+          <TalkTranslation text={correctedTranslation} revealed={translationRevealed} onToggle={onToggleTranslation} />
           {reasons && <p class="talk-correction-reasons">{reasons}</p>}
         </div>
       )}
@@ -276,6 +277,9 @@ function TalkBubble({
 }) {
   const speaking = speech.speakingId === turn.id;
   const loading = speech.loadingId === turn.id;
+  const suggestionSpeakId = `${turn.id}-suggestion`;
+  const suggestionSpeaking = speech.speakingId === suggestionSpeakId;
+  const suggestionLoading = speech.loadingId === suggestionSpeakId;
   return (
     <div class={`talk-bubble talk-bubble-${turn.role}`}>
       {editing ? (
@@ -307,18 +311,8 @@ function TalkBubble({
         <p class="talk-bubble-text">{turn.text}</p>
       )}
       {turn.role === "assistant" && showReadingAids && turn.reading && <p class="reading-aid">{turn.reading}</p>}
-      {turn.role === "assistant" && turn.translation && (
-        <div class="talk-bubble-translation-row">
-          <button
-            type="button"
-            class="link-button talk-bubble-translation-toggle"
-            aria-expanded={translationRevealed}
-            onClick={onToggleTranslation}
-          >
-            {translationRevealed ? t("talk-translation-hide") : t("talk-translation-show")}
-          </button>
-          {translationRevealed && <p class="talk-bubble-translation">{turn.translation}</p>}
-        </div>
+      {turn.role === "assistant" && (
+        <TalkTranslation text={turn.translation} revealed={translationRevealed} onToggle={onToggleTranslation} />
       )}
       {turn.role === "assistant" && speech.supported && (
         <div class="talk-bubble-actions">
@@ -370,6 +364,30 @@ function TalkBubble({
           onToggleTranslation={onToggleTranslation}
         />
       )}
+      {turn.role === "learner" && !turn.corrected && turn.suggestion && !editing && (
+        <div class="talk-suggestion">
+          <div class="talk-suggestion-header">
+            <p class="talk-suggestion-title">{t("talk-suggestion-heading")}</p>
+            {speech.supported && (
+              <button
+                type="button"
+                class="speak-button"
+                onClick={() => speech.speak(turn.suggestion, language, suggestionSpeakId)}
+                disabled={suggestionLoading}
+                aria-pressed={suggestionSpeaking}
+                aria-label={suggestionSpeaking ? t("talk-speak-stop") : t("talk-speak-suggestion")}
+                title={suggestionSpeaking ? t("talk-speak-stop") : t("talk-speak-suggestion")}
+              >
+                {suggestionLoading ? <Loader2 size={14} class="speak-button-spin" /> : suggestionSpeaking ? <Square size={14} /> : <Volume2 size={14} />}
+              </button>
+            )}
+          </div>
+          <p class="talk-bubble-text">{turn.suggestion}</p>
+          {showReadingAids && turn.suggestionReading && <p class="reading-aid">{turn.suggestionReading}</p>}
+          {turn.suggestionReason && <p class="talk-correction-reasons">{turn.suggestionReason}</p>}
+          <TalkTranslation text={turn.suggestionTranslation} revealed={translationRevealed} onToggle={onToggleTranslation} />
+        </div>
+      )}
     </div>
   );
 }
@@ -396,6 +414,14 @@ export function TalkView() {
   const [activeId, setActiveId] = useState<string | null>(null);
   const activeSession = sessions.find((s) => s.id === activeId) ?? null;
   const sessionLanguage = activeSession ? activeSession.language || settings.activeLanguage : settings.activeLanguage;
+
+  useLayoutEffect(() => {
+    setAssistantContext("talk", activeSession ? [
+      `Scenario: ${activeSession.title.slice(0, 300)}\n${activeSession.scenario.slice(0, 1000)}`,
+      ...activeSession.turns.slice(-4).map((turn) => `${turn.role}: ${turn.text.slice(0, 500)}`),
+    ].join("\n") : null);
+    return () => setAssistantContext("talk", null);
+  }, [activeSession]);
 
   const [starting, setStarting] = useState(false);
   const [startError, setStartError] = useState("");
@@ -530,6 +556,10 @@ export function TalkView() {
       correctedReading: result.correctedReading,
       correctedTranslation: result.correctedTranslation,
       reasons: result.reasons,
+      suggestion: result.suggestion,
+      suggestionReading: result.suggestionReading,
+      suggestionTranslation: result.suggestionTranslation,
+      suggestionReason: result.suggestionReason,
       understanding: result.understanding,
       unclearReason: result.unclearReason,
     });
