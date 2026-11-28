@@ -13,7 +13,7 @@
     "@tik-choco/mistai": "github:tik-choco-lab/mistai",
     "@tik-choco/mistlib": "0.7.1",
     "@tik-choco/mistlib-web": "0.3.0",
-    "@tik-choco/mistvault": "github:tik-choco-lab/mistvault",
+    "@tik-choco/mistvault": "^0.3.1",
     "lucide-preact": "^0.577.0",
     "preact": "^10.29.3"
   },
